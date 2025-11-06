@@ -147,8 +147,6 @@ const Settings = () => {
           <Tabs defaultValue="profile" className="space-y-4">
             <TabsList className="bg-card border border-border/50">
               <TabsTrigger value="profile">Profile</TabsTrigger>
-              <TabsTrigger value="notifications">Notifications</TabsTrigger>
-              <TabsTrigger value="preferences">Preferences</TabsTrigger>
               <TabsTrigger value="security">Security</TabsTrigger>
             </TabsList>
 
@@ -228,71 +226,6 @@ const Settings = () => {
 
                   <Button onClick={handleSave} className="bg-gradient-primary hover:opacity-90 shadow-md">
                     Save Changes
-                  </Button>
-                </div>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="notifications" className="space-y-4">
-              <Card className="p-4">
-                <h3 className="text-lg font-semibold mb-4">Notification Preferences</h3>
-                <div className="space-y-3">
-                  {[
-                    { title: "Email Notifications", description: "Receive email updates about your leads", id: "email" },
-                    { title: "Callback Reminders", description: "Get notified before scheduled callbacks", id: "callback" },
-                    { title: "New Lead Alerts", description: "Instant notifications when new leads are added", id: "newlead" },
-                    { title: "Daily Summary", description: "Receive daily performance summary emails", id: "summary" },
-                    { title: "Mobile Push Notifications", description: "Enable push notifications on mobile devices", id: "push" },
-                  ].map((setting) => (
-                    <div key={setting.id} className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{setting.title}</p>
-                        <p className="text-xs text-muted-foreground">{setting.description}</p>
-                      </div>
-                      <Switch defaultChecked />
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="preferences" className="space-y-4">
-              <Card className="p-4">
-                <h3 className="text-lg font-semibold mb-4">Application Preferences</h3>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <Input id="timezone" defaultValue="America/New_York (EST)" />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="dateFormat">Date Format</Label>
-                    <Input id="dateFormat" defaultValue="MM/DD/YYYY" />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="language">Language</Label>
-                    <Input id="language" defaultValue="English (US)" />
-                  </div>
-
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">Auto-sync Data</p>
-                      <p className="text-xs text-muted-foreground">Automatically sync data every 10 seconds</p>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-accent/30">
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">Show Customer Details</p>
-                      <p className="text-xs text-muted-foreground">Expand customer cards by default</p>
-                    </div>
-                    <Switch />
-                  </div>
-
-                  <Button onClick={handleSave} className="bg-gradient-primary hover:opacity-90 shadow-md">
-                    Save Preferences
                   </Button>
                 </div>
               </Card>

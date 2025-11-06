@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { LogOut } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface UserProfile {
   user_name?: string;
@@ -8,7 +12,10 @@ interface UserProfile {
 }
 
 const Header = () => {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const userEmail = localStorage.getItem("userEmail") || "";
   
@@ -134,8 +141,70 @@ const Header = () => {
     fetchProfile();
   }, [user?.id]); // Only depend on user.id, not the whole user object
 
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      localStorage.removeItem("isAuthenticated");
+      localStorage.removeItem("userEmail");
+      localStorage.removeItem("rememberMe");
+      localStorage.removeItem("rememberedEmail");
+      localStorage.removeItem("rememberedPassword");
+      // Clear profile cache
+      if (user?.id) {
+        localStorage.removeItem(`profile_${user.id}`);
+        localStorage.removeItem(`profile_sidebar_${user.id}`);
+        localStorage.removeItem(`profile_mobile_${user.id}`);
+      }
+      toast({
+        title: "Logged out",
+        description: "You have been successfully logged out",
+      });
+      navigate("/");
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
+  // Mobile header design
+  if (isMobile) {
+    return (
+      <header className="lg:hidden bg-card border-b border-border/50 shadow-sm sticky top-0 z-50 backdrop-blur-sm bg-card/95">
+        <div className="px-4 py-3 flex items-center justify-between">
+          {/* Left: User Avatar (Clickable to open Settings) */}
+          <button
+            onClick={() => navigate("/settings")}
+            className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center text-white font-semibold text-base shrink-0 hover:bg-slate-700 transition-colors cursor-pointer"
+            aria-label="Open Settings"
+          >
+            {initials}
+          </button>
+
+          {/* Center: Username */}
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <h1 className="text-base font-bold text-gray-900 leading-tight">
+              {profile?.user_name || (user as any)?.user_metadata?.full_name || user?.email?.split("@")[0] || userEmail.split("@")[0] || "User"}
+            </h1>
+            <p className="text-xs text-gray-500 leading-tight">
+              Signify - Growwik Media
+            </p>
+          </div>
+
+          {/* Right: Logout Icon */}
+          <button
+            onClick={handleLogout}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-orange-500 hover:text-orange-600 shrink-0"
+            aria-label="Logout"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
+      </header>
+    );
+  }
+
+  // Desktop header design (existing)
   return (
-    <header className="bg-card border-b border-border/50 shadow-sm sticky top-0 z-50 backdrop-blur-sm bg-card/95">
+    <header className="hidden lg:block bg-card border-b border-border/50 shadow-sm sticky top-0 z-50 backdrop-blur-sm bg-card/95">
       <div className="container mx-auto px-4 py-2.5 flex items-center justify-between max-w-7xl">
         {/* Left: User Profile */}
         <div className="flex items-center gap-2.5">

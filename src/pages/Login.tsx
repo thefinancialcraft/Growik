@@ -39,7 +39,7 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
   // Load saved email and password if remember me was checked
   useEffect(() => {
@@ -229,24 +229,36 @@ const LoginPage = () => {
             authError.message?.toLowerCase().includes("invalid login") ||
             authError.message?.toLowerCase().includes("invalid email or password")) {
           
-          // Try to check if email exists in user_profiles to distinguish between user not found vs wrong password
+          // Use public database function to check if email exists (bypasses RLS)
           try {
-            const { data: profileCheck, error: checkError } = await supabase
-              .from('user_profiles')
-              .select('email')
-              .eq('email', formData.email)
-              .maybeSingle();
+            console.log("=== EMAIL CHECK DEBUG ===");
+            console.log("Email being checked:", formData.email.toLowerCase().trim());
             
-            // If email not found in profiles, user doesn't exist
-            if (!profileCheck && (!checkError || checkError.code === 'PGRST116')) {
-              errorMessage = "User not found. Please check your email or contact your admin.";
+            const { data: emailExists, error: checkError } = await (supabase.rpc as any)(
+              'check_email_exists', 
+              { check_email: formData.email.toLowerCase().trim() }
+            );
+            
+            console.log("Email exists check result:", emailExists);
+            console.log("Check error:", checkError);
+            
+            if (checkError) {
+              console.error("Error checking email existence:", checkError);
+              // If function call fails, default to password wrong since auth returned 400
+              errorMessage = "Password is incorrect. Please check your password and try again.";
+            } else if (emailExists === true) {
+              // Email exists in user_profiles, so password is wrong
+              console.log("Email found in profiles - password is wrong");
+              errorMessage = "Password is incorrect. Please check your password and try again.";
             } else {
-              // Email exists but password might be wrong
-              errorMessage = "Invalid email or password. Please check your credentials and try again.";
+              // Email doesn't exist in user_profiles, user not registered
+              console.log("Email not found in profiles - user not registered");
+              errorMessage = "User not found. Please check your email or contact your admin.";
             }
-          } catch (checkError) {
-            // If check fails, show generic invalid credentials message
-            errorMessage = "Invalid email or password. Please check your credentials and try again.";
+          } catch (checkError: any) {
+            console.error("Exception during email check:", checkError);
+            // If exception occurs, default to password wrong since auth returned 400
+            errorMessage = "Password is incorrect. Please check your password and try again.";
           }
         }
         // Check for user not found scenarios
@@ -555,18 +567,23 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-purple-50 to-blue-50 px-4 py-8">
+    <div className="min-h-screen flex items-center justify-center px-4 py-8" style={{ background: 'linear-gradient(to bottom right, #f9fafb, #f3f4f6, #eff6ff)' }}>
       <div className="w-full max-w-md p-6 md:p-8 bg-white/90 rounded-2xl shadow-xl border border-white/50">
         <div className="flex flex-col items-center mb-7">
-          <div className="inline-flex items-center justify-center w-14 h-14 mb-2 overflow-hidden">
-            <img 
-              src="/Nexus icon.png" 
-              alt="TFC Nexus Logo" 
-              className="w-full h-full object-contain"
-            />
+          <div className="inline-flex items-center justify-center mb-3">
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              id="Layer_1" 
+              data-name="Layer 1" 
+              viewBox="0 0 24 24" 
+              className="w-12 h-12 fill-current"
+              style={{ color: '#385DFF' }}
+            >
+              <path d="M19.89,9.65c-.36-.42-.32-1.05,.1-1.41,.42-.36,1.05-.32,1.41,.1,1.07,1.24,1.85,2.71,2.32,4.38,.15,.53-.16,1.08-.69,1.23-.09,.03-.18,.04-.27,.04-.44,0-.84-.29-.96-.73-.39-1.39-1.04-2.6-1.91-3.62Zm4.06,7.66c-1.36,4.08-4.31,4.68-5.95,4.68-1.41,0-2.64-.62-3.66-1.55-1.18,.93-2.63,1.55-4.34,1.55s-3.22-.95-4.63-2.4c-1.25,1.2-3.33,2.4-4.37,2.4-.46,0-.88-.33-.98-.8-.11-.54,.24-1.07,.78-1.18,1.15-.24,2.26-.96,3.27-1.96C1.64,14.78,0,10.24,0,7.5,0,4.57,2.54,2,5.43,2s5.57,2.62,5.57,5.5c0,2.69-1.65,7.29-4.29,10.61,1.08,1.15,2.22,1.89,3.29,1.89,1.17,0,2.19-.42,3.02-1.06-1.31-1.86-2.02-4.12-2.02-5.48,0-1.84,1.64-3.45,3.51-3.45s3.49,1.61,3.49,3.45c0,1.51-.77,3.77-2.23,5.58,.67,.59,1.42,.97,2.23,.97,1.95,0,3.32-1.12,4.05-3.32,.17-.52,.74-.81,1.27-.63,.52,.17,.81,.74,.63,1.27ZM9,7.5c0-1.8-1.74-3.5-3.57-3.5s-3.43,1.67-3.43,3.5c0,2.39,1.47,6.2,3.41,8.99,2.14-2.88,3.59-6.79,3.59-8.99Zm5.45,9.96c1.02-1.4,1.55-3.05,1.55-4,0-.73-.74-1.45-1.49-1.45s-1.51,.73-1.51,1.45c0,.95,.55,2.6,1.45,4Z"/>
+            </svg>
           </div>
-          <h2 className="text-2xl font-semibold text-gray-800 mb-1 tracking-tight">Welcome Back</h2>
-          <p className="text-gray-400 text-sm">Sign in to your TFC Nexus account</p>
+          <h2 className="text-2xl font-semibold text-gray-800 mb-1 tracking-tight">Welcome to Signify</h2>
+          <p className="text-gray-400 text-sm">Sign in to your account</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -589,7 +606,12 @@ const LoginPage = () => {
               type="email"
               value={formData.email}
               onChange={handleInputChange}
-              className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-gray-50 text-gray-700 text-sm transition"
+              className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none bg-gray-50 text-gray-700 text-sm transition"
+              style={{ 
+                '--tw-ring-color': '#385DFF',
+              } as React.CSSProperties & { '--tw-ring-color': string }}
+              onFocus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(56, 93, 255, 0.2)'}
+              onBlur={(e) => e.target.style.boxShadow = ''}
               required
               autoFocus
               disabled={loading}
@@ -606,7 +628,12 @@ const LoginPage = () => {
                 type={showPassword ? "text" : "password"}
                 value={formData.password}
                 onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-gray-50 text-gray-700 text-sm transition pr-10"
+                className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none bg-gray-50 text-gray-700 text-sm transition pr-10"
+                style={{ 
+                  '--tw-ring-color': '#385DFF',
+                } as React.CSSProperties & { '--tw-ring-color': string }}
+                onFocus={(e) => e.target.style.boxShadow = '0 0 0 2px rgba(56, 93, 255, 0.2)'}
+                onBlur={(e) => e.target.style.boxShadow = ''}
                 required
                 disabled={loading}
                 placeholder="Enter your password"
@@ -634,7 +661,11 @@ const LoginPage = () => {
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 focus:ring-2"
+                className="w-4 h-4 border-gray-300 rounded focus:ring-2"
+                style={{ 
+                  accentColor: '#385DFF',
+                  '--tw-ring-color': '#385DFF',
+                } as React.CSSProperties & { '--tw-ring-color': string }}
                 disabled={loading}
               />
               <label htmlFor="rememberMe" className="ml-2 text-xs text-gray-600 cursor-pointer">
@@ -644,7 +675,10 @@ const LoginPage = () => {
             <div className="text-xs">
               <Link
                 to="/forgot-password"
-                className="text-indigo-600 hover:text-indigo-700 font-medium"
+                className="font-medium transition-colors"
+                style={{ color: '#385DFF' }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#2d4dd9'}
+                onMouseLeave={(e) => e.currentTarget.style.color = '#385DFF'}
               >
                 Forgot your password?
               </Link>
@@ -653,7 +687,16 @@ const LoginPage = () => {
 
           <button
             type="submit"
-            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md shadow-sm transition text-base disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-2 text-white font-semibold rounded-md shadow-sm transition text-base disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ 
+              backgroundColor: '#385DFF',
+            }}
+            onMouseEnter={(e) => {
+              if (!loading) e.currentTarget.style.backgroundColor = '#2d4dd9';
+            }}
+            onMouseLeave={(e) => {
+              if (!loading) e.currentTarget.style.backgroundColor = '#385DFF';
+            }}
             disabled={loading}
           >
             {loading ? "Signing in..." : "Sign In"}
@@ -698,7 +741,13 @@ const LoginPage = () => {
           <div className="text-center">
             <p className="text-gray-500 text-sm">
               Don't have an account?{" "}
-              <Link to="/signup" className="text-indigo-600 hover:text-indigo-700 font-medium">
+              <Link 
+                to="/signup" 
+                className="font-medium transition-colors"
+                style={{ color: '#385DFF' }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#2d4dd9'}
+                onMouseLeave={(e) => e.currentTarget.style.color = '#385DFF'}
+              >
                 Sign up
               </Link>
             </p>
