@@ -75,6 +75,40 @@ const LoginPage = () => {
     const message = location.state?.message;
     const urlParams = new URLSearchParams(location.search);
     const urlMessage = urlParams.get('message');
+    const errorParam = urlParams.get('error');
+    
+    // Handle account deleted error
+    if (errorParam === 'account_deleted') {
+      setError('User may be deleted. Please contact admin.');
+      // Clear URL param to prevent showing error on refresh
+      navigate(location.pathname, { replace: true });
+      // Ensure user is signed out
+      const checkAndSignOut = async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            await supabase.auth.signOut();
+            // Clear all caches
+            localStorage.removeItem('isAuthenticated');
+            localStorage.removeItem('userEmail');
+            localStorage.removeItem('rememberMe');
+            localStorage.removeItem('rememberedEmail');
+            localStorage.removeItem('rememberedPassword');
+            if (session.user?.id) {
+              localStorage.removeItem(`profile_${session.user.id}`);
+              localStorage.removeItem(`profile_sidebar_${session.user.id}`);
+              localStorage.removeItem(`profile_mobile_${session.user.id}`);
+            }
+            localStorage.removeItem('currentUserRole');
+            localStorage.removeItem('isSuperAdmin');
+          }
+        } catch (err) {
+          console.error('Error signing out:', err);
+        }
+      };
+      checkAndSignOut();
+      return;
+    }
     
     if (message) {
       setError(message);

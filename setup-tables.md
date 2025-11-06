@@ -57,3 +57,5 @@ npx supabase migration new create_user_profiles
 npx supabase db push
 ```
 
+
+

@@ -3,9 +3,10 @@ import { Input } from "@/components/ui/input";
 interface SearchBarProps {
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
 }
 
-const SearchBar = ({ value, onChange }: SearchBarProps) => {
+const SearchBar = ({ value, onChange, placeholder = "Search by name or phone..." }: SearchBarProps) => {
   return (
     <div className="relative">
       <svg
@@ -23,7 +24,7 @@ const SearchBar = ({ value, onChange }: SearchBarProps) => {
       </svg>
       <Input
         type="text"
-        placeholder="Search by name or phone..."
+        placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="pl-10 h-10 bg-card border-border/50 focus:shadow-md transition-all duration-300"

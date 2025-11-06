@@ -14,11 +14,15 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import Users from "./pages/Users";
+import Contract from "./pages/Contract";
+import ContractEditor from "./pages/ContractEditor";
+import Messaging from "./pages/Messaging";
 import Settings from "./pages/Settings";
 import ApprovalPending from "./components/ApprovalPending";
 import Hold from "./pages/Hold";
 import Suspended from "./pages/Suspended";
 import Rejected from "./pages/Rejected";
+import ChatWidget from "./components/ChatWidget";
 // Intermediate pages removed for direct-to-dashboard flow
 import NotFound from "./pages/NotFound";
 
@@ -77,6 +81,7 @@ const App = () => (
           <ScrollToTop />
           <Routes>
             <Route path="/" element={<Login />} />
+            <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
@@ -94,6 +99,30 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Users />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/contract"
+              element={
+                <ProtectedRoute>
+                  <Contract />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/contract/editor"
+              element={
+                <ProtectedRoute>
+                  <ContractEditor />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/messaging"
+              element={
+                <ProtectedRoute>
+                  <Messaging />
                 </ProtectedRoute>
               }
             />
@@ -140,6 +169,7 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          <ChatWidget />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

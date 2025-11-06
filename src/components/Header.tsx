@@ -38,6 +38,87 @@ const Header = () => {
   const initials = getInitials(profile);
 
   useEffect(() => {
+    // Update last_seen timestamp for current user (only when tab is visible and user is active)
+    let activityTimeout: NodeJS.Timeout | null = null;
+    let isActive = true; // Track if user is active (has interacted in last 1 minute)
+
+    const updateLastSeen = async () => {
+      // Only update if tab is visible AND user is active
+      if (document.visibilityState === 'hidden' || !isActive) {
+        return;
+      }
+
+      if (!user?.id) return;
+      try {
+        await supabase
+          .from('user_profiles')
+          // @ts-ignore - last_seen column may not be in types
+          .update({ last_seen: new Date().toISOString() })
+          .eq('user_id', user.id);
+      } catch (error) {
+        console.error('Header: Error updating last_seen:', error);
+      }
+    };
+
+    // Reset activity flag and update timestamp (only on click)
+    const resetActivity = () => {
+      isActive = true;
+      if (document.visibilityState === 'visible') {
+        updateLastSeen();
+      }
+      
+      // Clear existing timeout
+      if (activityTimeout) {
+        clearTimeout(activityTimeout);
+      }
+      
+      // Set new timeout - mark as inactive after 1 minute
+      activityTimeout = setTimeout(() => {
+        isActive = false;
+        console.log('Header: User inactive for 1 minute, stopping last_seen updates');
+      }, 1 * 60 * 1000); // 1 minute
+    };
+
+    // Track clicks only (no hover/mousemove)
+    const handleClick = () => {
+      resetActivity();
+    };
+
+    if (user?.id) {
+      // Initial activity reset
+      resetActivity();
+
+      // Update every 30 seconds (only when tab is visible and user is active)
+      const interval = setInterval(() => {
+        if (document.visibilityState === 'visible' && isActive) {
+          updateLastSeen();
+        }
+      }, 30000);
+
+      // Listen for visibility changes
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          // Reset activity when tab becomes visible
+          resetActivity();
+        }
+      };
+
+      // Add event listeners (only click, no hover/mousemove)
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      document.addEventListener('click', handleClick);
+
+      return () => {
+        clearInterval(interval);
+        if (activityTimeout) {
+          clearTimeout(activityTimeout);
+        }
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        document.removeEventListener('click', handleClick);
+      };
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
     const fetchProfile = async () => {
       if (user?.id) {
         const cacheKey = `profile_${user.id}`;
@@ -77,6 +158,31 @@ const Header = () => {
               hint: error.hint,
               code: error.code
             });
+            
+            // If error indicates user not found or account deleted, redirect to login
+            if (error.code === 'PGRST116' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('does not exist')) {
+              console.log('Header: User profile not found (error), redirecting to login');
+              // Sign out the user
+              try {
+                await signOut();
+              } catch (signOutError) {
+                console.error('Header: Error signing out:', signOutError);
+              }
+              // Clear all caches
+              try {
+                localStorage.removeItem(`profile_${user.id}`);
+                localStorage.removeItem(`profile_sidebar_${user.id}`);
+                localStorage.removeItem(`profile_mobile_${user.id}`);
+                localStorage.removeItem('currentUserRole');
+                localStorage.removeItem('isSuperAdmin');
+                localStorage.removeItem('isAuthenticated');
+              } catch (e) {
+                console.error('Error clearing cache:', e);
+              }
+              // Redirect to login with error message
+              window.location.href = '/login?error=account_deleted';
+              return;
+            }
             
             // Try alternative query to debug
             console.log('Header: Trying alternative query with all fields...');
@@ -123,23 +229,166 @@ const Header = () => {
             }
           } else {
             console.warn('Header: No profile data found for user:', user.id);
-            // Try to check if user exists in database at all
-            console.log('Header: Checking if any profiles exist...');
-            const { data: allProfiles, error: checkError } = await supabase
-              .from('user_profiles')
-              .select('id, user_id, user_name, employee_id')
-              .limit(5);
-            console.log('Header: Sample profiles in DB:', allProfiles);
-            console.log('Header: Check error:', checkError);
+            // Profile not found - user may have been deleted
+            console.log('Header: User profile not found (data is null), redirecting to login');
+            // Sign out the user
+            try {
+              await signOut();
+            } catch (signOutError) {
+              console.error('Header: Error signing out:', signOutError);
+            }
+            // Clear all caches
+            try {
+              localStorage.removeItem(`profile_${user.id}`);
+              localStorage.removeItem(`profile_sidebar_${user.id}`);
+              localStorage.removeItem(`profile_mobile_${user.id}`);
+              localStorage.removeItem('currentUserRole');
+              localStorage.removeItem('isSuperAdmin');
+              localStorage.removeItem('isAuthenticated');
+            } catch (e) {
+              console.error('Error clearing cache:', e);
+            }
+            // Redirect to login with error message
+            window.location.href = '/login?error=account_deleted';
+            return;
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error('Header: Exception fetching profile:', error);
+          // If exception indicates user not found or account deleted, redirect to login
+          if (error?.code === 'PGRST116' || error?.message?.toLowerCase().includes('not found') || error?.message?.toLowerCase().includes('does not exist')) {
+            console.log('Header: User profile not found (exception), redirecting to login');
+            // Sign out the user
+            try {
+              await signOut();
+            } catch (signOutError) {
+              console.error('Header: Error signing out:', signOutError);
+            }
+            // Clear all caches
+            try {
+              localStorage.removeItem(`profile_${user.id}`);
+              localStorage.removeItem(`profile_sidebar_${user.id}`);
+              localStorage.removeItem(`profile_mobile_${user.id}`);
+              localStorage.removeItem('currentUserRole');
+              localStorage.removeItem('isSuperAdmin');
+              localStorage.removeItem('isAuthenticated');
+            } catch (e) {
+              console.error('Error clearing cache:', e);
+            }
+            // Redirect to login with error message
+            window.location.href = '/login?error=account_deleted';
+            return;
+          }
         }
       }
     };
 
     fetchProfile();
-  }, [user?.id]); // Only depend on user.id, not the whole user object
+
+    // Set up real-time subscription for profile updates and deletions
+    if (user?.id) {
+      const channel = supabase
+        .channel(`header_profile_updates_${user.id}`)
+        .on('postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'user_profiles',
+            filter: `user_id=eq.${user.id}`
+          },
+          (payload) => {
+            const updatedProfile = payload.new as UserProfile;
+            const oldProfile = payload.old as UserProfile;
+            
+            // Check if this is a meaningful update (not just last_seen)
+            const meaningfulFields = ['role', 'super_admin', 'approval_status', 'status', 'hold_end_time', 'user_name', 'email', 'employee_id'];
+            const hasMeaningfulChange = meaningfulFields.some(field => {
+              const newValue = (updatedProfile as any)[field];
+              const oldValue = (oldProfile as any)?.[field];
+              return newValue !== oldValue;
+            });
+            
+            // Only log and update if there's a meaningful change
+            if (hasMeaningfulChange) {
+              setProfile(updatedProfile);
+
+              // Update cache
+              try {
+                const cacheKey = `profile_${user.id}`;
+                const sidebarCacheKey = `profile_sidebar_${user.id}`;
+                localStorage.setItem(cacheKey, JSON.stringify(updatedProfile));
+                const sidebarCache = localStorage.getItem(sidebarCacheKey);
+                if (sidebarCache) {
+                  try {
+                    const sidebarData = JSON.parse(sidebarCache);
+                    sidebarData.employee_id = updatedProfile.employee_id;
+                    sidebarData.user_name = updatedProfile.user_name;
+                    localStorage.setItem(sidebarCacheKey, JSON.stringify(sidebarData));
+                  } catch (e) {
+                    // Ignore cache update errors
+                  }
+                }
+              } catch (e) {
+                console.error('Error updating cache:', e);
+              }
+            }
+          }
+        )
+        .on('postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'user_profiles',
+            filter: `user_id=eq.${user.id}`
+          },
+          (payload) => {
+            console.log('=== HEADER REALTIME DELETE RECEIVED ===');
+            console.log('Profile deleted:', payload.old);
+            console.log('User ID:', user.id);
+            
+            // Profile was deleted - redirect to login immediately
+            console.log('Header: Profile deleted in real-time, redirecting to login');
+            
+            // Sign out the user
+            const handleDelete = async () => {
+              try {
+                await signOut();
+              } catch (signOutError) {
+                console.error('Header: Error signing out:', signOutError);
+              }
+              
+              // Clear all caches
+              try {
+                localStorage.removeItem(`profile_${user.id}`);
+                localStorage.removeItem(`profile_sidebar_${user.id}`);
+                localStorage.removeItem(`profile_mobile_${user.id}`);
+                localStorage.removeItem('currentUserRole');
+                localStorage.removeItem('isSuperAdmin');
+                localStorage.removeItem('isAuthenticated');
+              } catch (e) {
+                console.error('Error clearing cache:', e);
+              }
+              
+              // Redirect to login with error message
+              window.location.href = '/login?error=account_deleted';
+            };
+            
+            handleDelete();
+          }
+        )
+        .subscribe((status) => {
+          console.log('Header realtime subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('Header: Successfully subscribed to profile updates and deletions');
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('Header: Error subscribing to profile updates');
+          }
+        });
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [user?.id, signOut]);
 
   const handleLogout = async () => {
     try {

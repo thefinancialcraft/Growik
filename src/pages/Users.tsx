@@ -17,12 +17,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/lib/supabase";
-// Admin client is not available on the client bundle; guard references
-const supabaseAdmin = null as any;
+import { supabase, supabaseAdmin } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Plus, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Plus, Trash2, Shield, CheckCircle, XCircle, Clock, MoreVertical, Settings2, Circle } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +48,8 @@ interface User {
   hold_end_time?: string;
   created_at: string;
   updated_at: string;
+  is_online?: boolean;
+  last_seen?: string;
 }
 
 const Users = () => {
@@ -91,6 +91,243 @@ const Users = () => {
   const [holdDurationType, setHoldDurationType] = useState<'1day' | '2days' | '3days' | 'custom'>('1day');
   const [customHoldDate, setCustomHoldDate] = useState("");
   const [customHoldTime, setCustomHoldTime] = useState("");
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+
+  // Format last seen time
+  const formatLastSeen = (lastSeen?: string) => {
+    if (!lastSeen) return "Never";
+    
+    const lastSeenDate = new Date(lastSeen);
+    const now = new Date();
+    const diffMs = now.getTime() - lastSeenDate.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    
+    return lastSeenDate.toLocaleDateString();
+  };
+
+  // Check if user is currently online (within last 1 minute)
+  const isUserCurrentlyOnline = (userData: User) => {
+    // Always prioritize last_seen over presence state
+    if (userData.last_seen) {
+      const lastSeenDate = new Date(userData.last_seen);
+      const now = new Date();
+      
+      // Check if last_seen is a valid date
+      if (isNaN(lastSeenDate.getTime())) {
+        // Invalid date, fallback to presence state
+        return userData.is_online === true;
+      }
+      
+      const diffMs = now.getTime() - lastSeenDate.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      
+      // If last_seen is in the future (negative diff), consider offline
+      if (diffMs < 0) {
+        console.log(`User ${userData.user_name || userData.email}: last_seen is in future, marking offline`);
+        return false;
+      }
+      
+      // If last_seen is more than 1 minute old, consider them inactive/offline
+      if (diffMins > 1) {
+        return false;
+      }
+      
+      // If last_seen is within 1 minute, consider them online
+      return diffMins <= 1;
+    }
+    
+    // Fallback: if no last_seen, use presence state
+    return userData.is_online === true;
+  };
+
+  // Update last seen timestamp for current user (only when tab is visible and user is active)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let activityTimeout: NodeJS.Timeout | null = null;
+    let isActive = true; // Track if user is active (has interacted in last 1 minute)
+
+    const updateLastSeen = async () => {
+      // Only update if tab is visible AND user is active
+      if (document.visibilityState === 'hidden' || !isActive) {
+        return;
+      }
+
+      try {
+        await supabase
+          .from('user_profiles')
+          // @ts-ignore - last_seen column may not be in types
+          .update({ last_seen: new Date().toISOString() })
+          .eq('user_id', user.id);
+      } catch (error) {
+        console.error('Error updating last_seen:', error);
+      }
+    };
+
+    // Reset activity flag and update timestamp
+    const resetActivity = () => {
+      isActive = true;
+      if (document.visibilityState === 'visible') {
+        updateLastSeen();
+      }
+      
+      // Clear existing timeout
+      if (activityTimeout) {
+        clearTimeout(activityTimeout);
+      }
+      
+      // Set new timeout - mark as inactive after 1 minute
+      activityTimeout = setTimeout(() => {
+        isActive = false;
+        console.log('User inactive for 1 minute, stopping last_seen updates');
+      }, 1 * 60 * 1000); // 1 minute
+    };
+
+    // Track mouse movements
+    const handleMouseMove = () => {
+      resetActivity();
+    };
+
+    // Track keyboard activity
+    const handleKeyPress = () => {
+      resetActivity();
+    };
+
+    // Track clicks
+    const handleClick = () => {
+      resetActivity();
+    };
+
+    // Track scroll
+    const handleScroll = () => {
+      resetActivity();
+    };
+
+    // Initial activity reset
+    resetActivity();
+
+    // Update every 30 seconds (only when tab is visible and user is active)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && isActive) {
+        updateLastSeen();
+      }
+    }, 30000);
+
+    // Listen for visibility changes
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Reset activity when tab becomes visible
+        resetActivity();
+      }
+    };
+
+    // Add event listeners
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('keydown', handleKeyPress);
+    document.addEventListener('click', handleClick);
+    window.addEventListener('scroll', handleScroll);
+
+    return () => {
+      clearInterval(interval);
+      if (activityTimeout) {
+        clearTimeout(activityTimeout);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('keydown', handleKeyPress);
+      document.removeEventListener('click', handleClick);
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [user?.id]);
+
+  // Set up Realtime Presence to track online users
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase.channel('online-users', {
+      config: {
+        presence: {
+          key: user.id,
+        },
+      },
+    });
+
+    // Track current user as online
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const onlineUserIds = new Set<string>();
+        
+        // Extract user_ids from presence state
+        Object.keys(state).forEach((key) => {
+          const presences = state[key] as any[];
+          presences.forEach((presence: any) => {
+            if (presence.user_id) {
+              onlineUserIds.add(presence.user_id);
+            }
+          });
+        });
+
+        console.log('Presence sync - Online users:', Array.from(onlineUserIds));
+        setOnlineUsers(onlineUserIds);
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        const state = channel.presenceState();
+        const onlineUserIds = new Set<string>();
+        
+        Object.keys(state).forEach((key) => {
+          const presences = state[key] as any[];
+          presences.forEach((presence: any) => {
+            if (presence.user_id) {
+              onlineUserIds.add(presence.user_id);
+            }
+          });
+        });
+
+        console.log('User joined - Online users:', Array.from(onlineUserIds));
+        setOnlineUsers(onlineUserIds);
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+        const state = channel.presenceState();
+        const onlineUserIds = new Set<string>();
+        
+        Object.keys(state).forEach((key) => {
+          const presences = state[key] as any[];
+          presences.forEach((presence: any) => {
+            if (presence.user_id) {
+              onlineUserIds.add(presence.user_id);
+            }
+          });
+        });
+
+        console.log('User left - Online users:', Array.from(onlineUserIds));
+        setOnlineUsers(onlineUserIds);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Presence channel subscribed, tracking user:', user.id);
+          // Track current user as online
+          await channel.track({
+            user_id: user.id,
+            online_at: new Date().toISOString(),
+          });
+          console.log('User tracked as online');
+        }
+      });
+
+    return () => {
+      console.log('Unsubscribing from presence channel');
+      channel.unsubscribe();
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -137,7 +374,17 @@ const Users = () => {
 
         if (data) {
           console.log("Setting users:", data.length);
-          setUsers(data as User[]);
+          console.log("Current online users:", Array.from(onlineUsers));
+          // Map online status from presence
+          const usersWithOnlineStatus = (data as User[]).map((userData) => {
+            const isOnline = onlineUsers.has(userData.user_id);
+            console.log(`User ${userData.user_name || userData.email}: user_id=${userData.user_id}, is_online=${isOnline}`);
+            return {
+              ...userData,
+              is_online: isOnline,
+            };
+          });
+          setUsers(usersWithOnlineStatus);
         } else {
           console.warn("No data returned from users query");
           setUsers([]);
@@ -155,7 +402,58 @@ const Users = () => {
     };
 
     fetchUsers();
-  }, [user, navigate, toast]);
+  }, [user, navigate, toast, onlineUsers]);
+
+  // Update users' online status when onlineUsers changes
+  useEffect(() => {
+    if (users.length === 0) return;
+    
+    console.log('Updating users online status. Online users:', Array.from(onlineUsers));
+    setUsers(prevUsers => {
+      const updated = prevUsers.map(userData => {
+        const isOnline = onlineUsers.has(userData.user_id);
+        console.log(`User ${userData.user_name || userData.email}: is_online=${isOnline}, user_id=${userData.user_id}`);
+        return {
+          ...userData,
+          is_online: isOnline,
+        };
+      });
+      return updated;
+    });
+  }, [onlineUsers]);
+
+  // Set up real-time subscription for last_seen updates
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel('user_profiles_updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_profiles',
+        },
+        (payload) => {
+          const updatedUser = payload.new as User;
+          setUsers(prevUsers =>
+            prevUsers.map(u => {
+              // Only update last_seen, preserve is_online status from presence
+              const isOnline = onlineUsers.has(u.user_id);
+              return u.user_id === updatedUser.user_id
+                ? { ...u, last_seen: updatedUser.last_seen, is_online: isOnline }
+                : { ...u, is_online: onlineUsers.has(u.user_id) }; // Also update is_online for all users
+            })
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [user?.id, onlineUsers]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -329,19 +627,28 @@ const Users = () => {
         return;
       }
 
-      // Determine which identifier to use (user_id or email)
-      const identifierToUse = deleteUserId || deleteUserEmail;
-      const useEmail = !deleteUserId && !!deleteUserEmail;
-      
-      // First, find user_id if we only have email
+      // Check if admin client is available
+      if (!supabaseAdmin) {
+        toast({
+          title: "Service key required",
+          description: "Service key is required to delete users. Please add VITE_SUPABASE_SERVICE_KEY to your .env file.",
+          variant: "destructive",
+        });
+        setIsDeleting(false);
+        return;
+      }
+
+      // Determine actual user_id
       let actualUserId: string | null = deleteUserId;
-      if (useEmail && supabaseAdmin) {
-        // Try to find user_id by email in user_profiles
+      
+      // If we only have email, find user_id
+      if (!actualUserId && deleteUserEmail) {
+        // Try to find in user_profiles first
         const { data: profileByEmail } = await supabaseAdmin
           .from('user_profiles')
           .select('user_id')
           .eq('email', deleteUserEmail)
-          .maybeSingle();
+          .maybeSingle() as { data: { user_id: string } | null };
         
         if (profileByEmail?.user_id) {
           actualUserId = profileByEmail.user_id;
@@ -359,369 +666,133 @@ const Users = () => {
         }
       }
 
-      // First, check where user exists (auth.users or user_profiles)
-      let userExistsInAuth = false;
-      let userExistsInProfile = false;
-      
-      if (supabaseAdmin) {
-        // Check if user exists in auth.users (by user_id if available, or by email)
-        try {
-          if (actualUserId) {
-            const { data: authUser, error: authCheckError } = await supabaseAdmin.auth.admin.getUserById(actualUserId);
-            if (!authCheckError && authUser?.user) {
-              userExistsInAuth = true;
-            }
-          } else if (deleteUserEmail) {
-            // Try to find by email
-            const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-            const foundUser = authUsers?.users?.find((u: any) => u.email === deleteUserEmail);
-            if (foundUser) {
-              userExistsInAuth = true;
-              actualUserId = foundUser.id;
-            }
-          }
-        } catch (err) {
-          // User doesn't exist in auth
-        }
+      if (!actualUserId) {
+        throw new Error('User ID not found. Cannot delete user.');
+      }
+
+      console.log('=== DELETING USER ===');
+      console.log('User ID:', actualUserId);
+      console.log('User Email:', deleteUserEmail || targetUser?.email);
+      console.log('User Name:', deleteUserName);
+
+      // Step 1: Delete from user_profiles first (using admin client)
+      let profileDeleted = false;
+      try {
+        const { error: profileError } = await supabaseAdmin
+          .from('user_profiles')
+          .delete()
+          .eq('user_id', actualUserId);
         
-        // Check if user exists in user_profiles (by user_id or email)
-        try {
-          let profileCheck;
-          if (actualUserId) {
-            const { data, error } = await supabaseAdmin
-              .from('user_profiles')
-              .select('id, user_id')
-              .eq('user_id', actualUserId)
-              .maybeSingle();
-            profileCheck = data;
-          } else if (deleteUserEmail) {
-            const { data, error } = await supabaseAdmin
-              .from('user_profiles')
-              .select('id, user_id')
-              .eq('email', deleteUserEmail)
-              .maybeSingle();
-            profileCheck = data;
-            if (profileCheck?.user_id) {
-              actualUserId = profileCheck.user_id;
-            }
+        if (profileError) {
+          console.error('Error deleting from user_profiles:', profileError);
+          // If error is "not found", consider it deleted
+          if (profileError.code !== 'PGRST116' && !profileError.message?.includes('not found')) {
+            throw new Error(`Failed to delete from user_profiles: ${profileError.message}`);
           }
-          
-          if (profileCheck) {
-            userExistsInProfile = true;
+        }
+        profileDeleted = true;
+        console.log('Successfully deleted from user_profiles');
+      } catch (profileErr: any) {
+        console.error('Profile delete error:', profileErr);
+        // Continue with auth deletion even if profile deletion fails
+      }
+
+      // Step 2: Delete from auth.users using Admin API (using admin client)
+      let authDeleted = false;
+      try {
+        const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(actualUserId);
+        
+        if (authError) {
+          console.error('Error deleting from auth.users:', authError);
+          // If error is "not found", user is already deleted
+          if (authError.message && (
+            authError.message.toLowerCase().includes('not found') ||
+            authError.message.toLowerCase().includes('does not exist') ||
+            authError.message.toLowerCase().includes('user not found')
+          )) {
+            authDeleted = true;
+            console.log('User already deleted from auth.users');
+          } else {
+            throw new Error(`Failed to delete from auth.users: ${authError.message}`);
           }
-        } catch (err) {
-          // User doesn't exist in profile
+        } else {
+          authDeleted = true;
+          console.log('Successfully deleted from auth.users');
+        }
+      } catch (authErr: any) {
+        console.error('Auth delete error:', authErr);
+        // If error is "not found", user is already deleted
+        if (authErr?.message && (
+          authErr.message.toLowerCase().includes('not found') ||
+          authErr.message.toLowerCase().includes('does not exist')
+        )) {
+          authDeleted = true;
+          console.log('User already deleted from auth.users (from exception)');
+        } else {
+          throw new Error(`Failed to delete from auth.users: ${authErr?.message || 'Unknown error'}`);
         }
       }
 
-      // If user doesn't exist in either place, show success (already deleted)
-      if (!userExistsInAuth && !userExistsInProfile) {
+      // Step 3: Wait a moment for cascade operations to complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Step 4: Verify deletion
+      let profileVerified = false;
+      let authVerified = false;
+
+      // Verify user_profiles deletion
+      try {
+        const { data: profileCheck } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id')
+          .eq('user_id', actualUserId)
+          .maybeSingle();
+        profileVerified = !profileCheck;
+      } catch (err) {
+        console.warn('Profile verification error:', err);
+        profileVerified = profileDeleted; // Assume deleted if we got here
+      }
+
+      // Verify auth.users deletion
+      try {
+        const { data: authUser, error: authCheckError } = await supabaseAdmin.auth.admin.getUserById(actualUserId);
+        if (authCheckError) {
+          // If error contains "not found", user is deleted
+          if (authCheckError.message.toLowerCase().includes('not found') || 
+              authCheckError.message.toLowerCase().includes('does not exist')) {
+            authVerified = true;
+          }
+        } else {
+          authVerified = !authUser || !authUser.user;
+        }
+      } catch (err: any) {
+        // If error is "not found", user is deleted
+        if (err?.message?.toLowerCase().includes('not found') || 
+            err?.message?.toLowerCase().includes('does not exist')) {
+          authVerified = true;
+        }
+      }
+
+      // Success if at least one deletion succeeded
+      if (profileDeleted || authDeleted || profileVerified || authVerified) {
+        // Remove user from local state
         setUsers(users.filter(u => 
           (deleteUserId && u.user_id === deleteUserId) || 
-          (deleteUserEmail && u.email === deleteUserEmail)
+          (deleteUserEmail && u.email === deleteUserEmail) ||
+          (actualUserId && u.user_id === actualUserId)
         ));
+        
         toast({
-          title: "User already deleted",
-          description: `User ${deleteUserName} was not found in either auth.users or user_profiles.`,
+          title: "User deleted successfully",
+          description: `User ${deleteUserName} has been completely removed from the system.`,
         });
+
         setDeleteUserId(null);
         setDeleteUserEmail("");
         setDeleteUserName("");
-        setIsDeleting(false);
-        return;
+      } else {
+        throw new Error('Failed to verify user deletion. User may still exist in the system.');
       }
-
-      // Delete from user_profiles if it exists (by user_id or email)
-      let profileDeleted = false;
-      if (userExistsInProfile && supabaseAdmin) {
-        try {
-          let profileError;
-          if (actualUserId) {
-            const { error } = await supabaseAdmin
-              .from('user_profiles')
-              .delete()
-              .eq('user_id', actualUserId);
-            profileError = error;
-          } else if (deleteUserEmail) {
-            const { error } = await supabaseAdmin
-              .from('user_profiles')
-              .delete()
-              .eq('email', deleteUserEmail);
-            profileError = error;
-          }
-          
-          if (!profileError) {
-            profileDeleted = true;
-          }
-        } catch (profileErr) {
-          console.warn('Profile delete error:', profileErr);
-        }
-      }
-
-      // Also try with regular client (in case admin client has issues)
-      if (!profileDeleted && userExistsInProfile) {
-        try {
-          let profileError;
-          if (actualUserId) {
-            const { error } = await supabase
-              .from('user_profiles')
-              .delete()
-              .eq('user_id', actualUserId);
-            profileError = error;
-          } else if (deleteUserEmail) {
-            const { error } = await supabase
-              .from('user_profiles')
-              .delete()
-              .eq('email', deleteUserEmail);
-            profileError = error;
-          }
-          
-          if (!profileError) {
-            profileDeleted = true;
-          }
-        } catch (profileErr) {
-          console.warn('Profile delete error (regular client):', profileErr);
-        }
-      }
-
-      // Now delete from auth.users using Admin API (only if user exists there)
-      let authDeleted = false;
-      let authAlreadyDeleted = !userExistsInAuth; // If user doesn't exist in auth, it's already deleted
-      
-      if (userExistsInAuth && supabaseAdmin && actualUserId) {
-        try {
-          const { error: adminError } = await supabaseAdmin.auth.admin.deleteUser(actualUserId);
-          if (!adminError) {
-            authDeleted = true;
-          } else {
-            // If error is "User not found", user is already deleted - that's success
-            if (adminError.message && (
-              adminError.message.toLowerCase().includes('not found') ||
-              adminError.message.toLowerCase().includes('does not exist') ||
-              adminError.message.toLowerCase().includes('user not found')
-            )) {
-              authAlreadyDeleted = true;
-              authDeleted = true; // Consider as success
-            } else {
-              console.warn('Admin API delete failed:', adminError);
-            }
-          }
-        } catch (adminErr: any) {
-          // If error is "User not found", user is already deleted
-          if (adminErr?.message && (
-            adminErr.message.toLowerCase().includes('not found') ||
-            adminErr.message.toLowerCase().includes('does not exist') ||
-            adminErr.message.toLowerCase().includes('user not found')
-          )) {
-            authAlreadyDeleted = true;
-            authDeleted = true;
-          } else {
-            console.warn('Admin API error:', adminErr);
-          }
-        }
-      } else if (userExistsInAuth && supabaseAdmin && deleteUserEmail && !actualUserId) {
-        // If we only have email, try to find and delete by email
-        try {
-          const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-          const foundUser = authUsers?.users?.find((u: any) => u.email === deleteUserEmail);
-          if (foundUser) {
-            const { error: adminError } = await supabaseAdmin.auth.admin.deleteUser(foundUser.id);
-            if (!adminError) {
-              authDeleted = true;
-              actualUserId = foundUser.id;
-            }
-          }
-        } catch (err) {
-          console.warn('Error deleting by email:', err);
-        }
-      }
-
-      // If Admin API didn't work and user exists in auth, try RPC function
-      if (!authDeleted && !authAlreadyDeleted && userExistsInAuth && actualUserId) {
-        // @ts-ignore - RPC function type inference issue
-        const { data: deleteResult, error } = await supabase.rpc('delete_user', {
-          user_uuid: actualUserId
-        });
-
-        if (error) {
-          console.error('Delete error:', error);
-          // If RPC also fails but profile was deleted, that's okay - we'll handle partial deletion
-        } else if (deleteResult && (deleteResult as any).success) {
-          authDeleted = true;
-        }
-      }
-
-      // Wait a moment for cascade operations to complete
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Verify deletion succeeded - check both tables before showing success
-      let profileVerified = false;
-      let authVerified = authDeleted || authAlreadyDeleted; // If we successfully deleted or it was already deleted
-      
-      // Verify user_profiles deletion using admin client
-      if (supabaseAdmin) {
-        try {
-          let profileCheck;
-          if (actualUserId) {
-            const { data, error: profileCheckError } = await supabaseAdmin
-              .from('user_profiles')
-              .select('id')
-              .eq('user_id', actualUserId)
-              .maybeSingle();
-            profileCheck = data;
-          } else if (deleteUserEmail) {
-            const { data, error: profileCheckError } = await supabaseAdmin
-              .from('user_profiles')
-              .select('id')
-              .eq('email', deleteUserEmail)
-              .maybeSingle();
-            profileCheck = data;
-          }
-          
-          profileVerified = !profileCheck; // true if profile doesn't exist (deleted)
-        } catch (err) {
-          console.warn('Profile verification exception:', err);
-        }
-      }
-      
-      // If profile still exists but auth is deleted, try to delete profile again
-      if (!profileVerified && (authDeleted || authAlreadyDeleted) && supabaseAdmin) {
-        // Try one more time to delete the profile
-        let retryError;
-        if (actualUserId) {
-          const { error } = await supabaseAdmin
-            .from('user_profiles')
-            .delete()
-            .eq('user_id', actualUserId);
-          retryError = error;
-        } else if (deleteUserEmail) {
-          const { error } = await supabaseAdmin
-            .from('user_profiles')
-            .delete()
-            .eq('email', deleteUserEmail);
-          retryError = error;
-        }
-        
-        if (!retryError) {
-          // Wait a bit and verify again
-          await new Promise(resolve => setTimeout(resolve, 500));
-          let finalCheck;
-          if (actualUserId) {
-            const { data } = await supabaseAdmin
-              .from('user_profiles')
-              .select('id')
-              .eq('user_id', actualUserId)
-              .maybeSingle();
-            finalCheck = data;
-          } else if (deleteUserEmail) {
-            const { data } = await supabaseAdmin
-              .from('user_profiles')
-              .select('id')
-              .eq('email', deleteUserEmail)
-              .maybeSingle();
-            finalCheck = data;
-          }
-          profileVerified = !finalCheck;
-        }
-      }
-      
-      // Verify auth.users deletion (only if we haven't already verified)
-      if (!authVerified && supabaseAdmin) {
-        try {
-          if (actualUserId) {
-            const { data: authUser, error: authCheckError } = await supabaseAdmin.auth.admin.getUserById(actualUserId);
-            
-            if (authCheckError) {
-              // If error contains "not found" or similar, user is deleted
-              if (authCheckError.message.toLowerCase().includes('not found') || 
-                  authCheckError.message.toLowerCase().includes('does not exist')) {
-                authVerified = true;
-              }
-            } else if (!authUser || !authUser.user) {
-              // No user returned means deleted
-              authVerified = true;
-            } else {
-              // User still exists
-              authVerified = false;
-              console.warn('Auth user still exists:', authUser.user.id);
-            }
-          } else if (deleteUserEmail) {
-            // Verify by email
-            try {
-              const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-              const foundUser = authUsers?.users?.find((u: any) => u?.email === deleteUserEmail);
-              authVerified = !foundUser; // true if user not found (deleted)
-            } catch (listErr) {
-              console.warn('Error listing users:', listErr);
-            }
-          }
-        } catch (err: any) {
-          // If error is about user not found, that's good
-          if (err?.message?.toLowerCase().includes('not found') || 
-              err?.message?.toLowerCase().includes('does not exist')) {
-            authVerified = true;
-          } else {
-            console.warn('Auth verification error:', err);
-          }
-        }
-      }
-
-      // Final check - show success if at least one is verified as deleted
-      // If user exists in one place but not the other, delete from where it exists
-      let finalSuccess = false;
-      let successMessage = "";
-      
-      if (profileVerified && authVerified) {
-        // Both deleted - full success
-        finalSuccess = true;
-        successMessage = `User ${deleteUserName} has been completely deleted from both auth.users and user_profiles.`;
-      } else if (profileVerified && !userExistsInAuth) {
-        // Profile deleted, auth was already deleted
-        finalSuccess = true;
-        successMessage = `User ${deleteUserName} has been deleted from user_profiles. (Already removed from auth.users)`;
-      } else if (authVerified && !userExistsInProfile) {
-        // Auth deleted, profile was already deleted
-        finalSuccess = true;
-        successMessage = `User ${deleteUserName} has been deleted from auth.users. (Already removed from user_profiles)`;
-      } else if (profileDeleted && !userExistsInAuth) {
-        // Profile deleted successfully, auth was not present
-        finalSuccess = true;
-        successMessage = `User ${deleteUserName} has been deleted from user_profiles. (Not found in auth.users)`;
-      } else if (authDeleted && !userExistsInProfile) {
-        // Auth deleted successfully, profile was not present
-        finalSuccess = true;
-        successMessage = `User ${deleteUserName} has been deleted from auth.users. (Not found in user_profiles)`;
-      } else if (profileDeleted || authDeleted) {
-        // At least one deletion succeeded
-        finalSuccess = true;
-        if (profileDeleted && authDeleted) {
-          successMessage = `User ${deleteUserName} deleted successfully.`;
-        } else if (profileDeleted) {
-          successMessage = `User ${deleteUserName} deleted from user_profiles.`;
-        } else {
-          successMessage = `User ${deleteUserName} deleted from auth.users.`;
-        }
-      }
-
-      // If we couldn't delete from either place, show error
-      if (!finalSuccess) {
-        throw new Error('Failed to delete user. User may not exist in either table.');
-      }
-
-      // Remove user from local state
-      setUsers(users.filter(u => 
-        (deleteUserId && u.user_id === deleteUserId) || 
-        (deleteUserEmail && u.email === deleteUserEmail)
-      ));
-      
-      toast({
-        title: "User deleted successfully",
-        description: successMessage,
-      });
-
-      setDeleteUserId(null);
-      setDeleteUserEmail("");
-      setDeleteUserName("");
     } catch (error: any) {
       console.error('Error deleting user:', error);
       toast({
@@ -742,6 +813,16 @@ const Users = () => {
       toast({
         title: "Error",
         description: "User not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Prevent status change if user is not approved or rejected
+    if (targetUser.approval_status === 'pending') {
+      toast({
+        title: "Cannot change status",
+        description: "User must be approved or rejected before changing status.",
         variant: "destructive",
       });
       return;
@@ -1082,6 +1163,16 @@ const Users = () => {
         return;
       }
 
+      // Prevent changing approval status if user is already approved
+      if (targetUser?.approval_status === 'approved' && newApproval !== 'approved') {
+        toast({
+          title: "Cannot change approval status",
+          description: "Approved users cannot have their approval status changed.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // Use the profile id (primary key) instead of user_id for update
       const profileId = targetUser?.id;
       if (!profileId) {
@@ -1230,9 +1321,9 @@ const Users = () => {
         <Sidebar />
         <div className="flex-1 lg:ml-56">
           <Header />
-          <main className="container mx-auto px-4 py-4 space-y-4 pb-24 lg:pb-6 animate-fade-in max-w-7xl">
+          <main className="container mx-auto px-3 sm:px-4 py-3 sm:py-4 space-y-3 sm:space-y-4 pb-24 lg:pb-6 animate-fade-in max-w-7xl">
             <div className="text-center py-12">
-              <p className="text-muted-foreground">Loading users...</p>
+              <p className="text-muted-foreground text-sm sm:text-base">Loading users...</p>
             </div>
           </main>
         </div>
@@ -1247,15 +1338,15 @@ const Users = () => {
       
       <div className="flex-1 lg:ml-56">
         <Header />
-        <main className="container mx-auto px-4 py-4 space-y-4 pb-24 lg:pb-6 animate-fade-in max-w-7xl">
-          <div className="flex items-center justify-between">
+        <main className="container mx-auto px-3 sm:px-4 py-3 sm:py-4 space-y-3 sm:space-y-4 pb-24 lg:pb-6 animate-fade-in max-w-7xl">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
             <div>
-              <h1 className="text-xl md:text-2xl font-bold mb-1">User Management</h1>
-              <p className="text-muted-foreground text-sm">Manage all users and their access permissions</p>
+              <h1 className="text-lg sm:text-xl md:text-2xl font-bold mb-1">User Management</h1>
+              <p className="text-muted-foreground text-xs sm:text-sm">Manage all users and their access permissions</p>
             </div>
             <Button
               onClick={() => setIsAddUserOpen(true)}
-              className="h-9 px-4 text-sm"
+              className="h-9 px-3 sm:px-4 text-xs sm:text-sm w-full sm:w-auto"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add User
@@ -1267,16 +1358,16 @@ const Users = () => {
               placeholder="Search by name, email, or employee ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10"
+              className="h-10 text-sm"
             />
 
-            <div className="flex flex-wrap gap-2">
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-muted-foreground">Role:</label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:flex sm:flex-wrap">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <label className="text-xs text-muted-foreground whitespace-nowrap">Role:</label>
                 <select
                   value={filterRole}
                   onChange={(e) => setFilterRole(e.target.value as any)}
-                  className="h-8 px-2 text-xs border border-border rounded-md bg-card"
+                  className="h-8 px-2 text-xs border border-border rounded-md bg-card flex-1 sm:flex-none"
                 >
                   <option value="all">All</option>
                   <option value="user">User</option>
@@ -1285,12 +1376,12 @@ const Users = () => {
                 </select>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-muted-foreground">Status:</label>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <label className="text-xs text-muted-foreground whitespace-nowrap">Status:</label>
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value as any)}
-                  className="h-8 px-2 text-xs border border-border rounded-md bg-card"
+                  className="h-8 px-2 text-xs border border-border rounded-md bg-card flex-1 sm:flex-none"
                 >
                   <option value="all">All</option>
                   <option value="active">Active</option>
@@ -1299,12 +1390,12 @@ const Users = () => {
                 </select>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-muted-foreground">Approval:</label>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <label className="text-xs text-muted-foreground whitespace-nowrap">Approval:</label>
                 <select
                   value={filterApproval}
                   onChange={(e) => setFilterApproval(e.target.value as any)}
-                  className="h-8 px-2 text-xs border border-border rounded-md bg-card"
+                  className="h-8 px-2 text-xs border border-border rounded-md bg-card flex-1 sm:flex-none"
                 >
                   <option value="all">All</option>
                   <option value="pending">Pending</option>
@@ -1317,41 +1408,63 @@ const Users = () => {
 
           <div className="grid grid-cols-1 gap-3">
             {filteredUsers.map((userData) => (
-              <Card key={userData.id} className="p-4 hover:shadow-lg transition-all duration-300">
-                <div className="flex items-start justify-between gap-4">
+              <Card key={userData.id} className="p-3 sm:p-4 hover:shadow-lg transition-all duration-300">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 lg:gap-4">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-gradient-primary flex items-center justify-center text-white font-semibold text-sm shrink-0">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-primary flex items-center justify-center text-white font-semibold text-sm shrink-0">
                       {userData.user_name?.charAt(0).toUpperCase() || userData.email?.charAt(0).toUpperCase() || "U"}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <h3 className="font-semibold text-sm truncate">
-                          {userData.user_name || userData.email || "Unknown User"}
-                        </h3>
-                        <Badge className={`text-xs ${getRoleColor(userData.role, userData.super_admin)}`}>
-                          {userData.super_admin ? 'Super Admin' : userData.role}
-                        </Badge>
-                        <Badge className={`text-xs ${getStatusColor(userData.status)}`}>
-                          {userData.status}
-                        </Badge>
-                        <Badge className={`text-xs ${getApprovalColor(userData.approval_status)}`}>
-                          {userData.approval_status}
-                        </Badge>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-sm sm:text-base truncate">
+                            {userData.user_name || userData.email || "Unknown User"}
+                          </h3>
+                          {/* Online/Offline Status Indicator */}
+                          <div className="flex items-center gap-1">
+                            {isUserCurrentlyOnline(userData) ? (
+                              <div className="flex items-center gap-1">
+                                <Circle className="w-2 h-2 fill-green-500 text-green-500" />
+                                <span className="text-[10px] text-green-600 font-medium">Online</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <Circle className="w-2 h-2 fill-gray-400 text-gray-400" />
+                                <span className="text-[10px] text-gray-500 font-medium">
+                                  {userData.last_seen ? `Last seen: ${formatLastSeen(userData.last_seen)}` : 'Offline'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                          <Badge className={`text-[10px] sm:text-xs ${getRoleColor(userData.role, userData.super_admin)}`}>
+                            {userData.super_admin ? 'Super Admin' : userData.role}
+                          </Badge>
+                          <Badge className={`text-[10px] sm:text-xs ${getStatusColor(userData.status)}`}>
+                            {userData.status}
+                          </Badge>
+                          <Badge className={`text-[10px] sm:text-xs ${getApprovalColor(userData.approval_status)}`}>
+                            {userData.approval_status}
+                          </Badge>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate mb-1">
+                      <p className="text-xs text-muted-foreground truncate mb-1.5">
                         {userData.email}
                       </p>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 sm:gap-4 text-xs text-muted-foreground">
                         {userData.employee_id && (
                           <span className="font-semibold text-primary">ID: {userData.employee_id}</span>
                         )}
-                        {userData.user_id && (
-                          <span>User ID: {userData.user_id.slice(0, 8)}...</span>
-                        )}
-                        {userData.contact_no && (
-                          <span>Phone: {userData.contact_no}</span>
-                        )}
-                        <span>Joined: {new Date(userData.created_at).toLocaleDateString()}</span>
+                        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+                          {userData.user_id && (
+                            <span className="text-[11px] sm:text-xs">User ID: {userData.user_id.slice(0, 8)}...</span>
+                          )}
+                          {userData.contact_no && (
+                            <span className="text-[11px] sm:text-xs">Phone: {userData.contact_no}</span>
+                          )}
+                          <span className="text-[11px] sm:text-xs">Joined: {new Date(userData.created_at).toLocaleDateString()}</span>
+                        </div>
                       </div>
                       {userData.status_reason && (
                         <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
@@ -1362,55 +1475,97 @@ const Users = () => {
                     </div>
                   </div>
 
-                    <div className="flex flex-col gap-2 shrink-0">
-                      {userData.super_admin ? (
-                        <div className="text-xs text-muted-foreground italic">
-                          Protected
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex gap-1.5">
-                            <select
-                              value={userData.status}
-                              onChange={(e) => handleStatusChange(userData.user_id, e.target.value as any)}
-                              className="h-7 px-2 text-xs border border-border rounded-md bg-card"
-                            >
-                              <option value="active">Active</option>
-                              <option value="hold">Hold</option>
-                              <option value="suspend">Suspend</option>
-                            </select>
-                            <select
-                              value={userData.approval_status}
-                              onChange={(e) => handleApprovalChange(userData.user_id, e.target.value as any)}
-                              className="h-7 px-2 text-xs border border-border rounded-md bg-card"
-                            >
-                              <option value="pending">Pending</option>
-                              <option value="approved">Approved</option>
-                              <option value="rejected">Rejected</option>
-                            </select>
+                  <div className="flex flex-col gap-2 shrink-0 w-full lg:w-auto lg:min-w-[200px]">
+                    {userData.super_admin ? (
+                      <div className="flex items-center justify-center lg:justify-start gap-2 px-3 py-2 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-lg">
+                        <Shield className="w-4 h-4 text-red-600" />
+                        <span className="text-xs font-semibold text-red-700">Protected</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {/* Status and Approval Controls */}
+                        <div className="flex flex-col gap-2 p-2 bg-gray-50/50 rounded-lg border border-gray-200">
+                          {/* Status Dropdown */}
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
+                              Status
+                            </label>
+                            <div className="relative">
+                              <select
+                                value={userData.status}
+                                onChange={(e) => handleStatusChange(userData.user_id, e.target.value as any)}
+                                disabled={userData.approval_status === 'pending'}
+                                className={`w-full h-8 px-3 pr-8 text-xs font-medium border rounded-md transition-all ${
+                                  userData.approval_status === 'pending'
+                                    ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-300 text-gray-500'
+                                    : 'bg-white border-gray-300 text-gray-700 hover:border-primary hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary'
+                                }`}
+                                title={userData.approval_status === 'pending' ? 'User must be approved or rejected before changing status' : ''}
+                              >
+                                <option value="active">🟢 Active</option>
+                                <option value="hold">🟡 Hold</option>
+                                <option value="suspend">🔴 Suspend</option>
+                              </select>
+                              {userData.approval_status === 'pending' && (
+                                <div className="absolute inset-0 flex items-center justify-end pr-2 pointer-events-none">
+                                  <Clock className="w-3 h-3 text-gray-400" />
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => {
-                              // If user_id is null or empty, use email for deletion
-                              if (userData.user_id) {
-                                setDeleteUserId(userData.user_id);
-                                setDeleteUserEmail("");
-                              } else {
-                                setDeleteUserId(null);
-                                setDeleteUserEmail(userData.email);
-                              }
-                              setDeleteUserName(userData.user_name || userData.email || "User");
-                            }}
-                            className="h-7 px-2 text-xs"
-                          >
-                            <Trash2 className="w-3 h-3 mr-1" />
-                            Delete
-                          </Button>
+
+                          {/* Approval Status Dropdown */}
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
+                              Approval
+                            </label>
+                            <div className="relative">
+                              <select
+                                value={userData.approval_status}
+                                onChange={(e) => handleApprovalChange(userData.user_id, e.target.value as any)}
+                                disabled={userData.approval_status === 'approved'}
+                                className={`w-full h-8 px-3 pr-8 text-xs font-medium border rounded-md transition-all ${
+                                  userData.approval_status === 'approved'
+                                    ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-300 text-gray-500'
+                                    : 'bg-white border-gray-300 text-gray-700 hover:border-primary hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary'
+                                }`}
+                                title={userData.approval_status === 'approved' ? 'Approved users cannot change approval status' : ''}
+                              >
+                                <option value="pending">⏳ Pending</option>
+                                <option value="approved">✅ Approved</option>
+                                <option value="rejected">❌ Rejected</option>
+                              </select>
+                              {userData.approval_status === 'approved' && (
+                                <div className="absolute inset-0 flex items-center justify-end pr-2 pointer-events-none">
+                                  <CheckCircle className="w-3 h-3 text-green-500" />
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      )}
-                    </div>
+
+                        {/* Delete Button */}
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            if (userData.user_id) {
+                              setDeleteUserId(userData.user_id);
+                              setDeleteUserEmail("");
+                            } else {
+                              setDeleteUserId(null);
+                              setDeleteUserEmail(userData.email);
+                            }
+                            setDeleteUserName(userData.user_name || userData.email || "User");
+                          }}
+                          className="h-8 w-full text-xs font-medium shadow-sm hover:shadow-md transition-all duration-200"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                          Delete User
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </Card>
             ))}
@@ -1517,7 +1672,7 @@ const Users = () => {
 
                 {/* Custom Date/Time Inputs */}
                 {holdDurationType === 'custom' && (
-                  <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                     <div className="space-y-2">
                       <Label htmlFor="customHoldDate">Date *</Label>
                       <Input
@@ -1542,7 +1697,7 @@ const Users = () => {
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
             <Button
               variant="outline"
               onClick={() => {
@@ -1553,12 +1708,14 @@ const Users = () => {
                 setCustomHoldDate("");
                 setCustomHoldTime("");
               }}
+              className="w-full sm:w-auto"
             >
               Cancel
             </Button>
             <Button
               onClick={confirmStatusChange}
               disabled={!statusReason.trim() || (pendingStatusChange?.newStatus === 'hold' && holdDurationType === 'custom' && (!customHoldDate || !customHoldTime))}
+              className="w-full sm:w-auto"
             >
               Update Status
             </Button>
@@ -1583,7 +1740,7 @@ const Users = () => {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">First Name *</Label>
                   <Input
@@ -1702,7 +1859,7 @@ const Users = () => {
                 </div>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
               <Button
                 type="button"
                 variant="outline"
@@ -1719,10 +1876,11 @@ const Users = () => {
                   setFormError("");
                 }}
                 disabled={isAddingUser}
+                className="w-full sm:w-auto"
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isAddingUser}>
+              <Button type="submit" disabled={isAddingUser} className="w-full sm:w-auto">
                 {isAddingUser ? "Creating..." : "Create User"}
               </Button>
             </DialogFooter>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { AlertCircle, User, Mail, Phone, Calendar, Briefcase } from "lucide-react";
+import { AlertCircle, User, Mail, Phone, Calendar, Briefcase, Badge } from "lucide-react";
 
 interface UserProfile {
     id: string;
@@ -174,9 +174,6 @@ const Hold = () => {
                         filter: `user_id=eq.${user.id}`
                     },
                     (payload) => {
-                        console.log('=== REALTIME UPDATE RECEIVED ===');
-                        console.log('Profile updated:', payload.new);
-                        console.log('Old values:', payload.old);
                         const updatedProfile = payload.new as UserProfile;
                         setProfile(updatedProfile);
 
@@ -196,17 +193,13 @@ const Hold = () => {
 
                         // Redirect if status changes
                         if (updatedProfile.status === 'active' && updatedProfile.approval_status === 'approved') {
-                            console.log('Status changed to active + approved, redirecting to dashboard');
                             localStorage.setItem("isAuthenticated", "true");
                             navigate("/dashboard");
                         } else if (updatedProfile.status === 'suspend') {
-                            console.log('Status changed to suspend, redirecting to suspended page');
                             navigate("/suspended");
                         } else if (updatedProfile.approval_status === 'rejected') {
-                            console.log('Approval status changed to rejected, redirecting to rejected page');
                             navigate("/rejected");
                         } else if (updatedProfile.approval_status === 'pending') {
-                            console.log('Approval status changed to pending, redirecting to approval pending page');
                             navigate("/approval-pending");
                         }
                     }
@@ -360,6 +353,7 @@ const Hold = () => {
 
                         {profile.employee_id && (
                             <div className="flex items-center gap-2">
+                                <Badge className="w-4 h-4 text-gray-500" />
                                 <span className="text-sm font-medium">Employee ID:</span>
                                 <span className="text-sm text-gray-600">{profile.employee_id}</span>
                             </div>

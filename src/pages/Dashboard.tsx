@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
@@ -22,7 +22,7 @@ interface UserProfile {
 }
 
 const Dashboard = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
   const [displayName, setDisplayName] = useState<string>("User");
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -34,6 +34,92 @@ const Dashboard = () => {
       navigate("/");
       return;
     }
+
+    // Update last_seen timestamp for current user (only when tab is visible and user is active)
+    let activityTimeout: NodeJS.Timeout | null = null;
+    let isActive = true; // Track if user is active (has interacted in last 1 minute)
+
+    const updateLastSeen = async () => {
+      // Only update if tab is visible AND user is active
+      if (document.visibilityState === 'hidden' || !isActive) {
+        return;
+      }
+
+      if (!user?.id) return;
+      try {
+        await supabase
+          .from('user_profiles')
+          // @ts-ignore - last_seen column may not be in types
+          .update({ last_seen: new Date().toISOString() })
+          .eq('user_id', user.id);
+      } catch (error) {
+        console.error('Dashboard: Error updating last_seen:', error);
+      }
+    };
+
+    // Reset activity flag and update timestamp
+    const resetActivity = () => {
+      isActive = true;
+      if (document.visibilityState === 'visible') {
+        updateLastSeen();
+      }
+      
+      // Clear existing timeout
+      if (activityTimeout) {
+        clearTimeout(activityTimeout);
+      }
+      
+      // Set new timeout - mark as inactive after 1 minute
+      activityTimeout = setTimeout(() => {
+        isActive = false;
+        console.log('Dashboard: User inactive for 1 minute, stopping last_seen updates');
+      }, 1 * 60 * 1000); // 1 minute
+    };
+
+    // Track mouse movements
+    const handleMouseMove = () => {
+      resetActivity();
+    };
+
+    // Track keyboard activity
+    const handleKeyPress = () => {
+      resetActivity();
+    };
+
+    // Track clicks
+    const handleClick = () => {
+      resetActivity();
+    };
+
+    // Track scroll
+    const handleScroll = () => {
+      resetActivity();
+    };
+
+    // Initial activity reset
+    resetActivity();
+
+    // Update every 30 seconds (only when tab is visible and user is active)
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && isActive) {
+        updateLastSeen();
+      }
+    }, 30000);
+
+    // Listen for visibility changes
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Reset activity when tab becomes visible
+        resetActivity();
+      }
+    };
+
+    // Add event listeners
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('keydown', handleKeyPress);
+    document.addEventListener('click', handleClick);
+    window.addEventListener('scroll', handleScroll);
 
     const fetchProfile = async () => {
       if (!user?.id) return;
@@ -63,6 +149,29 @@ const Dashboard = () => {
 
         if (error) {
           console.error('Dashboard: Error fetching profile:', error);
+          // If error indicates user not found or account deleted, redirect to login
+          if (error.code === 'PGRST116' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('does not exist')) {
+            console.log('Dashboard: User profile not found (error), redirecting to login');
+            // Sign out the user
+            try {
+              await signOut();
+            } catch (signOutError) {
+              console.error('Dashboard: Error signing out:', signOutError);
+            }
+            // Clear all caches
+            try {
+              localStorage.removeItem(`profile_sidebar_${user.id}`);
+              localStorage.removeItem(`profile_${user.id}`);
+              localStorage.removeItem('currentUserRole');
+              localStorage.removeItem('isSuperAdmin');
+              localStorage.removeItem('isAuthenticated');
+            } catch (e) {
+              console.error('Error clearing cache:', e);
+            }
+            // Redirect to login with error message
+            window.location.href = '/login?error=account_deleted';
+            return;
+          }
           return;
         }
 
@@ -181,18 +290,61 @@ const Dashboard = () => {
               return;
             }
           }
-        } else if (user.email) {
-          setDisplayName(user.email.split('@')[0]);
+        } else {
+          // Profile not found - user may have been deleted
+          console.log('Dashboard: User profile not found (data is null), redirecting to login');
+          // Sign out the user
+          try {
+            await signOut();
+          } catch (signOutError) {
+            console.error('Dashboard: Error signing out:', signOutError);
+          }
+          // Clear all caches
+          try {
+            localStorage.removeItem(`profile_sidebar_${user.id}`);
+            localStorage.removeItem(`profile_${user.id}`);
+            localStorage.removeItem('currentUserRole');
+            localStorage.removeItem('isSuperAdmin');
+            localStorage.removeItem('isAuthenticated');
+          } catch (e) {
+            console.error('Error clearing cache:', e);
+          }
+          // Redirect to login with error message
+          window.location.href = '/login?error=account_deleted';
+          return;
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Dashboard: Exception fetching profile:', error);
+        // If exception indicates user not found or account deleted, redirect to login
+        if (error?.code === 'PGRST116' || error?.message?.toLowerCase().includes('not found') || error?.message?.toLowerCase().includes('does not exist')) {
+          console.log('Dashboard: User profile not found (exception), redirecting to login');
+          // Sign out the user
+          try {
+            await signOut();
+          } catch (signOutError) {
+            console.error('Dashboard: Error signing out:', signOutError);
+          }
+          // Clear all caches
+          try {
+            localStorage.removeItem(`profile_sidebar_${user.id}`);
+            localStorage.removeItem(`profile_${user.id}`);
+            localStorage.removeItem('currentUserRole');
+            localStorage.removeItem('isSuperAdmin');
+            localStorage.removeItem('isAuthenticated');
+          } catch (e) {
+            console.error('Error clearing cache:', e);
+          }
+          // Redirect to login with error message
+          window.location.href = '/login?error=account_deleted';
+          return;
+        }
         if (user.email) setDisplayName(user.email.split('@')[0]);
       }
     };
 
     fetchProfile();
 
-    // Set up real-time subscription for profile updates
+    // Set up real-time subscription for profile updates and deletions
     const channel = supabase
       .channel(`dashboard_profile_updates_${user.id}`)
       .on('postgres_changes',
@@ -259,10 +411,51 @@ const Dashboard = () => {
           }
         }
       )
+      .on('postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'user_profiles',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('=== DASHBOARD REALTIME DELETE RECEIVED ===');
+          console.log('Profile deleted:', payload.old);
+          console.log('User ID:', user.id);
+          
+          // Profile was deleted - redirect to login immediately
+          console.log('Dashboard: Profile deleted in real-time, redirecting to login');
+          
+          // Sign out the user
+          const handleDelete = async () => {
+            try {
+              await signOut();
+            } catch (signOutError) {
+              console.error('Dashboard: Error signing out:', signOutError);
+            }
+            
+            // Clear all caches
+            try {
+              localStorage.removeItem(`profile_sidebar_${user.id}`);
+              localStorage.removeItem(`profile_${user.id}`);
+              localStorage.removeItem('currentUserRole');
+              localStorage.removeItem('isSuperAdmin');
+              localStorage.removeItem('isAuthenticated');
+            } catch (e) {
+              console.error('Error clearing cache:', e);
+            }
+            
+            // Redirect to login with error message
+            window.location.href = '/login?error=account_deleted';
+          };
+          
+          handleDelete();
+        }
+      )
       .subscribe((status) => {
         console.log('Dashboard realtime subscription status:', status);
         if (status === 'SUBSCRIBED') {
-          console.log('Dashboard: Successfully subscribed to profile updates');
+          console.log('Dashboard: Successfully subscribed to profile updates and deletions');
         } else if (status === 'CHANNEL_ERROR') {
           console.error('Dashboard: Error subscribing to profile updates');
         }
@@ -270,6 +463,15 @@ const Dashboard = () => {
 
     return () => {
       supabase.removeChannel(channel);
+      if (interval) clearInterval(interval);
+      if (activityTimeout) {
+        clearTimeout(activityTimeout);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('keydown', handleKeyPress);
+      document.removeEventListener('click', handleClick);
+      window.removeEventListener('scroll', handleScroll);
     };
   }, [user?.id, authLoading, navigate]);
 
