@@ -6,6 +6,7 @@
 All colors MUST be HSL.
 */
 
+/* Light theme */
 @layer base {
   :root {
     --background: 0 0% 100%;
