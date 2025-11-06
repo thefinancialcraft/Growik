@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 224 71% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 224 71% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71% 10%;
+
+    /* Primary: rgb(82, 113, 255) */
+    --primary: 229 100% 66%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 229 100% 75%;
+    --primary-dark: 229 100% 55%;
+
+    /* Secondary: Dark Blue/Periwinkle (Nexus Icon Dark Blue) */
+    --secondary: 210 70% 45%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    /* Accent: Light Blue tint */
+    --accent: 229 100% 95%;
+    --accent-foreground: 229 100% 35%;
+
+    /* Status colors */
+    --success: 152 69% 50%;
+    --success-foreground: 0 0% 100%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 229 100% 66%;
+
+    --radius: 0.75rem;
+
+    /* Gradient definitions */
+    --gradient-primary: linear-gradient(135deg, hsl(229 100% 66%), hsl(229 100% 55%));
+    --gradient-hero: linear-gradient(135deg, hsl(229 100% 66%), hsl(229 100% 55%), hsl(229 100% 50%));
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(229 100% 98%));
+    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 100%), hsl(220 14% 98%));
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(229 100% 66% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(229 100% 66% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(229 100% 66% / 0.15);
+    --shadow-glow: 0 0 20px hsl(229 100% 66% / 0.3);
+
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 0 0% 98%;
+
+    --card: 224 71% 6%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 224 71% 6%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 229 100% 66%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 229 100% 75%;
+    --primary-dark: 229 100% 55%;
+
+    --secondary: 229 100% 55%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 224 71% 10%;
+    --muted-foreground: 220 9% 65%;
+
+    --accent: 229 100% 15%;
+    --accent-foreground: 229 100% 95%;
+
+    --success: 152 69% 50%;
+    --success-foreground: 0 0% 100%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 224 71% 15%;
+    --input: 224 71% 15%;
+    --ring: 229 100% 66%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(229 100% 66%), hsl(229 100% 55%));
+    --gradient-hero: linear-gradient(135deg, hsl(229 100% 66%), hsl(229 100% 55%), hsl(229 100% 50%));
+    --gradient-card: linear-gradient(180deg, hsl(224 71% 6%), hsl(229 100% 8%));
+    --gradient-subtle: linear-gradient(180deg, hsl(224 71% 6%), hsl(224 71% 8%));
+    
+    --shadow-sm: 0 1px 2px 0 hsl(229 100% 66% / 0.1);
+    --shadow-md: 0 4px 6px -1px hsl(229 100% 66% / 0.2);
+    --shadow-lg: 0 10px 15px -3px hsl(229 100% 66% / 0.3);
+    --shadow-glow: 0 0 20px hsl(229 100% 66% / 0.5);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
