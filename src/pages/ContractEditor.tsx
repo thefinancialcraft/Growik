@@ -693,6 +693,70 @@ const ContractEditor = () => {
     setIsVariableDialogOpen(false);
   };
 
+  const handleImageUpload = useCallback(async (file: File) => {
+    if (!user?.id) {
+      const error = new Error('You must be signed in to upload images.');
+      toast({
+        title: 'Upload failed',
+        description: error.message,
+        variant: 'destructive',
+      });
+      throw error;
+    }
+
+    const bucket = 'contracts';
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'png';
+    const baseName = file.name.replace(/[^a-zA-Z0-9-.]/g, '_').replace(/\.[^/.]+$/, '') || 'image';
+    const uniqueId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const fileName = `${baseName}-${uniqueId}.${extension}`;
+    const directory = contractId ? `contracts/${contractId}` : `drafts/${user.id}`;
+    const filePath = `${directory}/${fileName}`;
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(filePath, file, {
+          contentType: file.type,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        if (uploadError.message?.includes('Bucket not found')) {
+          toast({
+            title: 'Storage bucket missing',
+            description: "Please create a 'contracts' bucket in Supabase Storage and make it public.",
+            variant: 'destructive',
+          });
+        }
+        throw uploadError;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(filePath);
+
+      if (!urlData?.publicUrl) {
+        throw new Error('Unable to retrieve uploaded image URL.');
+      }
+
+      return {
+        url: urlData.publicUrl,
+        alignment: 'left' as const,
+        offsetX: 0,
+      };
+    } catch (error: any) {
+      console.error('ContractEditor: image upload failed', error);
+      toast({
+        title: 'Image upload failed',
+        description: error?.message || 'Unable to upload image right now. Please try again.',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [contractId, user?.id, toast]);
+
   const handleZoomIn = () => {
     setZoomLevel(prev => Math.min(prev + 10, 200));
   };
@@ -797,7 +861,11 @@ const ContractEditor = () => {
         {/* Toolbar - Fixed below header with horizontal scrolling */}
         <div className="sticky top-[56px] z-20 bg-[#f8f9fa] border-b border-[#dadce0] shadow-sm overflow-x-auto scrollbar-hide">
           <div className="px-3 py-2">
-            <MenuBar editor={editor} onVariableClick={() => setIsVariableDialogOpen(true)} />
+            <MenuBar
+              editor={editor}
+              onVariableClick={() => setIsVariableDialogOpen(true)}
+              onImageUpload={handleImageUpload}
+            />
           </div>
         </div>
 

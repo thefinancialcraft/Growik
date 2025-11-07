@@ -1,6 +1,9 @@
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
+import BulletList from '@tiptap/extension-bullet-list';
+import OrderedList from '@tiptap/extension-ordered-list';
+import ListItem from '@tiptap/extension-list-item';
 import TextAlign from '@tiptap/extension-text-align';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
@@ -76,6 +79,52 @@ const FontSize = Extension.create({
     };
   },
 });
+
+const CustomBulletList = BulletList.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      listStyleType: {
+        default: 'disc',
+        parseHTML: (element) => element.style.listStyleType || 'disc',
+        renderHTML: (attributes) => {
+          if (!attributes.listStyleType || attributes.listStyleType === 'disc') {
+            return {};
+          }
+          return {
+            style: `list-style-type: ${attributes.listStyleType}`,
+          };
+        },
+      },
+    };
+  },
+});
+
+const CustomOrderedList = OrderedList.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      listStyleType: {
+        default: 'decimal',
+        parseHTML: (element) => element.style.listStyleType || 'decimal',
+        renderHTML: (attributes) => {
+          if (!attributes.listStyleType || attributes.listStyleType === 'decimal') {
+            return {};
+          }
+          return {
+            style: `list-style-type: ${attributes.listStyleType}`,
+          };
+        },
+      },
+    };
+  },
+});
+
+const ORDERED_LIST_STYLE_VALUES = ['decimal', 'lower-alpha', 'upper-alpha', 'lower-roman', 'upper-roman'] as const;
+type OrderedListStyle = (typeof ORDERED_LIST_STYLE_VALUES)[number];
+type BulletListStyle = 'disc' | 'circle' | 'square';
+type ListStyleOption = BulletListStyle | OrderedListStyle;
+const ORDERED_LIST_STYLES_SET = new Set<OrderedListStyle>(ORDERED_LIST_STYLE_VALUES);
 import { 
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
@@ -330,7 +379,6 @@ const SlashCommand = Extension.create({
 // Resizable Image Component
 const ResizableImageComponent = ({ node, updateAttributes, selected }: any) => {
   const [isResizing, setIsResizing] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const startPos = useRef({ x: 0, y: 0, width: 0, height: 0 });
@@ -452,17 +500,54 @@ const ResizableImageComponent = ({ node, updateAttributes, selected }: any) => {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  const alignmentRaw: 'left' | 'center' | 'right' | 'custom' | undefined = node.attrs.alignment;
+  const alignment = alignmentRaw ?? 'left';
+  const offsetX = typeof node.attrs.offsetX === 'number' ? node.attrs.offsetX : 0;
+
+  const wrapperStyle: React.CSSProperties =
+    alignment === 'custom'
+      ? {
+          display: 'inline-block',
+          position: 'relative',
+          cursor: 'default',
+          marginLeft: `${offsetX}px`,
+          transition: isResizing ? 'none' : 'margin 0.15s ease',
+        }
+      : {
+          display: 'block',
+          position: 'relative',
+          cursor: 'default',
+          textAlign: alignment,
+          transition: isResizing ? 'none' : 'margin 0.15s ease',
+        };
+
+  const imageStyle: React.CSSProperties = {
+    width: `${isResizing ? dimensions.width : (node.attrs.width || dimensions.width)}px`,
+    height: `${isResizing ? dimensions.height : (node.attrs.height || dimensions.height)}px`,
+    maxWidth: '100%',
+    cursor: isResizing ? 'nwse-resize' : 'inherit',
+    pointerEvents: isResizing ? 'none' : 'auto',
+    transition: isResizing ? 'none' : 'all 0.2s ease',
+    display: 'inline-block',
+  };
+
+  const applyAlignment = (value: 'left' | 'center' | 'right') => {
+    updateAttributes({ alignment: value, offsetX: 0 });
+  };
+
   return (
     <NodeViewWrapper 
       ref={wrapperRef}
       className="resizable-image-wrapper" 
+      style={wrapperStyle}
+      as="div"
+      data-drag-handle
+    >
+      <span
       style={{ 
         display: 'inline-block', 
         position: 'relative',
-        cursor: selected ? 'grab' : 'default',
       }}
-      as="div"
-      data-drag-handle
     >
       <img
         ref={imgRef}
@@ -470,16 +555,10 @@ const ResizableImageComponent = ({ node, updateAttributes, selected }: any) => {
         alt={node.attrs.alt || ''}
         width={isResizing ? dimensions.width : (node.attrs.width || dimensions.width)}
         height={isResizing ? dimensions.height : (node.attrs.height || dimensions.height)}
-        style={{
-          width: `${isResizing ? dimensions.width : (node.attrs.width || dimensions.width)}px`,
-          height: `${isResizing ? dimensions.height : (node.attrs.height || dimensions.height)}px`,
-          maxWidth: '100%',
-          cursor: isResizing ? 'nwse-resize' : 'inherit',
-          pointerEvents: isResizing ? 'none' : 'auto',
-          transition: isResizing ? 'none' : 'all 0.2s ease',
-        }}
+          style={imageStyle}
         className={selected ? 'selected-image' : ''}
         data-drag-handle
+          draggable={false}
       />
       {selected && (
         <>
@@ -619,6 +698,40 @@ const ResizableImageComponent = ({ node, updateAttributes, selected }: any) => {
             }}
           />
         </>
+        )}
+      </span>
+      {selected && (
+        <div
+          className="image-alignment-controls"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
+            marginTop: '0.75rem',
+          }}
+        >
+          <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'center' }}>
+            {(['left', 'center', 'right'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => applyAlignment(option)}
+                style={{
+                  padding: '0.25rem 0.5rem',
+                  fontSize: '0.75rem',
+                  borderRadius: '0.375rem',
+                  border: '1px solid #d1d5db',
+                  background: alignment === option ? '#dbeafe' : '#fff',
+                  color: alignment === option ? '#1d4ed8' : '#374151',
+                  cursor: 'pointer',
+                }}
+              >
+                {option === 'left' ? 'Left' : option === 'center' ? 'Center' : 'Right'}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </NodeViewWrapper>
   );
@@ -653,6 +766,33 @@ const ResizableImage = Image.extend({
           return { height: attributes.height };
         },
       },
+      offsetX: {
+        default: 0,
+        parseHTML: element => {
+          const value = element.getAttribute('data-offset-x');
+          return value ? parseFloat(value) || 0 : 0;
+        },
+        renderHTML: attributes => {
+          if (typeof attributes.offsetX !== 'number') {
+            return {};
+          }
+          return {
+            'data-offset-x': attributes.offsetX,
+          };
+        },
+      },
+      alignment: {
+        default: 'left',
+        parseHTML: element => element.getAttribute('data-alignment') || 'left',
+        renderHTML: attributes => {
+          if (!attributes.alignment || attributes.alignment === 'custom') {
+            return {};
+          }
+          return {
+            'data-alignment': attributes.alignment,
+          };
+        },
+      },
     };
   },
 
@@ -667,21 +807,26 @@ interface TiptapEditorProps {
   placeholder?: string;
   onVariableClick?: () => void;
   onEditorReady?: (editor: Editor) => void;
+  onImageUpload?: (file: File) => Promise<{ url: string; alignment?: 'left' | 'center' | 'right'; offsetX?: number }>;
 }
 
-const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariableClick?: () => void }) => {
+const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | null; onVariableClick?: () => void; onImageUpload?: (file: File) => Promise<{ url: string; alignment?: 'left' | 'center' | 'right'; offsetX?: number }> }) => {
   if (!editor) {
     return null;
   }
 
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
+  const bulletStyleMenuRef = useRef<HTMLDivElement | null>(null);
+  const bulletStylePopoverRef = useRef<HTMLDivElement | null>(null);
   const textColorMenuRef = useRef<HTMLDivElement | null>(null);
   const highlightColorMenuRef = useRef<HTMLDivElement | null>(null);
   const textColorButtonRef = useRef<HTMLButtonElement | null>(null);
   const highlightColorButtonRef = useRef<HTMLButtonElement | null>(null);
   const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
+  const [isBulletStyleMenuOpen, setIsBulletStyleMenuOpen] = useState(false);
   const [isTextColorMenuOpen, setIsTextColorMenuOpen] = useState(false);
   const [isHighlightColorMenuOpen, setIsHighlightColorMenuOpen] = useState(false);
+  const [bulletStyleMenuPosition, setBulletStyleMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [textColorMenuPosition, setTextColorMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [highlightColorMenuPosition, setHighlightColorMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [isTextCustomMode, setIsTextCustomMode] = useState(false);
@@ -694,6 +839,30 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
   const formatPainterActiveRef = useRef(false);
   const formatPainterSourceRef = useRef<{ from: number; to: number } | null>(null);
   const formatPainterLastAppliedRef = useRef<{ from: number; to: number } | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  const updateBulletStyleMenuPosition = useCallback(() => {
+    const container = bulletStyleMenuRef.current;
+    if (!container) {
+      return;
+    }
+
+    const rect = container.getBoundingClientRect();
+    const menuWidth = 192; // Tailwind w-48
+    const viewportLeft = window.scrollX;
+    const viewportRight = viewportLeft + window.innerWidth;
+    const minLeft = viewportLeft + 8;
+    const maxLeft = Math.max(minLeft, viewportRight - menuWidth - 8);
+    const proposedLeft = rect.left + window.scrollX;
+    const clampedLeft = Math.min(Math.max(proposedLeft, minLeft), maxLeft);
+
+    const minTop = window.scrollY + 8;
+    const maxTop = Math.max(minTop, window.scrollY + window.innerHeight - 16);
+    const proposedTop = rect.bottom + window.scrollY + 6;
+    const clampedTop = Math.min(Math.max(proposedTop, minTop), maxTop);
+
+    setBulletStyleMenuPosition({ top: clampedTop, left: clampedLeft });
+  }, []);
 
   const closeTextColorMenu = useCallback(() => {
     setIsTextColorMenuOpen(false);
@@ -838,6 +1007,46 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isStyleMenuOpen]);
+
+  useEffect(() => {
+    if (!isBulletStyleMenuOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const isTrigger = target instanceof Element && target.closest('[data-bullet-style-trigger="true"]');
+      const isInsidePopover =
+        bulletStylePopoverRef.current && bulletStylePopoverRef.current.contains(target as Node);
+      if (!isTrigger && !isInsidePopover) {
+        setIsBulletStyleMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isBulletStyleMenuOpen]);
+
+  useEffect(() => {
+    if (!isBulletStyleMenuOpen) {
+      return;
+    }
+
+    const handleUpdate = () => {
+      updateBulletStyleMenuPosition();
+    };
+
+    handleUpdate();
+    window.addEventListener('resize', handleUpdate);
+    window.addEventListener('scroll', handleUpdate, true);
+
+    return () => {
+      window.removeEventListener('resize', handleUpdate);
+      window.removeEventListener('scroll', handleUpdate, true);
+    };
+  }, [isBulletStyleMenuOpen, updateBulletStyleMenuPosition]);
 
   const normalizeColorValue = useCallback((value: string | null | undefined): string | null => {
     if (!value) {
@@ -1200,6 +1409,22 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
     },
   ];
 
+  const bulletStyleOptions: { label: string; value: ListStyleOption }[] = [
+    { label: 'Default', value: 'disc' },
+    { label: '◦ Hollow Bullet', value: 'circle' },
+    { label: '■ Square Bullet', value: 'square' },
+    { label: '1. Numbered', value: 'decimal' },
+    { label: 'a. Lower Alpha', value: 'lower-alpha' },
+    { label: 'A. Upper Alpha', value: 'upper-alpha' },
+    { label: 'i. Lower Roman', value: 'lower-roman' },
+    { label: 'I. Upper Roman', value: 'upper-roman' },
+  ];
+
+  const currentBulletListStyle =
+    ((editor.getAttributes('bulletList').listStyleType as string | undefined) ?? 'disc') as ListStyleOption;
+  const currentOrderedListStyle =
+    ((editor.getAttributes('orderedList').listStyleType as string | undefined) ?? 'decimal') as ListStyleOption;
+
   const linkButtonRef = useRef<HTMLButtonElement | null>(null);
   const linkPopoverRef = useRef<HTMLDivElement | null>(null);
   const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
@@ -1322,22 +1547,90 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
     if (!editor) {
       return;
     }
-    editor.chain().focus().extendMarkRange('link').unsetLink().run();
+      editor.chain().focus().extendMarkRange('link').unsetLink().run();
     closeLinkPopover();
   }, [editor, closeLinkPopover]);
 
+  const applyBulletStyle = useCallback(
+    (style: ListStyleOption) => {
+      if (!editor) {
+      return;
+    }
+
+      const isOrderedStyle = ORDERED_LIST_STYLES_SET.has(style as OrderedListStyle);
+
+      if (isOrderedStyle) {
+        const orderedStyle = style as OrderedListStyle;
+        let chain = editor.chain().focus();
+        if (!editor.isActive('orderedList')) {
+          if (editor.isActive('bulletList')) {
+            chain = chain.toggleBulletList();
+          }
+          chain = chain.toggleOrderedList();
+        }
+        chain = chain.updateAttributes('orderedList', { listStyleType: orderedStyle });
+        chain.run();
+      } else {
+        const bulletStyle = style as BulletListStyle;
+        let chain = editor.chain().focus();
+        if (!editor.isActive('bulletList')) {
+          if (editor.isActive('orderedList')) {
+            chain = chain.toggleOrderedList();
+          }
+          chain = chain.toggleBulletList();
+        }
+        chain = chain.updateAttributes('bulletList', { listStyleType: bulletStyle });
+        chain.run();
+      }
+
+      setIsBulletStyleMenuOpen(false);
+    },
+    [editor]
+  );
+
   const addImage = useCallback(() => {
-    // Create a file input element
+    if (!editor) {
+      return;
+    }
+
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
     
-    input.onchange = (e: Event) => {
+    input.onchange = async (e: Event) => {
       const target = e.target as HTMLInputElement;
       const file = target.files?.[0];
       
-      if (file) {
-        // Read the file as a data URL
+      if (!file) {
+        return;
+      }
+
+      const MAX_IMAGE_SIZE = 1 * 1024 * 1024; // 1 MB
+      if (file.size > MAX_IMAGE_SIZE) {
+        window.alert('Image size must be 1 MB or less.');
+        target.value = '';
+        return;
+      }
+
+      if (onImageUpload) {
+        setIsUploadingImage(true);
+        try {
+          const result = await onImageUpload(file);
+          const attrs: any = { src: result.url };
+          if (result.alignment) {
+            attrs.alignment = result.alignment;
+          }
+          if (typeof result.offsetX === 'number') {
+            attrs.offsetX = result.offsetX;
+          }
+          editor.chain().focus().setImage(attrs).run();
+        } catch (error) {
+          console.error('MenuBar: image upload failed', error);
+        } finally {
+          setIsUploadingImage(false);
+          input.value = '';
+        }
+      } else {
         const reader = new FileReader();
         reader.onload = (readerEvent) => {
           const url = readerEvent.target?.result as string;
@@ -1349,9 +1642,8 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
       }
     };
     
-    // Trigger the file input
     input.click();
-  }, [editor]);
+  }, [editor, onImageUpload]);
 
   return (
     <div className="inline-flex items-center gap-0.5 flex-wrap">
@@ -1576,6 +1868,7 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
                 return;
               }
               closeHighlightColorMenu();
+              setIsBulletStyleMenuOpen(false);
               updateTextColorMenuPosition();
               setIsTextColorMenuOpen(true);
             setTextCustomColor(currentTextColor ?? '#000000');
@@ -1613,8 +1906,8 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
                     <span className="w-10" />
                   </div>
                   <div className="flex items-center gap-3">
-                    <input
-                      type="color"
+          <input
+            type="color"
                       value={textCustomColor}
                       onChange={(e) => setTextCustomColor(e.target.value)}
                       className="h-10 w-10 cursor-pointer rounded border border-gray-200"
@@ -1627,8 +1920,8 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
                         setTextCustomColor(value.slice(0, 7));
                       }}
                       className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
+          />
+        </div>
                   <div className="flex justify-end gap-2">
                     <button
                       type="button"
@@ -1707,6 +2000,7 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
                 return;
               }
               closeTextColorMenu();
+              setIsBulletStyleMenuOpen(false);
               updateHighlightColorMenuPosition();
               setIsHighlightColorMenuOpen(true);
             setHighlightCustomColor(currentHighlightColor ?? '#ffff00');
@@ -1744,8 +2038,8 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
                     <span className="w-10" />
                   </div>
                   <div className="flex items-center gap-3">
-                    <input
-                      type="color"
+          <input
+            type="color"
                       value={highlightCustomColor}
                       onChange={(e) => setHighlightCustomColor(e.target.value)}
                       className="h-10 w-10 cursor-pointer rounded border border-gray-200"
@@ -1753,13 +2047,13 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
                     <input
                       type="text"
                       value={highlightCustomColor}
-                      onChange={(e) => {
+            onChange={(e) => {
                         const value = e.target.value.startsWith('#') ? e.target.value : `#${e.target.value}`;
                         setHighlightCustomColor(value.slice(0, 7));
-                      }}
+            }}
                       className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
+          />
+        </div>
                   <div className="flex justify-end gap-2">
                     <button
                       type="button"
@@ -1941,9 +2235,17 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
         <button
           onClick={addImage}
           className="toolbar-btn"
-          title="Insert image"
+          title={isUploadingImage ? "Uploading image..." : "Insert image"}
+          disabled={isUploadingImage}
         >
-          <ImageIcon size={16} />
+          {isUploadingImage ? (
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2a10 10 0 100 20v-2a8 8 0 01-8-8z" />
+            </svg>
+          ) : (
+            <ImageIcon size={16} />
+          )}
         </button>
         
         <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
@@ -1990,15 +2292,80 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
         <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
 
         {/* Lists */}
+        <div className="relative inline-flex" ref={bulletStyleMenuRef}>
         <button
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
+            onClick={() => {
+              editor.chain().focus().toggleBulletList().run();
+              setIsBulletStyleMenuOpen(false);
+            }}
           className={editor.isActive('bulletList') ? 'toolbar-btn-active' : 'toolbar-btn'}
           title="Bulleted list (Ctrl+Shift+8)"
         >
-          <List size={16} />
+            <List size={16} />
         </button>
         <button
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+            data-bullet-style-trigger="true"
+            type="button"
+            className="toolbar-btn"
+            title="Bullet & numbering options"
+            onClick={() => {
+              if (isBulletStyleMenuOpen) {
+                setIsBulletStyleMenuOpen(false);
+                return;
+              }
+
+              setIsTextColorMenuOpen(false);
+              setIsHighlightColorMenuOpen(false);
+              updateBulletStyleMenuPosition();
+              setIsBulletStyleMenuOpen(true);
+            }}
+          >
+            <ChevronDown size={14} />
+          </button>
+          {isBulletStyleMenuOpen && bulletStyleMenuPosition &&
+            createPortal(
+              <div
+                ref={bulletStylePopoverRef}
+                className="z-[9999] w-48 rounded-md border border-gray-200 bg-white py-1 shadow-lg overflow-hidden"
+                style={{
+                  position: 'absolute',
+                  top: bulletStyleMenuPosition.top,
+                  left: bulletStyleMenuPosition.left,
+                }}
+              >
+                {bulletStyleOptions.map((option) => {
+                  const isOrderedOption = ORDERED_LIST_STYLES_SET.has(option.value as OrderedListStyle);
+                  const isActive = isOrderedOption
+                    ? editor.isActive('orderedList') && currentOrderedListStyle === option.value
+                    : editor.isActive('bulletList') && currentBulletListStyle === option.value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => applyBulletStyle(option.value)}
+                      className={`flex w-full items-center justify-between px-3 py-2 text-sm transition-colors ${
+                        isActive ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span>{option.label}</span>
+                      {isActive && (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>,
+              document.body
+            )}
+        </div>
+        <button
+          onClick={() => {
+            editor.chain().focus().toggleOrderedList().run();
+            setIsBulletStyleMenuOpen(false);
+          }}
           className={editor.isActive('orderedList') ? 'toolbar-btn-active' : 'toolbar-btn'}
           title="Numbered list (Ctrl+Shift+7)"
         >
@@ -2028,10 +2395,23 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
   );
 };
 
-export default function TiptapEditor({ content, onChange, placeholder = 'Start typing...', onVariableClick, onEditorReady }: TiptapEditorProps) {
+export default function TiptapEditor({ content, onChange, placeholder = 'Start typing...', onVariableClick, onEditorReady, onImageUpload }: TiptapEditorProps) {
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        bulletList: false,
+        orderedList: false,
+        listItem: false,
+      }),
+      CustomBulletList.configure({
+        keepMarks: true,
+        keepAttributes: true,
+      }),
+      CustomOrderedList.configure({
+        keepMarks: true,
+        keepAttributes: true,
+      }),
+      ListItem,
       Underline,
       TextStyle,
       Color,
