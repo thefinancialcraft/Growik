@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Send, MessageCircle, X, MoreVertical, Trash2, Ban, Image, Paperclip, Mic, Play, Pause, Loader2, Minimize2, Maximize2 } from "lucide-react";
+import { Send, MessageCircle, X, MoreVertical, Trash2, Ban, Image, Paperclip, Mic, Play, Pause, Loader2, Minimize2, Maximize2, Smile } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface UserProfile {
   user_id: string;
@@ -99,6 +100,11 @@ const Messaging = () => {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+  const emojiList = [
+    "😀","😂","😊","😍","😘","🤩","😉","🙌","👍","🙏",
+    "🔥","💯","🎉","🥳","😎","🤔","😢","😭","😡","🤯",
+    "😴","🤗","😇","😋","🤤","😜"
+  ];
 
   // Check if user is currently online
   const isUserCurrentlyOnline = useCallback((userProfile: UserProfile): boolean => {
@@ -1609,7 +1615,7 @@ const Messaging = () => {
                                 </p>
                               )}
                             </div>
-                            {pendingCounts[userProfile.user_id] > 0 && (
+                            {(pendingCounts[userProfile.user_id] > 0) && (
                               <Badge variant="destructive" className="shrink-0 h-5 min-w-5 px-1.5 text-xs font-bold animate-pulse">
                                 {pendingCounts[userProfile.user_id]}
                               </Badge>
@@ -1702,39 +1708,33 @@ const Messaging = () => {
                               className={`flex flex-col ${isOwn ? "items-end" : "items-start"} group mb-1`}
                             >
                               <div
-                                className={`max-w-[75%] md:max-w-[60%] rounded-2xl p-3 md:p-4 shadow-lg hover:shadow-xl transition-all duration-200 ${
+                                className={`max-w-[80%] md:max-w-[60%] rounded-xl p-3 md:p-4 shadow-sm transition-all duration-200 ${
                                   isOwn
-                                    ? "bg-gradient-to-br from-primary via-primary/95 to-primary/90 text-primary-foreground rounded-br-md"
-                                    : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-bl-md text-gray-900 dark:text-gray-100"
+                                    ? "bg-gradient-to-br from-primary/10 via-primary/20 to-primary/10 text-primary"
+                                    : "bg-muted text-foreground"
                                 } ${isSending ? "opacity-70" : ""}`}
                               >
-                                {/* Media Display */}
-                                {msg.media_url && msg.message_type === 'media' && (
-                                  <div className="mb-2">
-                                    {msg.media_type === 'image' ? (
-                                      <img
-                                        src={msg.media_url}
-                                        alt="Shared image"
-                                        className="rounded-lg max-w-full h-auto max-h-80 object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                        onClick={() => window.open(msg.media_url, '_blank')}
-                                      />
-                                    ) : (
-                                      <a
-                                        href={msg.media_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                                      >
-                                        <Paperclip className="h-4 w-4" />
-                                        <span className="text-sm truncate">{msg.message || 'File'}</span>
-                                      </a>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Voice Message Display */}
-                                {msg.media_url && msg.message_type === 'voice' && (
-                                  <div className="mb-2 flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+                                {msg.media_url && msg.message_type === 'media' ? (
+                                  msg.media_type === 'image' ? (
+                                    <img
+                                      src={msg.media_url}
+                                      alt="Shared image"
+                                      className="rounded-md max-w-[220px] cursor-pointer"
+                                      onClick={() => window.open(msg.media_url!, '_blank')}
+                                    />
+                                  ) : (
+                                    <a
+                                      href={msg.media_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-2 p-3 rounded-lg bg-muted/40 hover:bg-muted transition-colors text-sm"
+                                    >
+                                      <Paperclip className="h-4 w-4" />
+                                      <span className="truncate max-w-[160px]">{msg.message || 'File'}</span>
+                                    </a>
+                                  )
+                                ) : msg.media_url && msg.message_type === 'voice' ? (
+                                  <div className="mb-2 flex items-center gap-3 p-3 rounded-lg bg-muted/20">
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -1793,14 +1793,11 @@ const Messaging = () => {
                                       </div>
                                     </div>
                                   </div>
-                                )}
-
-                                {/* Text Message */}
-                                {msg.message && msg.message_type !== 'voice' && (
-                                  <p className={`text-sm ${msg.media_url ? 'mt-2' : ''} break-words`}>
+                                ) : msg.message ? (
+                                  <p className="text-sm break-words">
                                     {msg.message}
                                   </p>
-                                )}
+                                ) : null}
                               </div>
                               {/* Time and Status Dots - Below Bubble */}
                               {isOwn && (
@@ -1816,7 +1813,6 @@ const Messaging = () => {
                                   ) : (
                                     <>
                                       {/* Priority: read > delivered > sent */}
-                                      {/* 2 blue dots = read (user has seen it) */}
                                       {isRead ? (
                                         <>
                                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
@@ -1982,6 +1978,29 @@ const Messaging = () => {
                             >
                               <Mic className="h-4 w-4" />
                             </Button>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-9 w-9 rounded-full hover:bg-primary/10"
+                                >
+                                  <Smile className="h-4 w-4" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-64 grid grid-cols-6 gap-2 p-3">
+                                {emojiList.map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    className="text-xl hover:scale-110 transition-transform"
+                                    onClick={() => setNewMessage((prev) => prev + emoji)}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </PopoverContent>
+                            </Popover>
                           </div>
 
                           {/* Message Input */}
@@ -2000,7 +2019,7 @@ const Messaging = () => {
                                 }
                               }}
                               placeholder={isRecording ? "Recording voice message..." : "Type a message..."}
-                              className="flex-1 pr-12 rounded-full border-2 focus:border-primary/50"
+                              className="border-0 focus:border-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               disabled={isRecording || isUploading}
                             />
                           </div>

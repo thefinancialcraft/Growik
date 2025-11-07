@@ -26,6 +26,7 @@ const Sidebar = () => {
   const { toast } = useToast();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [totalPendingCount, setTotalPendingCount] = useState<number>(0);
+  const [widgetActiveUserId, setWidgetActiveUserId] = useState<string | null>(null);
   const userEmail = localStorage.getItem("userEmail") || "";
   
   // Get initials from name (first letter) or email (first 2 letters) as fallback
@@ -509,6 +510,31 @@ const Sidebar = () => {
 
     fetchPendingCounts();
 
+    const updateWidgetState = () => {
+      if (!user?.id) return;
+      const stored = localStorage.getItem(`chat_widget_${user.id}`);
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          if (data?.selectedUser?.user_id && data?.chatOpen) {
+            setWidgetActiveUserId(data.selectedUser.user_id);
+            return;
+          }
+        } catch (err) {
+          console.error('Error reading widget state:', err);
+        }
+      }
+      setWidgetActiveUserId(null);
+    };
+
+    updateWidgetState();
+    const storageHandler = (e: StorageEvent) => {
+      if (user?.id && e.key === `chat_widget_${user.id}`) {
+        updateWidgetState();
+      }
+    };
+    window.addEventListener('storage', storageHandler);
+
     // Real-time subscription for new messages
     const channel = supabase
       .channel(`sidebar_messages_${user.id}`)
@@ -594,6 +620,7 @@ const Sidebar = () => {
 
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('storage', storageHandler);
     };
   }, [user?.id, toast, location.pathname]);
 
@@ -697,7 +724,7 @@ const Sidebar = () => {
       <nav className="flex-1 p-3 space-y-1.5">
         {filteredNavItems.map((item) => {
           const isActive = location.pathname === item.path;
-          const showBadge = item.path === "/messaging" && totalPendingCount > 0;
+          const showBadge = item.path === "/messaging" && totalPendingCount > 0 && !widgetActiveUserId;
           
           return (
             <Link
