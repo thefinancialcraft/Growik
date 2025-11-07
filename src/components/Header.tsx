@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { LogOut } from "lucide-react";
+import { LogOut, Wifi, WifiOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface UserProfile {
@@ -17,6 +17,8 @@ const Header = () => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [showFullStatus, setShowFullStatus] = useState<boolean>(true);
   const userEmail = localStorage.getItem("userEmail") || "";
   
   // Get initials from name (first letter) or email (first 2 letters) as fallback
@@ -36,6 +38,45 @@ const Header = () => {
   };
   
   const initials = getInitials(profile);
+
+  // Check Supabase server status
+  useEffect(() => {
+    const checkServerStatus = async () => {
+      try {
+        const { error } = await supabase.from('user_profiles').select('user_id').limit(1);
+        const newStatus = error ? 'offline' : 'online';
+        
+        // Only show full status if status changed
+        if (newStatus !== serverStatus) {
+          setServerStatus(newStatus);
+          setShowFullStatus(true);
+          
+          // Hide text after 4 seconds
+          setTimeout(() => {
+            setShowFullStatus(false);
+          }, 4000);
+        }
+      } catch (err) {
+        const newStatus = 'offline';
+        if (newStatus !== serverStatus) {
+          setServerStatus(newStatus);
+          setShowFullStatus(true);
+          
+          setTimeout(() => {
+            setShowFullStatus(false);
+          }, 4000);
+        }
+      }
+    };
+
+    // Check immediately
+    checkServerStatus();
+
+    // Check every 30 seconds
+    const interval = setInterval(checkServerStatus, 30000);
+
+    return () => clearInterval(interval);
+  }, [serverStatus]);
 
   useEffect(() => {
     // Update last_seen timestamp for current user (only when tab is visible and user is active)
@@ -438,14 +479,34 @@ const Header = () => {
             </p>
           </div>
 
-          {/* Right: Logout Icon */}
-          <button
-            onClick={handleLogout}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-orange-500 hover:text-orange-600 shrink-0"
-            aria-label="Logout"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
+          {/* Right: Server Status & Logout */}
+          <div className="flex items-center gap-2 shrink-0">
+            <div
+              className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all ${
+                serverStatus === 'online'
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : serverStatus === 'offline'
+                  ? 'bg-red-100 text-red-700'
+                  : 'bg-amber-100 text-amber-700'
+              }`}
+              title={serverStatus === 'online' ? 'Server Online' : serverStatus === 'offline' ? 'Server Offline' : 'Checking...'}
+            >
+              {serverStatus === 'online' ? (
+                <Wifi className="w-3 h-3" />
+              ) : serverStatus === 'offline' ? (
+                <WifiOff className="w-3 h-3" />
+              ) : (
+                <Wifi className="w-3 h-3 animate-pulse" />
+              )}
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-orange-500 hover:text-orange-600"
+              aria-label="Logout"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </header>
     );
@@ -470,16 +531,77 @@ const Header = () => {
           </div>
         </div>
 
-        {/* Right: Logo */}
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
-            <i className="fi fi-sr-signature text-primary text-xl"></i>
+        {/* Right: Server Status & Logo */}
+        <div className="flex items-center gap-3">
+          {/* Server Status */}
+          <div
+            className={`flex items-center justify-center rounded-full text-sm font-medium transition-all duration-700 ease-in-out overflow-hidden ${
+              showFullStatus ? 'gap-2 px-3 py-1.5 w-auto' : 'gap-0 p-2 w-9 h-9'
+            } ${
+              serverStatus === 'online'
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : serverStatus === 'offline'
+                ? 'bg-red-50 text-red-700 border border-red-200'
+                : 'bg-amber-50 text-amber-700 border border-amber-200'
+            }`}
+            title={serverStatus === 'online' ? 'Server Online' : serverStatus === 'offline' ? 'Server Offline' : 'Checking...'}
+          >
+            {serverStatus === 'online' ? (
+              <>
+                <Wifi className="w-4 h-4 flex-shrink-0" />
+                <span 
+                  className={`whitespace-nowrap transition-all duration-700 ease-in-out ${
+                    showFullStatus 
+                      ? 'max-w-[100px] opacity-100' 
+                      : 'max-w-0 opacity-0'
+                  }`}
+                  style={{ overflow: 'hidden' }}
+                >
+                  Online
+                </span>
+              </>
+            ) : serverStatus === 'offline' ? (
+              <>
+                <WifiOff className="w-4 h-4 flex-shrink-0" />
+                <span 
+                  className={`whitespace-nowrap transition-all duration-700 ease-in-out ${
+                    showFullStatus 
+                      ? 'max-w-[100px] opacity-100' 
+                      : 'max-w-0 opacity-0'
+                  }`}
+                  style={{ overflow: 'hidden' }}
+                >
+                  Offline
+                </span>
+              </>
+            ) : (
+              <>
+                <Wifi className="w-4 h-4 animate-pulse flex-shrink-0" />
+                <span 
+                  className={`whitespace-nowrap transition-all duration-700 ease-in-out ${
+                    showFullStatus 
+                      ? 'max-w-[100px] opacity-100' 
+                      : 'max-w-0 opacity-0'
+                  }`}
+                  style={{ overflow: 'hidden' }}
+                >
+                  Checking...
+                </span>
+              </>
+            )}
           </div>
-          <div>
-            <h1 className="text-base font-bold bg-gradient-primary bg-clip-text text-transparent">
-              Signify
-            </h1>
-            <p className="text-xs text-muted-foreground">Growwik Media</p>
+
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
+              <i className="fi fi-sr-signature text-primary text-xl"></i>
+            </div>
+            <div>
+              <h1 className="text-base font-bold bg-gradient-primary bg-clip-text text-transparent">
+                Signify
+              </h1>
+              <p className="text-xs text-muted-foreground">Growwik Media</p>
+            </div>
           </div>
         </div>
       </div>
