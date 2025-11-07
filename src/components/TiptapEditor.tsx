@@ -172,11 +172,13 @@ interface SlashCommandMenuHandle {
   selectCurrentItem: () => void;
   reset: () => void;
   getItemsCount: () => number;
+  getSelectedItem: () => CommandItem;
 }
 
 const SlashCommandMenu = React.forwardRef<SlashCommandMenuHandle, SlashCommandMenuProps>(({ items, onSelect }, ref) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (selectedIndex >= items.length) {
@@ -186,8 +188,16 @@ const SlashCommandMenu = React.forwardRef<SlashCommandMenuHandle, SlashCommandMe
 
   useEffect(() => {
     const active = itemRefs.current[selectedIndex];
-    if (active) {
-      active.scrollIntoView({ block: 'nearest' });
+    const container = containerRef.current;
+    if (active && container) {
+      const { top: containerTop, bottom: containerBottom } = container.getBoundingClientRect();
+      const { top: itemTop, bottom: itemBottom } = active.getBoundingClientRect();
+
+      if (itemTop < containerTop) {
+        container.scrollTop -= containerTop - itemTop + 8;
+      } else if (itemBottom > containerBottom) {
+        container.scrollTop += itemBottom - containerBottom + 8;
+      }
     }
   }, [selectedIndex]);
 
@@ -208,18 +218,19 @@ const SlashCommandMenu = React.forwardRef<SlashCommandMenuHandle, SlashCommandMe
       setSelectedIndex(0);
     },
     getItemsCount: () => items.length,
+    getSelectedItem: () => items[selectedIndex],
   }), [items, selectedIndex, onSelect]);
 
   if (!items.length) {
     return (
-      <div className="slash-command-menu bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-80 overflow-y-auto">
+      <div ref={containerRef} className="slash-command-menu bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-80 overflow-y-auto">
         <div className="px-3 py-2 text-sm text-gray-500">No results</div>
       </div>
     );
   }
 
   return (
-    <div className="slash-command-menu bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-80 overflow-y-auto">
+    <div ref={containerRef} className="slash-command-menu bg-white rounded-lg shadow-lg border border-gray-200 p-2 max-h-80 overflow-y-auto">
       {items.map((item: CommandItem, index: number) => {
         const Icon = item.icon;
         const isActive = index === selectedIndex;
@@ -1001,19 +1012,30 @@ export default function TiptapEditor({ content, onChange, placeholder = 'Start t
 
             const getMenu = () => component?.ref as SlashCommandMenuHandle | undefined;
 
+            let renderProps: any = null;
+
+            const handleApply = (item: CommandItem) => {
+              if (!renderProps) return;
+              const { editor, range } = renderProps;
+              editor.chain().focus().deleteRange(range).run();
+              item.command(editor);
+              popup?.[0]?.hide();
+            };
+
             const update = (props: any) => {
               component?.updateProps({
                 items: props.items ?? [],
-                onSelect: (item: CommandItem) => props.command(item),
+                onSelect: handleApply,
               });
             };
 
             return {
               onStart: (props: any) => {
+                renderProps = props;
                 component = new ReactRenderer(SlashCommandMenu, {
                   props: {
                     items: props.items ?? [],
-                    onSelect: (item: CommandItem) => props.command(item),
+                    onSelect: handleApply,
                   },
                   editor: props.editor,
                 });
@@ -1039,6 +1061,7 @@ export default function TiptapEditor({ content, onChange, placeholder = 'Start t
               },
 
               onUpdate(props: any) {
+                renderProps = props;
                 update(props);
                 const menu = getMenu();
                 const count = menu?.getItemsCount() ?? 0;
@@ -1105,6 +1128,7 @@ export default function TiptapEditor({ content, onChange, placeholder = 'Start t
                 component?.destroy();
                 component = null;
                 popup = null;
+                renderProps = null;
               },
             };
           },
