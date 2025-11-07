@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Send, MessageCircle, X, MoreVertical, Trash2, Ban, Image, Paperclip, Mic, Play, Pause, Loader2, Minimize2, Maximize2, Smile } from "lucide-react";
+import { Send, MessageCircle, X, MoreVertical, Trash2, Ban, Image, Paperclip, Mic, Play, Pause, Loader2, Smile, ArrowLeft, Plus } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -89,6 +89,7 @@ const Messaging = () => {
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [audioProgress, setAudioProgress] = useState<Record<string, { current: number; duration: number }>>({});
   const [isAdminOrSuperAdmin, setIsAdminOrSuperAdmin] = useState<boolean>(false);
+  const [actionsOpen, setActionsOpen] = useState<boolean>(false);
   const recordingTimeRef = useRef<number>(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -99,6 +100,7 @@ const Messaging = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
   const { toast } = useToast();
   const emojiList = [
     "😀","😂","😊","😍","😘","🤩","😉","🙌","👍","🙏",
@@ -1527,6 +1529,22 @@ const Messaging = () => {
     }
   }, [selectedUser, user?.id, location.pathname]);
 
+  // Detect mobile viewport
+  useEffect(() => {
+    const handleResize = () => {
+      if (typeof window !== "undefined") {
+        setIsMobile(window.innerWidth < 768);
+      }
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1542,516 +1560,625 @@ const Messaging = () => {
     <div className="flex h-screen bg-background">
       <Sidebar />
       <div className="flex-1 flex flex-col lg:ml-56">
-        <Header />
-        <main className="flex-1 overflow-hidden pt-0 pb-20 lg:pb-0">
+        {(!isMobile || !selectedUser) && <Header />}
+        <main className="flex-1 overflow-hidden pt-0 pb-[65px] lg:pb-0">
           <div className="w-full h-full">
             <div className="bg-card h-full flex flex-col">
               <div className="flex h-full">
                 {/* Users List - Modern Design */}
-                <div className="w-full md:w-80 border-r border-border/50 flex flex-col bg-gradient-to-b from-card to-muted/10">
-                  <div className="p-4 md:p-5 border-b border-border/50 bg-card/80 backdrop-blur-sm">
-                    <h2 className="text-xl font-bold flex items-center gap-2 bg-gradient-primary bg-clip-text text-transparent">
-                      <MessageCircle className="h-5 w-5 text-primary" />
-                      Messages
-                      {totalPendingCount > 0 && (
-                        <Badge variant="destructive" className="ml-2 animate-pulse">
-                          {totalPendingCount}
-                        </Badge>
-                      )}
-                    </h2>
-                  </div>
-                  <div className="flex-1 overflow-y-auto">
-                    {users.length === 0 ? (
-                      <div className="p-8 text-center text-muted-foreground">
-                        <MessageCircle className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                        <p className="text-sm">No users found</p>
-                      </div>
-                    ) : (
-                      users.map((userProfile) => (
-                        <div
-                          key={userProfile.user_id}
-                          onClick={() => setSelectedUser(userProfile)}
-                          className={`p-3 md:p-4 border-b border-border/30 cursor-pointer transition-all duration-200 ${
-                            selectedUser?.user_id === userProfile.user_id
-                              ? "bg-primary/10 border-l-4 border-l-primary shadow-sm"
-                              : "hover:bg-muted/30 hover:shadow-sm"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="relative shrink-0">
-                              <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-base shadow-md transition-transform ${
-                                selectedUser?.user_id === userProfile.user_id
-                                  ? "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground scale-105"
-                                  : "bg-gradient-to-br from-primary/20 to-primary/10 text-primary"
-                              }`}>
-                                {userProfile.user_name
-                                  ? userProfile.user_name.charAt(0).toUpperCase()
-                                  : "U"}
-                              </div>
-                              {isUserCurrentlyOnline(userProfile) && (
-                                <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-card shadow-sm animate-pulse"></div>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <p className="font-semibold text-sm truncate">
-                                  {userProfile.user_name}
-                                </p>
-                                {isUserCurrentlyOnline(userProfile) ? (
-                                  <span className="text-xs text-green-500 font-medium flex items-center gap-1">
-                                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                                    Online
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">
-                                    {formatLastSeen(userProfile.last_seen)}
-                                  </span>
+                {(isMobile ? !selectedUser : true) && (
+                  <div className="w-full md:w-80 border-r border-border/50 flex flex-col bg-gradient-to-b from-card to-muted/10">
+                    <div className="p-4 md:p-5 border-b border-border/50 bg-card/80 backdrop-blur-sm">
+                      <h2 className="text-xl font-bold flex items-center gap-2 bg-gradient-primary bg-clip-text text-transparent">
+                        <MessageCircle className="h-5 w-5 text-primary" />
+                        Messages
+                        {totalPendingCount > 0 && (
+                          <Badge variant="destructive" className="ml-2 animate-pulse">
+                            {totalPendingCount}
+                          </Badge>
+                        )}
+                      </h2>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                      {users.length === 0 ? (
+                        <div className="p-8 text-center text-muted-foreground">
+                          <MessageCircle className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                          <p className="text-sm">No users found</p>
+                        </div>
+                      ) : (
+                        users.map((userProfile) => (
+                          <div
+                            key={userProfile.user_id}
+                            onClick={() => setSelectedUser(userProfile)}
+                            className={`p-3 md:p-4 border-b border-border/30 cursor-pointer transition-all duration-200 ${
+                              selectedUser?.user_id === userProfile.user_id
+                                ? "bg-primary/10 border-l-4 border-l-primary shadow-sm"
+                                : "hover:bg-muted/30 hover:shadow-sm"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="relative shrink-0">
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold text-base shadow-md transition-transform ${
+                                  selectedUser?.user_id === userProfile.user_id
+                                    ? "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground scale-105"
+                                    : "bg-gradient-to-br from-primary/20 to-primary/10 text-primary"
+                                }`}>
+                                  {userProfile.user_name
+                                    ? userProfile.user_name.charAt(0).toUpperCase()
+                                    : "U"}
+                                </div>
+                                {isUserCurrentlyOnline(userProfile) && (
+                                  <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-card shadow-sm animate-pulse"></div>
                                 )}
                               </div>
-                              {userProfile.employee_id && (
-                                <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                                  <span className="opacity-60">ID:</span>
-                                  {userProfile.employee_id}
-                                </p>
-                              )}
-                            </div>
-                            {(pendingCounts[userProfile.user_id] > 0) && (
-                              <Badge variant="destructive" className="shrink-0 h-5 min-w-5 px-1.5 text-xs font-bold animate-pulse">
-                                {pendingCounts[userProfile.user_id]}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Messages Area */}
-                <div className="flex-1 flex flex-col hidden md:flex">
-                  {selectedUser ? (
-                    <>
-                      <div className="p-4 md:p-5 border-b border-border/50 bg-gradient-to-r from-card to-card/50 backdrop-blur-sm">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className="relative shrink-0">
-                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-primary-foreground font-semibold text-lg shadow-md">
-                                {selectedUser.user_name
-                                  ? selectedUser.user_name.charAt(0).toUpperCase()
-                                  : "U"}
-                              </div>
-                              {isUserCurrentlyOnline(selectedUser) && (
-                                <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-card shadow-sm animate-pulse"></div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="font-bold text-base">
-                                {selectedUser.user_name}
-                              </p>
-                              {selectedUser.employee_id && (
-                                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                  <span className="opacity-60">ID:</span>
-                                  {selectedUser.employee_id}
-                                </p>
-                              )}
-                              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                                {isUserCurrentlyOnline(selectedUser) ? (
-                                  <>
-                                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                                    <span className="text-green-500 font-medium">Online</span>
-                                  </>
-                                ) : (
-                                  <>Last seen: {formatLastSeen(selectedUser.last_seen)}</>
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full hover:bg-muted">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                              <DropdownMenuItem
-                                onClick={() => setClearChatDialog(true)}
-                                className="text-destructive focus:text-destructive cursor-pointer"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Clear Chat
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => setBlockUserDialog(true)}
-                                className="text-destructive focus:text-destructive cursor-pointer"
-                              >
-                                <Ban className="h-4 w-4 mr-2" />
-                                Block User
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 bg-gradient-to-b from-background to-muted/20">
-                        {messages.map((msg, index) => {
-                          const isOwn = msg.sender_id === user?.id;
-                          const isSending = msg.status === 'sending';
-                          
-                          // Simplified status logic: check status field directly
-                          // Priority: read > delivered > sent
-                          const isRead = msg.status === 'read';
-                          const isDelivered = msg.status === 'delivered';
-                          const isSent = msg.status === 'sent' && !isDelivered && !isRead;
-                          
-                          return (
-                            <div
-                              key={`${msg.id}-${index}`}
-                              className={`flex flex-col ${isOwn ? "items-end" : "items-start"} group mb-1`}
-                            >
-                              <div
-                                className={`max-w-[80%] md:max-w-[60%] rounded-xl p-3 md:p-4 shadow-sm transition-all duration-200 ${
-                                  isOwn
-                                    ? "bg-gradient-to-br from-primary/10 via-primary/20 to-primary/10 text-primary"
-                                    : "bg-muted text-foreground"
-                                } ${isSending ? "opacity-70" : ""}`}
-                              >
-                                {msg.media_url && msg.message_type === 'media' ? (
-                                  msg.media_type === 'image' ? (
-                                    <img
-                                      src={msg.media_url}
-                                      alt="Shared image"
-                                      className="rounded-md max-w-[220px] cursor-pointer"
-                                      onClick={() => window.open(msg.media_url!, '_blank')}
-                                    />
-                                  ) : (
-                                    <a
-                                      href={msg.media_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center gap-2 p-3 rounded-lg bg-muted/40 hover:bg-muted transition-colors text-sm"
-                                    >
-                                      <Paperclip className="h-4 w-4" />
-                                      <span className="truncate max-w-[160px]">{msg.message || 'File'}</span>
-                                    </a>
-                                  )
-                                ) : msg.media_url && msg.message_type === 'voice' ? (
-                                  <div className="mb-2 flex items-center gap-3 p-3 rounded-lg bg-muted/20">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-10 w-10 rounded-full shrink-0"
-                                      onClick={() => handleVoicePlayPause(msg.id, msg.media_url!)}
-                                    >
-                                      {playingAudioId === msg.id ? (
-                                        <Pause className="h-5 w-5" />
-                                      ) : (
-                                        <Play className="h-5 w-5" />
-                                      )}
-                                    </Button>
-                                    <div className="flex-1 min-w-0">
-                                      <div 
-                                        className="h-2 bg-muted rounded-full overflow-hidden cursor-pointer"
-                                        onClick={(e) => {
-                                          const audio = audioRefs.current[msg.id];
-                                          if (audio && audioProgress[msg.id]) {
-                                            const rect = e.currentTarget.getBoundingClientRect();
-                                            const clickX = e.clientX - rect.left;
-                                            const percentage = clickX / rect.width;
-                                            const newTime = percentage * audioProgress[msg.id].duration;
-                                            audio.currentTime = newTime;
-                                            setAudioProgress((prev) => ({
-                                              ...prev,
-                                              [msg.id]: {
-                                                current: newTime,
-                                                duration: prev[msg.id]?.duration || 0,
-                                              },
-                                            }));
-                                          }
-                                        }}
-                                      >
-                                        <div 
-                                          className="h-full bg-primary/50 transition-all duration-100"
-                                          style={{ 
-                                            width: audioProgress[msg.id]?.duration 
-                                              ? `${(audioProgress[msg.id].current / audioProgress[msg.id].duration) * 100}%` 
-                                              : '0%' 
-                                          }}
-                                        ></div>
-                                      </div>
-                                      <div className="flex items-center justify-between mt-1.5">
-                                        <p className="text-xs text-muted-foreground">Voice message</p>
-                                        <div className="flex items-center gap-1 text-xs text-muted-foreground font-mono">
-                                          <span key={`current-${msg.id}-${audioProgress[msg.id]?.current || 0}`}>
-                                            {formatAudioTime(audioProgress[msg.id]?.current || 0)}
-                                          </span>
-                                          <span>/</span>
-                                          <span key={`duration-${msg.id}-${audioProgress[msg.id]?.duration || 0}`}>
-                                            {audioProgress[msg.id]?.duration && audioProgress[msg.id].duration > 0
-                                              ? formatAudioTime(audioProgress[msg.id].duration)
-                                              : '0:00'}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : msg.message ? (
-                                  <p className="text-sm break-words">
-                                    {msg.message}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-semibold text-sm truncate">
+                                    {userProfile.user_name}
                                   </p>
-                                ) : null}
-                              </div>
-                              {/* Time and Status Dots - Below Bubble */}
-                              {isOwn && (
-                                <div className={`flex items-center gap-1.5 mt-1 px-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                                  <p className="text-[10px] text-gray-400">
-                                    {new Date(msg.created_at).toLocaleTimeString([], {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })}
-                                  </p>
-                                  {isSending ? (
-                                    <Loader2 className="w-2.5 h-2.5 animate-spin text-gray-400" />
+                                  {isUserCurrentlyOnline(userProfile) ? (
+                                    <span className="text-xs text-green-500 font-medium flex items-center gap-1">
+                                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                                      Online
+                                    </span>
                                   ) : (
-                                    <>
-                                      {/* Priority: read > delivered > sent */}
-                                      {isRead ? (
-                                        <>
-                                          <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                                          <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                                        </>
-                                      ) : isDelivered ? (
-                                        <>
-                                          {/* 2 grey dots = delivered (user received it) */}
-                                          <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
-                                          <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
-                                        </>
-                                      ) : isSent ? (
-                                        <>
-                                          {/* 1 grey dot = sent (message sent from sender) */}
-                                          <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
-                                        </>
-                                      ) : null}
-                                    </>
+                                    <span className="text-xs text-muted-foreground">
+                                      {formatLastSeen(userProfile.last_seen)}
+                                    </span>
                                   )}
                                 </div>
-                              )}
-                              {/* Time for received messages */}
-                              {!isOwn && (
-                                <div className="flex items-center gap-1.5 mt-1 px-1">
-                                  <p className="text-[10px] text-gray-400">
-                                    {new Date(msg.created_at).toLocaleTimeString([], {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })}
+                                {userProfile.employee_id && (
+                                  <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                                    <span className="opacity-60">ID:</span>
+                                    {userProfile.employee_id}
                                   </p>
-                                </div>
+                                )}
+                              </div>
+                              {(pendingCounts[userProfile.user_id] > 0) && (
+                                <Badge variant="destructive" className="shrink-0 h-5 min-w-5 px-1.5 text-xs font-bold animate-pulse">
+                                  {pendingCounts[userProfile.user_id]}
+                                </Badge>
                               )}
                             </div>
-                          );
-                        })}
-                        <div ref={messagesEndRef} />
-                      </div>
-                      {/* Media Preview */}
-                      {mediaPreview && (
-                        <div className="px-4 pt-4 border-t border-border/50">
-                          <div className="relative inline-block">
-                            {mediaPreview.type === 'image' ? (
-                              <img
-                                src={mediaPreview.url}
-                                alt="Preview"
-                                className="max-w-xs max-h-48 rounded-lg object-cover"
-                              />
-                            ) : (
-                              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                                <Paperclip className="h-5 w-5" />
-                                <span className="text-sm">{mediaPreview.name}</span>
-                              </div>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              onClick={() => {
-                                setMediaPreview(null);
-                                setSelectedFile(null);
-                                if (fileInputRef.current) fileInputRef.current.value = '';
-                                if (imageInputRef.current) imageInputRef.current.value = '';
-                              }}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
                           </div>
-                        </div>
+                        ))
                       )}
+                    </div>
+                  </div>
+                )}
 
-                      {/* Voice Recording UI */}
-                      {isRecording && (
-                        <div className="px-4 pt-4 border-t border-border/50">
-                          <div className="flex items-center gap-3 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
-                            <div className="flex items-center gap-2 flex-1">
-                              <div className="w-3 h-3 bg-destructive rounded-full animate-pulse"></div>
-                              <span className="text-sm font-medium">Recording...</span>
-                              <span className="text-sm text-muted-foreground font-mono min-w-[3rem]">
-                                {formatRecordingTime(recordingTime)}
-                              </span>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={async () => {
-                                  await stopRecording();
-                                  audioChunksRef.current = [];
-                                  setRecordingTime(0);
-                                  recordingTimeRef.current = 0;
-                                }}
-                              >
-                                Cancel
-                              </Button>
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={sendVoiceMessage}
-                                disabled={isUploading}
-                                className="bg-destructive hover:bg-destructive/90"
-                              >
-                                {isUploading ? (
-                                  <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Sending...
-                                  </>
-                                ) : (
-                                  "Send"
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="p-4 border-t border-border/50 bg-card/50 backdrop-blur-sm">
-                        <div className="flex items-end gap-2">
-                          {/* Hidden file inputs */}
-                          <input
-                            ref={imageInputRef}
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={handleImageSelect}
-                          />
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            className="hidden"
-                            onChange={handleFileSelect}
-                          />
-
-                          {/* Action Buttons */}
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9 rounded-full hover:bg-primary/10"
-                              onClick={() => imageInputRef.current?.click()}
-                              disabled={isRecording || isUploading}
-                            >
-                              <Image className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9 rounded-full hover:bg-primary/10"
-                              onClick={() => fileInputRef.current?.click()}
-                              disabled={isRecording || isUploading}
-                            >
-                              <Paperclip className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={`h-9 w-9 rounded-full ${
-                                isRecording
-                                  ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
-                                  : "hover:bg-primary/10"
-                              }`}
-                              onClick={isRecording ? stopRecording : startRecording}
-                              disabled={isUploading}
-                            >
-                              <Mic className="h-4 w-4" />
-                            </Button>
-                            <Popover>
-                              <PopoverTrigger asChild>
+                {/* Messages Area */}
+                {(isMobile ? !!selectedUser : true) && (
+                  <div className="flex-1 flex flex-col">
+                    {selectedUser ? (
+                      <>
+                        <div className="p-4 md:p-5 border-b border-border/50 bg-gradient-to-r from-card to-card/50 backdrop-blur-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 flex-1">
+                              {isMobile && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-9 w-9 rounded-full hover:bg-primary/10"
+                                  className="h-9 w-9 rounded-full hover:bg-muted"
+                                  onClick={() => setSelectedUser(null)}
                                 >
-                                  <Smile className="h-4 w-4" />
+                                  <ArrowLeft className="h-4 w-4" />
                                 </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-64 grid grid-cols-6 gap-2 p-3">
-                                {emojiList.map((emoji) => (
-                                  <button
-                                    key={emoji}
-                                    type="button"
-                                    className="text-xl hover:scale-110 transition-transform"
-                                    onClick={() => setNewMessage((prev) => prev + emoji)}
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                              </PopoverContent>
-                            </Popover>
+                              )}
+                              <div className="relative shrink-0">
+                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-primary-foreground font-semibold text-lg shadow-md">
+                                  {selectedUser.user_name
+                                    ? selectedUser.user_name.charAt(0).toUpperCase()
+                                    : "U"}
+                                </div>
+                                {isUserCurrentlyOnline(selectedUser) && (
+                                  <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-card shadow-sm animate-pulse"></div>
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-bold text-base">
+                                  {selectedUser.user_name}
+                                </p>
+                                {selectedUser.employee_id && (
+                                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <span className="opacity-60">ID:</span>
+                                    {selectedUser.employee_id}
+                                  </p>
+                                )}
+                                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                                  {isUserCurrentlyOnline(selectedUser) ? (
+                                    <>
+                                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                                      <span className="text-green-500 font-medium">Online</span>
+                                    </>
+                                  ) : (
+                                    <>Last seen: {formatLastSeen(selectedUser.last_seen)}</>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full hover:bg-muted">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuItem
+                                  onClick={() => setClearChatDialog(true)}
+                                  className="text-destructive focus:text-destructive cursor-pointer"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Clear Chat
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => setBlockUserDialog(true)}
+                                  className="text-destructive focus:text-destructive cursor-pointer"
+                                >
+                                  <Ban className="h-4 w-4 mr-2" />
+                                  Block User
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 bg-gradient-to-b from-background to-muted/20">
+                          {messages.map((msg, index) => {
+                            const isOwn = msg.sender_id === user?.id;
+                            const isSending = msg.status === 'sending';
+                            
+                            // Simplified status logic: check status field directly
+                            // Priority: read > delivered > sent
+                            const isRead = msg.status === 'read';
+                            const isDelivered = msg.status === 'delivered';
+                            const isSent = msg.status === 'sent' && !isDelivered && !isRead;
+                            
+                            return (
+                              <div
+                                key={`${msg.id}-${index}`}
+                                className={`flex flex-col ${isOwn ? "items-end" : "items-start"} group mb-1`}
+                              >
+                                <div
+                                  className={`max-w-[80%] md:max-w-[60%] rounded-xl p-3 md:p-4 shadow-sm transition-all duration-200 ${
+                                    isOwn
+                                      ? "bg-gradient-to-br from-primary/10 via-primary/20 to-primary/10 text-primary"
+                                      : "bg-muted text-foreground"
+                                  } ${isSending ? "opacity-70" : ""}`}
+                                >
+                                  {msg.media_url && msg.message_type === 'media' ? (
+                                    msg.media_type === 'image' ? (
+                                      <img
+                                        src={msg.media_url}
+                                        alt="Shared image"
+                                        className="rounded-md max-w-[220px] cursor-pointer"
+                                        onClick={() => window.open(msg.media_url!, '_blank')}
+                                      />
+                                    ) : (
+                                      <a
+                                        href={msg.media_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 p-3 rounded-lg bg-muted/40 hover:bg-muted transition-colors text-sm"
+                                      >
+                                        <Paperclip className="h-4 w-4" />
+                                        <span className="truncate max-w-[160px]">{msg.message || 'File'}</span>
+                                      </a>
+                                    )
+                                  ) : msg.media_url && msg.message_type === 'voice' ? (
+                                    <div className="mb-2 flex items-center gap-3 p-3 rounded-lg bg-muted/20">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-10 w-10 rounded-full shrink-0"
+                                        onClick={() => handleVoicePlayPause(msg.id, msg.media_url!)}
+                                      >
+                                        {playingAudioId === msg.id ? (
+                                          <Pause className="h-5 w-5" />
+                                        ) : (
+                                          <Play className="h-5 w-5" />
+                                        )}
+                                      </Button>
+                                      <div className="flex-1 min-w-0">
+                                        <div 
+                                          className="h-2 bg-muted rounded-full overflow-hidden cursor-pointer"
+                                          onClick={(e) => {
+                                            const audio = audioRefs.current[msg.id];
+                                            if (audio && audioProgress[msg.id]) {
+                                              const rect = e.currentTarget.getBoundingClientRect();
+                                              const clickX = e.clientX - rect.left;
+                                              const percentage = clickX / rect.width;
+                                              const newTime = percentage * audioProgress[msg.id].duration;
+                                              audio.currentTime = newTime;
+                                              setAudioProgress((prev) => ({
+                                                ...prev,
+                                                [msg.id]: {
+                                                  current: newTime,
+                                                  duration: prev[msg.id]?.duration || 0,
+                                                },
+                                              }));
+                                            }
+                                          }}
+                                        >
+                                          <div 
+                                            className="h-full bg-primary/50 transition-all duration-100"
+                                            style={{ 
+                                              width: audioProgress[msg.id]?.duration 
+                                                ? `${(audioProgress[msg.id].current / audioProgress[msg.id].duration) * 100}%` 
+                                                : '0%' 
+                                            }}
+                                          ></div>
+                                        </div>
+                                        <div className="flex items-center justify-between mt-1.5">
+                                          <p className="text-xs text-muted-foreground">Voice message</p>
+                                          <div className="flex items-center gap-1 text-xs text-muted-foreground font-mono">
+                                            <span key={`current-${msg.id}-${audioProgress[msg.id]?.current || 0}`}>
+                                              {formatAudioTime(audioProgress[msg.id]?.current || 0)}
+                                            </span>
+                                            <span>/</span>
+                                            <span key={`duration-${msg.id}-${audioProgress[msg.id]?.duration || 0}`}>
+                                              {audioProgress[msg.id]?.duration && audioProgress[msg.id].duration > 0
+                                                ? formatAudioTime(audioProgress[msg.id].duration)
+                                                : '0:00'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : msg.message ? (
+                                    <p className="text-sm break-words">
+                                      {msg.message}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                {/* Time and Status Dots - Below Bubble */}
+                                {isOwn && (
+                                  <div className={`flex items-center gap-1.5 mt-1 px-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                                    <p className="text-[10px] text-gray-400">
+                                      {new Date(msg.created_at).toLocaleTimeString([], {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </p>
+                                    {isSending ? (
+                                      <Loader2 className="w-2.5 h-2.5 animate-spin text-gray-400" />
+                                    ) : (
+                                      <>
+                                        {/* Priority: read > delivered > sent */}
+                                        {isRead ? (
+                                          <>
+                                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                                          </>
+                                        ) : isDelivered ? (
+                                          <>
+                                            {/* 2 grey dots = delivered (user received it) */}
+                                            <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
+                                            <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
+                                          </>
+                                        ) : isSent ? (
+                                          <>
+                                            {/* 1 grey dot = sent (message sent from sender) */}
+                                            <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
+                                          </>
+                                        ) : null}
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                                {/* Time for received messages */}
+                                {!isOwn && (
+                                  <div className="flex items-center gap-1.5 mt-1 px-1">
+                                    <p className="text-[10px] text-gray-400">
+                                      {new Date(msg.created_at).toLocaleTimeString([], {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          <div ref={messagesEndRef} />
+                        </div>
+                        {/* Media Preview */}
+                        {mediaPreview && (
+                          <div className="px-4 pt-4 border-t border-border/50">
+                            <div className="relative inline-block">
+                              {mediaPreview.type === 'image' ? (
+                                <img
+                                  src={mediaPreview.url}
+                                  alt="Preview"
+                                  className="max-w-xs max-h-48 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                                  <Paperclip className="h-5 w-5" />
+                                  <span className="text-sm">{mediaPreview.name}</span>
+                                </div>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={() => {
+                                  setMediaPreview(null);
+                                  setSelectedFile(null);
+                                  if (fileInputRef.current) fileInputRef.current.value = '';
+                                  if (imageInputRef.current) imageInputRef.current.value = '';
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
 
-                          {/* Message Input */}
-                          <div className="flex-1 relative">
-                            <Input
-                              value={newMessage}
-                              onChange={(e) => setNewMessage(e.target.value)}
-                              onKeyPress={(e) => {
-                                if (e.key === "Enter" && !e.shiftKey && !isRecording) {
-                                  e.preventDefault();
-                                  if (selectedFile) {
-                                    sendMediaMessage();
-                                  } else {
-                                    handleSendMessage();
+                        {/* Voice Recording UI */}
+                        {isRecording && (
+                          <div className="px-4 pt-4 border-t border-border/50">
+                            <div className="flex items-center gap-3 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
+                              <div className="flex items-center gap-2 flex-1">
+                                <div className="w-3 h-3 bg-destructive rounded-full animate-pulse"></div>
+                                <span className="text-sm font-medium">Recording...</span>
+                                <span className="text-sm text-muted-foreground font-mono min-w-[3rem]">
+                                  {formatRecordingTime(recordingTime)}
+                                </span>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={async () => {
+                                    await stopRecording();
+                                    audioChunksRef.current = [];
+                                    setRecordingTime(0);
+                                    recordingTimeRef.current = 0;
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={sendVoiceMessage}
+                                  disabled={isUploading}
+                                  className="bg-destructive hover:bg-destructive/90"
+                                >
+                                  {isUploading ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                      Sending...
+                                    </>
+                                  ) : (
+                                    "Send"
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="p-3 md:p-4 border-t border-border/50 bg-card/50 backdrop-blur-sm mb-0">
+                          <div className="flex items-end gap-1.5 md:gap-2">
+                            {/* Hidden file inputs */}
+                            <input
+                              ref={imageInputRef}
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleImageSelect}
+                            />
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              className="hidden"
+                              onChange={handleFileSelect}
+                            />
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-1">
+                              {isMobile ? (
+                                <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 rounded-full hover:bg-primary/10"
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-48 p-2">
+                                    <div className="flex flex-wrap gap-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-9 w-9 rounded-full hover:bg-primary/10"
+                                        onClick={() => {
+                                          imageInputRef.current?.click();
+                                          setActionsOpen(false);
+                                        }}
+                                        disabled={isRecording || isUploading}
+                                      >
+                                        <Image className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-9 w-9 rounded-full hover:bg-primary/10"
+                                        onClick={() => {
+                                          fileInputRef.current?.click();
+                                          setActionsOpen(false);
+                                        }}
+                                        disabled={isRecording || isUploading}
+                                      >
+                                        <Paperclip className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className={`h-9 w-9 rounded-full ${
+                                          isRecording
+                                            ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                                            : "hover:bg-primary/10"
+                                        }`}
+                                        onClick={async () => {
+                                          if (isRecording) {
+                                            await stopRecording();
+                                          } else {
+                                            await startRecording();
+                                          }
+                                          setActionsOpen(false);
+                                        }}
+                                        disabled={isUploading}
+                                      >
+                                        <Mic className="h-4 w-4" />
+                                      </Button>
+                                      <Popover>
+                                        <PopoverTrigger asChild>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-9 w-9 rounded-full hover:bg-primary/10"
+                                          >
+                                            <Smile className="h-4 w-4" />
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-56 grid grid-cols-6 gap-2 p-2">
+                                          {emojiList.map((emoji) => (
+                                            <button
+                                              key={emoji}
+                                              type="button"
+                                              className="text-xl hover:scale-110 transition-transform"
+                                              onClick={() => {
+                                                setNewMessage((prev) => prev + emoji);
+                                                setActionsOpen(false);
+                                              }}
+                                            >
+                                              {emoji}
+                                            </button>
+                                          ))}
+                                        </PopoverContent>
+                                      </Popover>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              ) : (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 rounded-full hover:bg-primary/10"
+                                    onClick={() => imageInputRef.current?.click()}
+                                    disabled={isRecording || isUploading}
+                                  >
+                                    <Image className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 rounded-full hover:bg-primary/10"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={isRecording || isUploading}
+                                  >
+                                    <Paperclip className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={`h-8 w-8 rounded-full ${
+                                      isRecording
+                                        ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                                        : "hover:bg-primary/10"
+                                    }`}
+                                    onClick={isRecording ? stopRecording : startRecording}
+                                    disabled={isUploading}
+                                  >
+                                    <Mic className="h-4 w-4" />
+                                  </Button>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-9 w-9 rounded-full hover:bg-primary/10"
+                                      >
+                                        <Smile className="h-4 w-4" />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-56 grid grid-cols-6 gap-2 p-2">
+                                      {emojiList.map((emoji) => (
+                                        <button
+                                          key={emoji}
+                                          type="button"
+                                          className="text-xl hover:scale-110 transition-transform"
+                                          onClick={() => {
+                                            setNewMessage((prev) => prev + emoji);
+                                            if (isMobile) {
+                                              setActionsOpen(false);
+                                            }
+                                          }}
+                                        >
+                                          {emoji}
+                                        </button>
+                                      ))}
+                                    </PopoverContent>
+                                  </Popover>
+                                </>
+                              )}
+                            </div>
+
+                            {/* Message Input */}
+                            <div className="flex-1 relative">
+                              <Input
+                                value={newMessage}
+                                onChange={(e) => setNewMessage(e.target.value)}
+                                onKeyPress={(e) => {
+                                  if (e.key === "Enter" && !e.shiftKey && !isRecording) {
+                                    e.preventDefault();
+                                    if (selectedFile) {
+                                      sendMediaMessage();
+                                    } else {
+                                      handleSendMessage();
+                                    }
                                   }
+                                }}
+                                placeholder={isRecording ? "Recording voice message..." : "Type a message..."}
+                                className="border-0 focus:border-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 h-9 md:h-10"
+                                disabled={isRecording || isUploading}
+                              />
+                            </div>
+
+                            {/* Send Button */}
+                            <Button
+                              onClick={() => {
+                                if (selectedFile) {
+                                  sendMediaMessage();
+                                } else {
+                                  handleSendMessage();
                                 }
                               }}
-                              placeholder={isRecording ? "Recording voice message..." : "Type a message..."}
-                              className="border-0 focus:border-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-                              disabled={isRecording || isUploading}
-                            />
+                              disabled={(!newMessage.trim() && !selectedFile) || isRecording || isUploading}
+                              className="h-8 w-8 rounded-full bg-primary hover:bg-primary/90 shadow-md hover:shadow-lg transition-all"
+                              size="icon"
+                            >
+                              {isUploading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Send className="h-4 w-4" />
+                              )}
+                            </Button>
                           </div>
-
-                          {/* Send Button */}
-                          <Button
-                            onClick={() => {
-                              if (selectedFile) {
-                                sendMediaMessage();
-                              } else {
-                                handleSendMessage();
-                              }
-                            }}
-                            disabled={(!newMessage.trim() && !selectedFile) || isRecording || isUploading}
-                            className="h-9 w-9 rounded-full bg-primary hover:bg-primary/90 shadow-md hover:shadow-lg transition-all"
-                            size="icon"
-                          >
-                            {isUploading ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Send className="h-4 w-4" />
-                            )}
-                          </Button>
                         </div>
+                      </>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center text-muted-foreground">
+                        Select a user to start messaging
                       </div>
-                    </>
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                      Select a user to start messaging
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
