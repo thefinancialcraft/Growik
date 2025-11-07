@@ -38,9 +38,12 @@ const ChatWidget = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<{ url: string; type: 'image' | 'file'; name?: string } | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isMinimizedRef = useRef<boolean>(isMinimized);
+  const isMobileRef = useRef<boolean>(false);
   const emojiList = [
     "😀","😂","😊","😍","😘","🤩","😉","🙌","👍","🙏",
     "🔥","💯","🎉","🥳","😎","🤔","😢","😭","😡","🤯",
@@ -49,6 +52,11 @@ const ChatWidget = () => {
 
   // Load widget state from localStorage (check immediately when not on messaging page)
   useEffect(() => {
+    if (isMobile) {
+      setSelectedUser(null);
+      return;
+    }
+
     if (!user?.id || location.pathname === '/messaging') {
       setSelectedUser(null);
       return;
@@ -67,7 +75,7 @@ const ChatWidget = () => {
         console.error('Error loading chat widget:', e);
       }
     }
-  }, [user?.id, location.pathname]);
+  }, [user?.id, location.pathname, isMobile]);
 
   // Clear widget if localStorage is cleared
   useEffect(() => {
@@ -124,19 +132,24 @@ const ChatWidget = () => {
             (newMsg.sender_id === selectedUser.user_id && newMsg.receiver_id === user.id) ||
             (newMsg.sender_id === user.id && newMsg.receiver_id === selectedUser.user_id)
           ) {
-            if (isMinimized) {
+            if (isMinimizedRef.current && !isMobileRef.current) {
+              isMinimizedRef.current = false;
               setIsMinimized(false);
               if (user?.id) {
                 const stored = localStorage.getItem(`chat_widget_${user.id}`);
-                if (stored) {
+                const data = stored ? (() => {
                   try {
-                    const data = JSON.parse(stored);
-                    data.isMinimized = false;
-                    localStorage.setItem(`chat_widget_${user.id}`, JSON.stringify(data));
+                    return JSON.parse(stored);
                   } catch (err) {
-                    console.error('Error updating widget state:', err);
+                    console.error('Error parsing widget state:', err);
+                    return {};
                   }
-                }
+                })() : {};
+                localStorage.setItem(`chat_widget_${user.id}`, JSON.stringify({
+                  ...data,
+                  selectedUser: data.selectedUser ?? selectedUser,
+                  isMinimized: false,
+                }));
               }
             }
 
@@ -153,7 +166,26 @@ const ChatWidget = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, selectedUser]);
+  }, [user?.id, selectedUser, isMobile]);
+
+  useEffect(() => {
+    isMinimizedRef.current = isMinimized;
+  }, [isMinimized]);
+
+  useEffect(() => {
+    const updateIsMobile = () => {
+      const mobile = typeof window !== "undefined" && window.innerWidth < 768;
+      setIsMobile(mobile);
+      isMobileRef.current = mobile;
+    };
+
+    updateIsMobile();
+    window.addEventListener("resize", updateIsMobile);
+
+    return () => {
+      window.removeEventListener("resize", updateIsMobile);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isMinimized) {
@@ -163,7 +195,7 @@ const ChatWidget = () => {
 
   // Listen for localStorage changes (when Messaging component updates widget state)
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || isMobile) return;
 
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === `chat_widget_${user.id}` && e.newValue) {
@@ -210,7 +242,7 @@ const ChatWidget = () => {
       window.removeEventListener('storage', handleStorageChange);
       clearInterval(interval);
     };
-  }, [user?.id, selectedUser, location.pathname]);
+  }, [user?.id, selectedUser, location.pathname, isMobile]);
 
   useEffect(() => {
     return () => {
@@ -377,7 +409,7 @@ const ChatWidget = () => {
   };
 
   // Don't show widget if on messaging page or no selectedUser
-  if (location.pathname === '/messaging') {
+  if (isMobile || location.pathname === '/messaging') {
     return null;
   }
 
@@ -435,6 +467,7 @@ const ChatWidget = () => {
               onClick={(e) => {
                 e.stopPropagation();
                 const newMinimized = !isMinimized;
+                isMinimizedRef.current = newMinimized;
                 setIsMinimized(newMinimized);
                 if (user?.id) {
                   localStorage.setItem(`chat_widget_${user.id}`, JSON.stringify({
