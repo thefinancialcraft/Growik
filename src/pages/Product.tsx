@@ -11,10 +11,11 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { Package, ShoppingCart, TrendingUp, Filter, Plus, LayoutGrid, List, Loader2, Pencil, Trash2, Power, Building2 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Package, ShoppingCart, TrendingUp, Filter, Plus, LayoutGrid, List, Loader2, Pencil, Trash2, Power, Building2, Upload, Download } from "lucide-react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useNavigate } from "react-router-dom";
 
 type ProductRecord = {
   id: string;
@@ -48,6 +49,7 @@ type ProductFormState = {
 
 const Product = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
@@ -91,25 +93,44 @@ const Product = () => {
   const [newCompanyDescription, setNewCompanyDescription] = useState<string>("");
   const [newManagerName, setNewManagerName] = useState<string>("");
   const [newManagerContact, setNewManagerContact] = useState<string>("");
+  const [newCompanyCategories, setNewCompanyCategories] = useState<string>("");
   const [isCreatingCompany, setIsCreatingCompany] = useState<boolean>(false);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState<boolean>(false);
+  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchData = async () => {
       try {
-        const { data, error } = await supabase
+        // Fetch products
+        const { data: productsData, error: productsError } = await supabase
           .from('products')
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (error) {
-          throw error;
+        if (productsError) {
+          throw productsError;
         }
 
-        setProducts(data ?? []);
+        setProducts(productsData ?? []);
+
+        // Fetch companies
+        const { data: companiesData, error: companiesError } = await supabase
+          .from('companies')
+          .select('*')
+          .order('name', { ascending: true });
+
+        if (companiesError) {
+          console.error('Error fetching companies:', companiesError);
+        } else {
+          setCompanies(companiesData ?? []);
+        }
       } catch (err: any) {
-        console.error('Error fetching products:', err);
+        console.error('Error fetching data:', err);
         toast({
-          title: 'Unable to load products',
+          title: 'Unable to load data',
           description: err?.message || 'Please try again later.',
           variant: 'destructive',
         });
@@ -118,7 +139,7 @@ const Product = () => {
       }
     };
 
-    fetchProducts();
+    fetchData();
   }, [toast]);
 
   const categoryCount = useMemo(() => {
@@ -248,11 +269,17 @@ const Product = () => {
     setIsCreatingCompany(true);
     
     try {
+      const categoriesArray = newCompanyCategories
+        .split(',')
+        .map(cat => cat.trim())
+        .filter(cat => cat.length > 0);
+
       const companyPayload = {
         name: newCompanyName.trim(),
         description: newCompanyDescription.trim() || null,
         manager_name: newManagerName.trim() || null,
         manager_contact: newManagerContact.trim() || null,
+        categories: categoriesArray.length > 0 ? categoriesArray : null,
       };
 
       const { data, error } = await supabase
@@ -268,6 +295,9 @@ const Product = () => {
       if (data) {
         const companyData = data as any;
         const companyName = companyData.name;
+        
+        // Add the new company to the companies list
+        setCompanies((prev) => [companyData, ...prev]);
         
         // Add the company details to both add and edit form data
         setFormData((prev) => ({ 
@@ -290,6 +320,7 @@ const Product = () => {
         setNewCompanyDescription("");
         setNewManagerName("");
         setNewManagerContact("");
+        setNewCompanyCategories("");
         setIsAddCompanyDialogOpen(false);
         
         toast({
@@ -531,6 +562,243 @@ const Product = () => {
     }
   };
 
+  const handleImportClick = () => {
+    setIsImportDialogOpen(true);
+  };
+
+  const handleImportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    setSelectedImportFile(file);
+    event.target.value = '';
+  };
+
+  const handleDownloadSample = () => {
+    const sampleData = [
+      {
+        product_id: 'PR0000',
+        name: 'Sample Product 1',
+        company: 'Tech Corp',
+        description: 'High-quality tech product',
+        price: '99.99',
+        currency: 'USD',
+        category: 'Electronics',
+        status: 'active',
+      },
+      {
+        product_id: 'PR0001',
+        name: 'Sample Product 2',
+        company: 'Health Plus',
+        description: 'Premium health product',
+        price: '149.99',
+        currency: 'USD',
+        category: 'Healthcare',
+        status: 'active',
+      },
+      {
+        product_id: 'PR0002',
+        name: 'Sample Product 3',
+        company: 'Finance Pro',
+        description: 'Professional finance tool',
+        price: '4999.00',
+        currency: 'INR',
+        category: 'Software',
+        status: 'inactive',
+      },
+    ];
+
+    const toCSVValue = (value: string | number | null | undefined): string => {
+      const str = String(value ?? '');
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const headerLabels = ['Product ID', 'Name', 'Company', 'Description', 'Price', 'Currency', 'Category', 'Status'];
+    const csvRows = [
+      headerLabels.join(','),
+      ...sampleData.map((row) =>
+        [
+          toCSVValue(row.product_id),
+          toCSVValue(row.name),
+          toCSVValue(row.company),
+          toCSVValue(row.description),
+          toCSVValue(row.price),
+          toCSVValue(row.currency),
+          toCSVValue(row.category),
+          toCSVValue(row.status),
+        ].join(',')
+      ),
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'products-sample.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Sample downloaded',
+      description: 'Use this template to import products.',
+    });
+  };
+
+  const handleImportUpload = async () => {
+    if (!selectedImportFile) {
+      toast({
+        title: 'No file selected',
+        description: 'Please select a CSV file to import.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsImporting(true);
+
+    try {
+      const text = await selectedImportFile.text();
+      const lines = text.split('\n').filter((line) => line.trim());
+
+      if (lines.length < 2) {
+        throw new Error('CSV file is empty or invalid.');
+      }
+
+      const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+      const dataLines = lines.slice(1);
+
+      const parseCSVLine = (line: string): string[] => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          const nextChar = line[i + 1];
+
+          if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+              current += '"';
+              i++;
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ',' && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        result.push(current.trim());
+        return result;
+      };
+
+      const productsToInsert = dataLines.map((line) => {
+        const values = parseCSVLine(line);
+        const row: any = {};
+        headers.forEach((header, index) => {
+          row[header.toLowerCase().replace(/ /g, '_')] = values[index] || null;
+        });
+
+        return {
+          product_id: row.product_id || null,
+          name: row.name || 'Unnamed Product',
+          company: row.company || null,
+          description: row.description || null,
+          price: row.price ? parseFloat(row.price) : null,
+          currency: row.currency === 'INR' ? 'INR' : 'USD',
+          category: row.category || null,
+          status: row.status === 'inactive' ? 'inactive' : 'active',
+        };
+      });
+
+      const { data, error } = await supabase
+        .from('products')
+        .insert(productsToInsert as any)
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        setProducts((prev) => [...(data as ProductRecord[]), ...prev]);
+        toast({
+          title: 'Import successful',
+          description: `${data.length} products imported successfully.`,
+        });
+        setIsImportDialogOpen(false);
+        setSelectedImportFile(null);
+      }
+    } catch (err: any) {
+      console.error('Error importing products:', err);
+      toast({
+        title: 'Import failed',
+        description: err?.message || 'Please check your CSV format.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleExportClick = () => {
+    if (!products.length) {
+      toast({
+        title: 'Nothing to export',
+        description: 'Add products before exporting.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const toCSVValue = (value: string | number | null | undefined): string => {
+      const str = String(value ?? '');
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const headerLabels = ['Product ID', 'Name', 'Company', 'Description', 'Price', 'Currency', 'Category', 'Status'];
+    const csvRows = [
+      headerLabels.join(','),
+      ...products.map((product) =>
+        [
+          toCSVValue(product.product_id),
+          toCSVValue(product.name),
+          toCSVValue(product.company),
+          toCSVValue(product.description),
+          toCSVValue(product.price),
+          toCSVValue(product.currency),
+          toCSVValue(product.category),
+          toCSVValue(product.status),
+        ].join(',')
+      ),
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const timestamp = new Date().toISOString().split('T')[0];
+    link.download = `products-${timestamp}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Export successful',
+      description: `${products.length} products exported.`,
+    });
+  };
+
   const noResults = !isLoading && filteredProducts.length === 0;
 
   return (
@@ -549,7 +817,15 @@ const Product = () => {
               {summaryTiles.map(({ id, title, value, subtext, trend, icon: Icon, accent }) => (
                 <Card
                   key={id}
-                  className="relative overflow-hidden p-4 md:p-6 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02]"
+                  className={cn(
+                    "relative overflow-hidden p-4 md:p-6 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02]",
+                    id === "companies" && "cursor-pointer"
+                  )}
+                  onClick={() => {
+                    if (id === "companies") {
+                      navigate("/companies");
+                    }
+                  }}
                 >
                   <div className={cn("absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br", accent)} />
                   <div className="relative space-y-4">
@@ -619,6 +895,25 @@ const Product = () => {
                 <Filter className="h-4 w-4 mr-2" />
                 Filter
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 px-4 rounded-lg border-border/60"
+                onClick={handleImportClick}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Import
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 px-4 rounded-lg border-border/60"
+                onClick={handleExportClick}
+                disabled={!products.length}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
               <Dialog
                 open={isAddDialogOpen}
                 onOpenChange={(open) => {
@@ -661,7 +956,18 @@ const Product = () => {
                             if (value === '__create_new__') {
                               setIsAddCompanyDialogOpen(true);
                             } else {
-                              setFormData((prev) => ({ ...prev, company: value }));
+                              const selectedCompany = companies.find(c => c.name === value);
+                              if (selectedCompany) {
+                                setFormData((prev) => ({ 
+                                  ...prev, 
+                                  company: value,
+                                  company_description: selectedCompany.description || "",
+                                  manager_name: selectedCompany.manager_name || "",
+                                  manager_contact: selectedCompany.manager_contact || "",
+                                }));
+                              } else {
+                                setFormData((prev) => ({ ...prev, company: value }));
+                              }
                             }
                           }}
                         >
@@ -669,9 +975,9 @@ const Product = () => {
                             <SelectValue placeholder="Select company" />
                           </SelectTrigger>
                           <SelectContent>
-                            {companyList.map((company) => (
-                              <SelectItem key={company} value={company}>
-                                {company}
+                            {companies.map((company) => (
+                              <SelectItem key={company.id} value={company.name}>
+                                {company.name}
                               </SelectItem>
                             ))}
                             <SelectItem value="__create_new__" className="text-primary font-medium">
@@ -825,23 +1131,23 @@ const Product = () => {
                 )}
               </Card>
             ) : viewMode === 'grid' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredProducts.map((product) => (
-                  <Card key={product.id} className="p-4 md:p-6 border-border/60 hover:shadow-md transition-shadow">
-                    <div className="space-y-4">
-                      <div className="flex items-start justify-between">
+                  <Card key={product.id} className="p-4 border-border/60 hover:shadow-md transition-shadow">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <h3 className="font-semibold text-lg truncate">{product.name}</h3>
                           {product.product_id && (
-                            <p className="text-xs text-muted-foreground">ID: {product.product_id}</p>
+                            <p className="text-sm text-muted-foreground">ID: {product.product_id}</p>
                           )}
                           {product.company && (
-                            <p className="text-xs text-muted-foreground mt-1">Company: {product.company}</p>
+                            <p className="text-sm text-muted-foreground">Co: {product.company}</p>
                           )}
                         </div>
                         <Badge
                           className={cn(
-                            "rounded-full px-3 py-1 text-xs",
+                            "rounded-full px-2.5 py-1 text-xs shrink-0",
                             product.status === 'active'
                               ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                               : 'bg-amber-100 text-amber-700 border border-amber-200'
@@ -853,18 +1159,18 @@ const Product = () => {
                       {product.description && (
                         <p className="text-sm text-muted-foreground line-clamp-2">{product.description}</p>
                       )}
-                      <div className="flex items-center gap-4 text-sm">
+                      <div className="flex items-center gap-3 text-sm">
                         {product.price !== null && (
                           <div>
-                            <span className="text-muted-foreground">Price: </span>
-                            <span className="font-semibold">
+                            <span className="text-muted-foreground text-sm">Price: </span>
+                            <span className="font-semibold text-base">
                               {product.currency === 'INR' ? '₹' : '$'}{product.price.toFixed(2)}
                             </span>
                           </div>
                         )}
                       </div>
                       {product.category && (
-                        <Badge variant="secondary" className="rounded-full px-3 py-1 text-xs">
+                        <Badge variant="secondary" className="rounded-full px-2.5 py-1 text-xs">
                           {product.category}
                         </Badge>
                       )}
@@ -874,13 +1180,13 @@ const Product = () => {
                           size="sm"
                           onClick={() => handleToggleStatus(product)}
                           disabled={isStatusUpdatingId === product.id}
-                          className="flex-1"
+                          className="flex-1 h-9 text-sm"
                         >
                           {isStatusUpdatingId === product.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
                             <>
-                              <Power className="h-4 w-4 mr-2" />
+                              <Power className="h-4 w-4 mr-1" />
                               {product.status === 'active' ? 'Deactivate' : 'Activate'}
                             </>
                           )}
@@ -889,6 +1195,7 @@ const Product = () => {
                           variant="outline"
                           size="sm"
                           onClick={() => openEditDialog(product)}
+                          className="h-9 w-9 p-0"
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -896,7 +1203,7 @@ const Product = () => {
                           variant="outline"
                           size="sm"
                           onClick={() => setDeleteTarget(product)}
-                          className="text-destructive hover:text-destructive"
+                          className="text-destructive hover:text-destructive h-9 w-9 p-0"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -908,29 +1215,29 @@ const Product = () => {
             ) : (
               <Card className="border-border/60 overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  <table className="w-full text-sm">
                     <thead className="bg-muted/50 border-b border-border/60">
                       <tr>
-                        <th className="py-3 px-4 text-left font-semibold">Product ID</th>
-                        <th className="py-3 px-4 text-left font-semibold">Name</th>
-                        <th className="py-3 px-4 text-left font-semibold">Company</th>
-                        <th className="py-3 px-4 text-left font-semibold">Category</th>
-                        <th className="py-3 px-4 text-left font-semibold">Price</th>
-                        <th className="py-3 px-4 text-left font-semibold">Status</th>
-                        <th className="py-3 px-4 text-right font-semibold">Actions</th>
+                        <th className="py-2 px-3 text-left text-xs font-semibold">Product ID</th>
+                        <th className="py-2 px-3 text-left text-xs font-semibold">Name</th>
+                        <th className="py-2 px-3 text-left text-xs font-semibold">Company</th>
+                        <th className="py-2 px-3 text-left text-xs font-semibold">Category</th>
+                        <th className="py-2 px-3 text-left text-xs font-semibold">Price</th>
+                        <th className="py-2 px-3 text-left text-xs font-semibold">Status</th>
+                        <th className="py-2 px-3 text-right text-xs font-semibold">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredProducts.map((product) => (
                         <tr key={product.id} className="border-b border-border/40 hover:bg-muted/30 transition-colors">
-                          <td className="py-3 px-4 text-muted-foreground">{product.product_id || 'N/A'}</td>
-                          <td className="py-3 px-4 font-medium">{product.name}</td>
-                          <td className="py-3 px-4 text-muted-foreground">{product.company || 'N/A'}</td>
-                          <td className="py-3 px-4 text-muted-foreground">{product.category || 'N/A'}</td>
-                          <td className="py-3 px-4 text-muted-foreground">
+                          <td className="py-2 px-3 text-muted-foreground">{product.product_id || 'N/A'}</td>
+                          <td className="py-2 px-3 font-medium">{product.name}</td>
+                          <td className="py-2 px-3 text-muted-foreground">{product.company || 'N/A'}</td>
+                          <td className="py-2 px-3 text-muted-foreground">{product.category || 'N/A'}</td>
+                          <td className="py-2 px-3 text-muted-foreground">
                             {product.price !== null ? `${product.currency === 'INR' ? '₹' : '$'}${product.price.toFixed(2)}` : 'N/A'}
                           </td>
-                          <td className="py-3 px-4">
+                          <td className="py-2 px-3">
                             <Badge
                               className={cn(
                                 "rounded-full px-3 py-1 text-xs",
@@ -942,7 +1249,7 @@ const Product = () => {
                               {product.status === 'active' ? 'Active' : 'Inactive'}
                             </Badge>
                           </td>
-                          <td className="py-3 px-4">
+                          <td className="py-2 px-3">
                             <div className="flex items-center justify-end gap-2">
                               <Button
                                 variant="ghost"
@@ -1018,7 +1325,18 @@ const Product = () => {
                   if (value === '__create_new__') {
                     setIsAddCompanyDialogOpen(true);
                   } else {
-                    setEditFormData((prev) => ({ ...prev, company: value }));
+                    const selectedCompany = companies.find(c => c.name === value);
+                    if (selectedCompany) {
+                      setEditFormData((prev) => ({ 
+                        ...prev, 
+                        company: value,
+                        company_description: selectedCompany.description || "",
+                        manager_name: selectedCompany.manager_name || "",
+                        manager_contact: selectedCompany.manager_contact || "",
+                      }));
+                    } else {
+                      setEditFormData((prev) => ({ ...prev, company: value }));
+                    }
                   }
                 }}
               >
@@ -1026,9 +1344,9 @@ const Product = () => {
                   <SelectValue placeholder="Select company" />
                 </SelectTrigger>
                 <SelectContent>
-                  {companyList.map((company) => (
-                    <SelectItem key={company} value={company}>
-                      {company}
+                  {companies.map((company) => (
+                    <SelectItem key={company.id} value={company.name}>
+                      {company.name}
                     </SelectItem>
                   ))}
                   <SelectItem value="__create_new__" className="text-primary font-medium">
@@ -1216,6 +1534,16 @@ const Product = () => {
                 />
               </div>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-company-categories">Categories</Label>
+              <Input
+                id="new-company-categories"
+                value={newCompanyCategories}
+                onChange={(e) => setNewCompanyCategories(e.target.value)}
+                placeholder="Enter categories (comma-separated)"
+              />
+              <p className="text-xs text-muted-foreground">Example: Technology, Healthcare, Finance</p>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -1227,6 +1555,7 @@ const Product = () => {
                 setNewCompanyDescription("");
                 setNewManagerName("");
                 setNewManagerContact("");
+                setNewCompanyCategories("");
               }}
               disabled={isCreatingCompany}
             >
@@ -1246,6 +1575,74 @@ const Product = () => {
                 <>
                   <Plus className="mr-2 h-4 w-4" />
                   Create Company
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import Products</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file to import multiple products at once.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={handleDownloadSample}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download Sample CSV
+              </Button>
+              <div className="relative">
+                <Input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleImportFileChange}
+                  className="cursor-pointer"
+                />
+                {selectedImportFile && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Selected: {selectedImportFile.name}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsImportDialogOpen(false);
+                setSelectedImportFile(null);
+              }}
+              disabled={isImporting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleImportUpload}
+              disabled={!selectedImportFile || isImporting}
+            >
+              {isImporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload & Import
                 </>
               )}
             </Button>

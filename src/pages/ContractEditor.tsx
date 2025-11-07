@@ -10,9 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import ReactQuill from 'react-quill';
-import Quill from 'quill';
-import 'react-quill/dist/quill.snow.css';
+import TiptapEditor, { MenuBar } from '@/components/TiptapEditor';
+import type { Editor } from '@tiptap/react';
 
 interface UserProfile {
   id: string;
@@ -42,6 +41,23 @@ interface ContractData {
   updated_at: string;
 }
 
+// Helper function to format time since last save
+const formatTimeSince = (date: Date): string => {
+  const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+  
+  if (seconds < 10) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+};
+
 const ContractEditor = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -59,52 +75,82 @@ const ContractEditor = () => {
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [contractId, setContractId] = useState<string | null>(null);
   const [isLoadingContract, setIsLoadingContract] = useState<boolean>(false);
-  const quillRef = useRef<ReactQuill>(null);
   const { toast } = useToast();
+  const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [isAutoSaving, setIsAutoSaving] = useState<boolean>(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Register custom fonts with Quill
-  useEffect(() => {
-    const Font = Quill.import('formats/font');
-    Font.whitelist = [
-      'roboto',
-      'open-sans',
-      'lato',
-      'montserrat',
-      'raleway',
-      'playfair-display',
-      'merriweather',
-      'source-sans-pro',
-      'poppins',
-      'nunito',
-      'inter',
-      'ubuntu',
-      'crimson-text',
-      'lora',
-      'pt-serif'
-    ];
-    Quill.register(Font, true);
-  }, []);
-
-  // Register custom variable button handler and update editor content when contract loads
-  useEffect(() => {
-    if (quillRef.current) {
-      const quill = quillRef.current.getEditor();
-      const toolbar = quill.getModule('toolbar');
-      if (toolbar) {
-        toolbar.addHandler('variable', () => {
-          setIsVariableDialogOpen(true);
-        });
-      }
-      
-      // Update editor content when contractContent changes (for editing existing contracts)
-      if (contractContent && contractId) {
-        const currentContent = quill.root.innerHTML;
-        if (currentContent !== contractContent) {
-          quill.root.innerHTML = contractContent;
-        }
-      }
+  // Auto-save function with debouncing
+  const autoSaveContract = useCallback(async () => {
+    if (!user?.id || !contractId || !contractName.trim()) {
+      return;
     }
-  }, [contractContent, contractId]);
+
+    setIsAutoSaving(true);
+    try {
+      const { error } = await supabase
+        .from('contracts')
+        // @ts-ignore - Supabase type inference issue
+        .update({
+          contract_name: contractName.trim(),
+          description: contractDescription.trim() || null,
+          content: contractContent,
+          variables: variables,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        })
+        .eq('id', contractId);
+
+      if (error) {
+        console.error('Auto-save error:', error);
+      } else {
+        setLastSaved(new Date());
+      }
+    } catch (error) {
+      console.error('Auto-save exception:', error);
+    } finally {
+      setIsAutoSaving(false);
+    }
+  }, [user?.id, contractId, contractName, contractDescription, contractContent, variables]);
+
+  // Debounced auto-save effect
+  useEffect(() => {
+    // Only auto-save if we're editing an existing contract
+    if (!contractId || !contractName.trim()) {
+      return;
+    }
+
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    // Set new timeout for auto-save (2 seconds after last change)
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      autoSaveContract();
+    }, 2000);
+
+    // Cleanup
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [contractContent, contractName, contractDescription, variables, contractId, autoSaveContract]);
+
+  // Update "time since" display every 10 seconds
+  useEffect(() => {
+    if (!lastSaved) return;
+
+    const interval = setInterval(() => {
+      // Force re-render to update the time display
+      setLastSaved(new Date(lastSaved));
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [lastSaved]);
 
   // Keyboard shortcut for Add Variable (Ctrl+Shift+H)
   useEffect(() => {
@@ -399,6 +445,7 @@ const ContractEditor = () => {
           setContractDescription((contractData as ContractData).description || '');
           setContractContent(contractData.content || '');
           setVariables(contractData.variables || {});
+          setLastSaved(new Date(contractData.updated_at));
         } else {
           toast({
             title: "Contract Not Found",
@@ -623,22 +670,11 @@ const ContractEditor = () => {
       return;
     }
 
-    const quill = quillRef.current?.getEditor();
-    if (!quill) return;
-
-    const range = quill.getSelection(true);
-    if (!range) {
-      toast({
-        title: "Error",
-        description: "Please click in the editor to set cursor position.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     // Insert variable placeholder in format {{variable_key}}
-    const variablePlaceholder = `{{${variableKey.trim()}}}`;
-    quill.insertText(range.index, variablePlaceholder, 'user');
+    const variablePlaceholder = `<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">{{${variableKey.trim()}}}</span>`;
+    
+    // Append variable to the end of current content
+    setContractContent(prev => prev + ' ' + variablePlaceholder + ' ');
     
     // Store variable in state
     setVariables(prev => ({
@@ -657,194 +693,171 @@ const ContractEditor = () => {
     setIsVariableDialogOpen(false);
   };
 
-  // Quill editor modules configuration with custom variable button
-  const quillModules = useMemo(() => ({
-    toolbar: {
-      container: [
-        [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
-        [{ 'font': ['roboto', 'open-sans', 'lato', 'montserrat', 'raleway', 'playfair-display', 'merriweather', 'source-sans-pro', 'poppins', 'nunito', 'inter', 'ubuntu', 'crimson-text', 'lora', 'pt-serif'] }],
-        [{ 'size': ['small', false, 'large', 'huge'] }],
-        ['bold', 'italic', 'underline', 'strike'],
-        [{ 'color': [] }, { 'background': [] }],
-        [{ 'script': 'sub'}, { 'script': 'super' }],
-        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-        [{ 'indent': '-1'}, { 'indent': '+1' }],
-        [{ 'direction': 'rtl' }],
-        [{ 'align': [] }],
-        ['blockquote', 'code-block'],
-        ['link', 'image', 'video'],
-        ['clean'],
-        ['variable'] // Custom variable button
-      ],
-      handlers: {
-        'variable': () => {
-          setIsVariableDialogOpen(true);
-        }
-      }
-    },
-  }), []);
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 10, 200));
+  };
 
-  const quillFormats = [
-    'header', 'font', 'size',
-    'bold', 'italic', 'underline', 'strike',
-    'color', 'background',
-    'script',
-    'list', 'bullet', 'indent',
-    'direction', 'align',
-    'blockquote', 'code-block',
-    'link', 'image', 'video'
-  ];
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 10, 50));
+  };
+
+  const handleResetZoom = () => {
+    setZoomLevel(100);
+  };
+
 
   return (
-    <div className="flex min-h-screen bg-gradient-subtle">
+    <div className="flex min-h-screen bg-[#f5f5f7]">
       <Sidebar />
       
       <div className="flex-1 lg:ml-56">
         <Header />
-        <main className="container mx-auto px-3 sm:px-4 py-3 sm:py-4 pb-24 lg:pb-6 animate-fade-in max-w-7xl">
-          {/* Header */}
-          <div className="bg-gradient-primary rounded-xl p-4 md:p-6 text-white shadow-glow mb-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        {/* Canva-style Top Bar */}
+        <div className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/contract')}
+                disabled={isSaving || isSavingDraft}
+                className="text-gray-600 hover:text-gray-900"
+              >
+                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back
+              </Button>
+              <div className="h-6 w-px bg-gray-300"></div>
               <div>
-                <h2 className="text-xl md:text-2xl font-bold mb-1">
-                  {contractId ? 'Edit Contract' : 'Contract Editor'}
+                <h2 className="text-sm font-semibold text-gray-900">
+                  {contractName || 'Untitled Contract'}
                 </h2>
-                <p className="text-white/80 text-sm">
-                  {contractId ? 'Edit your contract document' : 'Create and edit your contract document'}
+                <p className="text-xs text-gray-500">
+                  {isAutoSaving ? (
+                    <span className="flex items-center gap-1">
+                      <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Saving...
+                    </span>
+                  ) : lastSaved && contractId ? (
+                    <span>Saved {formatTimeSince(lastSaved)}</span>
+                  ) : contractId ? (
+                    'Editing'
+                  ) : (
+                    'Creating new contract'
+                  )}
                 </p>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate('/contract')}
-                  disabled={isSaving || isSavingDraft}
-                  className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSaveDraft}
-                  disabled={isSaving || isSavingDraft || !contractName.trim()}
-                  className="bg-yellow-500/20 border-yellow-500/30 text-yellow-100 hover:bg-yellow-500/30"
-                >
-                  {isSavingDraft ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Saving...
-                    </>
-                  ) : (
-                    "Save as Draft"
-                  )}
-                </Button>
-                <Button
-                  onClick={handleSave}
-                  disabled={isSaving || isSavingDraft || !contractName.trim() || !contractContent.trim()}
-                  className="bg-white text-primary hover:bg-white/90"
-                >
-                  {isSaving ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Saving...
-                    </>
-                  ) : (
-                    "Save Contract"
-                  )}
-                </Button>
-              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSaveDraft}
+                disabled={isSaving || isSavingDraft || !contractName.trim()}
+                className="text-gray-600 hover:text-gray-900"
+              >
+                {isSavingDraft ? (
+                  <>
+                    <svg className="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  "Save Draft"
+                )}
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={isSaving || isSavingDraft || !contractName.trim() || !contractContent.trim()}
+                className="bg-[#8b5cf6] hover:bg-[#7c3aed] text-white shadow-sm"
+                size="sm"
+              >
+                {isSaving ? (
+                  <>
+                    <svg className="animate-spin h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Publishing...
+                  </>
+                ) : (
+                  "Publish"
+                )}
+              </Button>
             </div>
           </div>
+        </div>
+
+        {/* Toolbar - Fixed below header with horizontal scrolling */}
+        <div className="sticky top-[56px] z-20 bg-[#f8f9fa] border-b border-[#dadce0] shadow-sm overflow-x-auto scrollbar-hide">
+          <div className="px-3 py-2">
+            <MenuBar editor={editor} onVariableClick={() => setIsVariableDialogOpen(true)} />
+          </div>
+        </div>
+
+        <main className="px-4 py-6 pb-24 lg:pb-8 animate-fade-in">
 
           {/* Editor Content */}
           {isLoadingContract ? (
-            <div className="bg-card rounded-lg border border-border/50 p-8 flex flex-col items-center justify-center min-h-[600px]">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
-              <p className="text-muted-foreground text-lg">Loading contract...</p>
-              <p className="text-muted-foreground text-sm mt-2">Please wait while we fetch the contract data</p>
+            <div className="flex items-center justify-center min-h-[600px]">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#8b5cf6] mx-auto mb-4"></div>
+                <p className="text-gray-600 text-lg">Loading contract...</p>
+                <p className="text-gray-400 text-sm mt-2">Please wait while we fetch the contract data</p>
+              </div>
             </div>
           ) : (
-            <div className="bg-card rounded-lg border border-border/50 p-4 md:p-6 space-y-6">
-              {/* Contract Name Input */}
-              <div className="space-y-2">
-                <Label htmlFor="contractName" className="text-base font-semibold">Contract Name *</Label>
-                <Input
-                  id="contractName"
-                  type="text"
-                  value={contractName}
-                  onChange={(e) => setContractName(e.target.value)}
-                  placeholder="Enter contract name"
-                  disabled={isSaving || isSavingDraft}
-                  required
-                  className="w-full h-12 text-base"
-                />
-              </div>
-
-              {/* Contract Description Input */}
-              <div className="space-y-2">
-                <Label htmlFor="contractDescription" className="text-base font-semibold">Description</Label>
-                <textarea
-                  id="contractDescription"
-                  value={contractDescription}
-                  onChange={(e) => setContractDescription(e.target.value)}
-                  placeholder="Enter contract description (optional)"
-                  disabled={isSaving || isSavingDraft || isLoadingContract}
-                  rows={3}
-                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Brief description of the contract (optional)
-                </p>
-              </div>
-
-              {/* Document Editor */}
-              <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="contractContent" className="text-base font-semibold">Contract Document *</Label>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setIsVariableDialogOpen(true)}
-                          disabled={isSaving || isSavingDraft}
-                          className="flex items-center gap-2"
-                          title="Add Variable (Ctrl+Shift+H)"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                          Add Variable
-                          <kbd className="ml-2 px-1.5 py-0.5 text-xs font-semibold text-muted-foreground bg-muted border border-border rounded">
-                            Ctrl+Shift+H
-                          </kbd>
-                        </Button>
-                      </div>
-                <div className="bg-background rounded-md border border-input overflow-hidden">
-                  <ReactQuill
-                    key={contractId || 'new-contract'}
-                    ref={quillRef}
-                    theme="snow"
-                    value={contractContent}
-                    onChange={setContractContent}
-                    modules={quillModules}
-                    formats={quillFormats}
-                    placeholder="Start writing your contract here...
-
-You can format text, add headings, lists, links, images, and more using the toolbar above."
-                    readOnly={isSaving || isSavingDraft}
-                    className="min-h-[500px]"
-                    style={{
-                      minHeight: '500px'
-                    }}
+            <div className="max-w-5xl mx-auto">
+              {/* Contract Name & Description - Floating above canvas */}
+              <div className="mb-6 space-y-4">
+                <div>
+                  <Input
+                    id="contractName"
+                    type="text"
+                    value={contractName}
+                    onChange={(e) => setContractName(e.target.value)}
+                    placeholder="Untitled Contract"
+                    disabled={isSaving || isSavingDraft}
+                    required
+                    className="text-2xl font-bold border-0 border-b border-transparent hover:border-gray-300 focus:border-[#8b5cf6] rounded-none px-0 h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Use the toolbar above to format your contract. You can add headings, bold/italic text, lists, links, images, and more. Click the "+ Add Variable" button to add custom variables.
-                </p>
+                <div>
+                  <textarea
+                    id="contractDescription"
+                    value={contractDescription}
+                    onChange={(e) => setContractDescription(e.target.value)}
+                    placeholder="Add a description..."
+                    disabled={isSaving || isSavingDraft || isLoadingContract}
+                    rows={2}
+                    className="w-full border-0 bg-transparent px-0 py-1 text-sm text-gray-600 placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-0 resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* Editor Container */}
+              <div 
+                className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden transition-transform duration-300 origin-top" 
+                style={{ 
+                  minHeight: '800px',
+                  transform: `scale(${zoomLevel / 100})`,
+                  transformOrigin: 'top center'
+                }}
+              >
+                <TiptapEditor
+                  content={contractContent}
+                  onChange={setContractContent}
+                  placeholder="Start writing your contract here...
+
+Use the toolbar above to format text, add headings, lists, and more."
+                  onEditorReady={setEditor}
+                />
               </div>
             </div>
           )}
@@ -852,6 +865,41 @@ You can format text, add headings, lists, links, images, and more using the tool
       </div>
 
       <MobileNav />
+
+      {/* Floating Zoom Controls - Bottom Left */}
+      <div className="fixed bottom-8 left-8 lg:left-64 z-40 flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleZoomOut}
+          disabled={zoomLevel <= 50}
+          className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+          title="Zoom Out"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+          </svg>
+        </Button>
+        <button
+          onClick={handleResetZoom}
+          className="text-sm font-medium text-gray-700 hover:text-gray-900 px-3 min-w-[3.5rem] hover:bg-gray-100 rounded transition-colors"
+          title="Reset Zoom"
+        >
+          {zoomLevel}%
+        </button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleZoomIn}
+          disabled={zoomLevel >= 200}
+          className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+          title="Zoom In"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </Button>
+      </div>
 
       {/* Variable Dialog */}
       <Dialog open={isVariableDialogOpen} onOpenChange={setIsVariableDialogOpen}>
