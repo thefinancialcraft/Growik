@@ -80,7 +80,7 @@ import {
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, Quote, Code,
   Link2, Image as ImageIcon, Undo, Redo,
-  Heading1, Heading2, Heading3, Type, CheckSquare
+  Heading1, Heading2, Heading3, Type, CheckSquare, ChevronDown
 } from 'lucide-react';
 import { useCallback } from 'react';
 
@@ -160,6 +160,31 @@ const slashCommands: CommandItem[] = [
     command: (editor) => editor.chain().focus().toggleCodeBlock().run(),
   },
 ];
+
+type ListType = 'bullet' | 'ordered' | null;
+
+type BlockTypeName = 'paragraph' | 'heading' | 'blockquote' | 'codeBlock';
+
+interface SavedFormatting {
+  blockType: {
+    name: BlockTypeName;
+    attrs?: {
+      level?: number;
+    };
+  };
+  listType: ListType;
+  marks: {
+    bold: boolean;
+    italic: boolean;
+    underline: boolean;
+    strike: boolean;
+    color: string | null;
+    highlight: string | null;
+    fontFamily: string | null;
+    fontSize: string | null;
+  };
+  textAlign: string | null;
+}
 
 interface SlashCommandMenuProps {
   items: CommandItem[];
@@ -629,6 +654,302 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
     return null;
   }
 
+  const styleMenuRef = useRef<HTMLDivElement | null>(null);
+  const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
+  const [copiedFormatting, setCopiedFormatting] = useState<SavedFormatting | null>(null);
+  const [isFormatPainterActive, setIsFormatPainterActive] = useState(false);
+  const formatPainterDataRef = useRef<SavedFormatting | null>(null);
+  const formatPainterActiveRef = useRef(false);
+  const formatPainterSourceRef = useRef<{ from: number; to: number } | null>(null);
+
+  useEffect(() => {
+    formatPainterDataRef.current = copiedFormatting;
+    formatPainterActiveRef.current = isFormatPainterActive && !!copiedFormatting;
+  }, [copiedFormatting, isFormatPainterActive]);
+
+  useEffect(() => {
+    if (!isStyleMenuOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (styleMenuRef.current && !styleMenuRef.current.contains(event.target as Node)) {
+        setIsStyleMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isStyleMenuOpen]);
+
+  const captureCurrentFormatting = useCallback((): SavedFormatting | null => {
+    if (!editor) {
+      return null;
+    }
+
+    const blockType: SavedFormatting['blockType'] = (() => {
+      if (editor.isActive('heading', { level: 1 })) {
+        return { name: 'heading', attrs: { level: 1 } };
+      }
+      if (editor.isActive('heading', { level: 2 })) {
+        return { name: 'heading', attrs: { level: 2 } };
+      }
+      if (editor.isActive('heading', { level: 3 })) {
+        return { name: 'heading', attrs: { level: 3 } };
+      }
+      if (editor.isActive('codeBlock')) {
+        return { name: 'codeBlock' };
+      }
+      if (editor.isActive('blockquote')) {
+        return { name: 'blockquote' };
+      }
+      return { name: 'paragraph' };
+    })();
+
+    const listType: ListType =
+      editor.isActive('bulletList') ? 'bullet' : editor.isActive('orderedList') ? 'ordered' : null;
+
+    const textStyleAttrs = editor.getAttributes('textStyle') ?? {};
+    const highlightAttrs = editor.getAttributes('highlight') ?? {};
+    const headingAttrs = editor.getAttributes('heading') ?? {};
+    const paragraphAttrs = editor.getAttributes('paragraph') ?? {};
+    const rawAlign =
+      (headingAttrs.textAlign as string | undefined) ??
+      (paragraphAttrs.textAlign as string | undefined) ??
+      null;
+    const textAlign = rawAlign && rawAlign !== 'left' ? rawAlign : null;
+
+    const marks = {
+      bold: editor.isActive('bold'),
+      italic: editor.isActive('italic'),
+      underline: editor.isActive('underline'),
+      strike: editor.isActive('strike'),
+      color: (textStyleAttrs.color as string | undefined) ?? null,
+      highlight: (highlightAttrs.color as string | undefined) ?? null,
+      fontFamily: (textStyleAttrs.fontFamily as string | undefined) ?? null,
+      fontSize: (textStyleAttrs.fontSize as string | undefined) ?? null,
+    };
+
+    return {
+      blockType,
+      listType,
+      marks,
+      textAlign,
+    };
+  }, [editor]);
+
+  const disableFormatPainter = useCallback(() => {
+    setIsFormatPainterActive(false);
+    setCopiedFormatting(null);
+    formatPainterDataRef.current = null;
+    formatPainterActiveRef.current = false;
+    formatPainterSourceRef.current = null;
+  }, []);
+
+  const applySavedFormatting = useCallback(() => {
+    if (!editor) {
+      return;
+    }
+
+    const formatting = formatPainterDataRef.current;
+    if (!formatting) {
+      return;
+    }
+
+    const { from, to } = editor.state.selection;
+    if (from === to) {
+      return;
+    }
+
+    const sourceRange = formatPainterSourceRef.current;
+    if (sourceRange && sourceRange.from === from && sourceRange.to === to) {
+      return;
+    }
+
+    let chain = editor.chain().focus();
+
+    chain = chain.clearNodes();
+
+    switch (formatting.blockType.name) {
+      case 'heading':
+        chain = chain.setHeading({ level: formatting.blockType.attrs?.level ?? 1 });
+        break;
+      case 'blockquote':
+        chain = chain.toggleBlockquote();
+        break;
+      case 'codeBlock':
+        chain = chain.toggleCodeBlock();
+        break;
+      default:
+        chain = chain.setParagraph();
+        break;
+    }
+
+    if (formatting.listType === 'bullet') {
+      chain = chain.toggleBulletList();
+    } else if (formatting.listType === 'ordered') {
+      chain = chain.toggleOrderedList();
+    }
+
+    const chainWithOptional = chain as typeof chain & {
+      unsetTextAlign?: () => typeof chain;
+      unsetAllMarks?: () => typeof chain;
+      unsetColor?: () => typeof chain;
+      unsetHighlight?: () => typeof chain;
+      unsetFontFamily?: () => typeof chain;
+      unsetFontSize?: () => typeof chain;
+    };
+
+    if (chainWithOptional.unsetTextAlign) {
+      chain = chainWithOptional.unsetTextAlign();
+    }
+
+    if (formatting.textAlign) {
+      chain = chain.setTextAlign(formatting.textAlign);
+    }
+
+    if (chainWithOptional.unsetAllMarks) {
+      chain = chainWithOptional.unsetAllMarks();
+    }
+
+    if (chainWithOptional.unsetColor) {
+      chain = chainWithOptional.unsetColor();
+    }
+    if (formatting.marks.color) {
+      chain = chain.setColor(formatting.marks.color);
+    }
+
+    if (chainWithOptional.unsetHighlight) {
+      chain = chainWithOptional.unsetHighlight();
+    }
+    if (formatting.marks.highlight) {
+      chain = chain.setHighlight({ color: formatting.marks.highlight });
+    }
+
+    if (chainWithOptional.unsetFontFamily) {
+      chain = chainWithOptional.unsetFontFamily();
+    }
+    if (formatting.marks.fontFamily) {
+      chain = chain.setFontFamily(formatting.marks.fontFamily);
+    }
+
+    if (chainWithOptional.unsetFontSize) {
+      chain = chainWithOptional.unsetFontSize();
+    }
+    if (formatting.marks.fontSize) {
+      chain = chain.setFontSize(formatting.marks.fontSize);
+    }
+
+    if (formatting.marks.bold) {
+      chain = chain.toggleBold();
+    }
+    if (formatting.marks.italic) {
+      chain = chain.toggleItalic();
+    }
+    if (formatting.marks.underline) {
+      chain = chain.toggleUnderline();
+    }
+    if (formatting.marks.strike) {
+      chain = chain.toggleStrike();
+    }
+
+    chain.run();
+
+    disableFormatPainter();
+  }, [editor, disableFormatPainter]);
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    const handleSelectionUpdate = () => {
+      const { from, to } = editor.state.selection;
+
+      if (!formatPainterActiveRef.current) {
+        return;
+      }
+
+      if (from === to) {
+        return;
+      }
+
+      applySavedFormatting();
+    };
+
+    editor.on('selectionUpdate', handleSelectionUpdate);
+
+    return () => {
+      editor.off('selectionUpdate', handleSelectionUpdate);
+    };
+  }, [editor, applySavedFormatting]);
+
+  const handleStyleFormatterClick = useCallback(() => {
+    if (!editor) {
+      return;
+    }
+
+    if (isFormatPainterActive) {
+      disableFormatPainter();
+      return;
+    }
+
+    const { from, to } = editor.state.selection;
+
+    if (from === to) {
+      disableFormatPainter();
+      return;
+    }
+
+    const formatting = captureCurrentFormatting();
+    if (!formatting) {
+      disableFormatPainter();
+      return;
+    }
+
+    setCopiedFormatting(formatting);
+    setIsFormatPainterActive(true);
+    formatPainterDataRef.current = formatting;
+    formatPainterActiveRef.current = true;
+    formatPainterSourceRef.current = { from, to };
+    setIsStyleMenuOpen(false);
+  }, [editor, captureCurrentFormatting, isFormatPainterActive, disableFormatPainter]);
+
+  const styleOptions = [
+    {
+      label: 'Normal text',
+      active: editor.isActive('paragraph') && !editor.isActive('heading'),
+      action: () => editor.chain().focus().setParagraph().run(),
+    },
+    {
+      label: 'Heading 1',
+      active: editor.isActive('heading', { level: 1 }),
+      action: () => editor.chain().focus().setHeading({ level: 1 }).run(),
+    },
+    {
+      label: 'Heading 2',
+      active: editor.isActive('heading', { level: 2 }),
+      action: () => editor.chain().focus().setHeading({ level: 2 }).run(),
+    },
+    {
+      label: 'Heading 3',
+      active: editor.isActive('heading', { level: 3 }),
+      action: () => editor.chain().focus().setHeading({ level: 3 }).run(),
+    },
+    {
+      label: 'Quote',
+      active: editor.isActive('blockquote'),
+      action: () => editor.chain().focus().toggleBlockquote().run(),
+    },
+    {
+      label: 'Code block',
+      active: editor.isActive('codeBlock'),
+      action: () => editor.chain().focus().toggleCodeBlock().run(),
+    },
+  ];
+
   const setLink = useCallback(() => {
     const previousUrl = editor.getAttributes('link').href;
     const url = window.prompt('URL', previousUrl);
@@ -715,30 +1036,77 @@ const MenuBar = ({ editor, onVariableClick }: { editor: Editor | null; onVariabl
           </svg>
         </button>
         
-        <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
+      <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
 
-        {/* Font Family */}
-        <select
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value === 'default') {
-              editor.chain().focus().unsetFontFamily().run();
-            } else {
-              editor.chain().focus().setFontFamily(value).run();
-            }
-          }}
-          className="google-toolbar-select"
-          style={{ minWidth: '50px' }}
-          title="Font"
+      {/* Style Formatter */}
+      <div className="relative inline-flex" ref={styleMenuRef}>
+        <button
+          type="button"
+          className={isFormatPainterActive && copiedFormatting ? 'toolbar-btn-active' : 'toolbar-btn'}
+          title={
+            isFormatPainterActive && copiedFormatting
+              ? 'Format painter active – select text to apply styling. Click again to stop.'
+              : 'Copy formatting from the current selection'
+          }
+          onClick={handleStyleFormatterClick}
         >
-          <option value="default">Arial</option>
-          <option value="Roboto">Roboto</option>
-          <option value="'Times New Roman'">Times New Roman</option>
-          <option value="'Courier New'">Courier New</option>
-          <option value="Georgia">Georgia</option>
-          <option value="Verdana">Verdana</option>
-          <option value="'Comic Sans MS'">Comic Sans MS</option>
-        </select>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
+            <path d="M22.703,1.87c-.392-.389-1.026-.384-1.414,.008l-3.842,3.884c-1.415-1.229-4.119-2.859-7.507-.065-.511,.289-3.393,1.917-5.023,2.756-1.084,.557-2.842,1.261-2.876,1.279-.554,.297-.913,.827-1.013,1.491-.35,2.331,2.576,5.853,5.093,8.397,1.837,1.857,3.739,2.799,5.654,2.799h0c1.642,0,3.264-.725,4.567-2.043,1.953-1.975,2.545-4.913,2.692-5.872,2.601-3.295,1.031-5.928-.177-7.327l3.851-3.893c.389-.393,.385-1.026-.008-1.414Zm-5.953,5.983c1.766,1.765,2.148,3.122,1.211,4.702l-5.913-5.913c1.581-.937,2.937-.555,4.702,1.211Zm-1.827,11.116c-.938,.948-2.026,1.449-3.146,1.449-.647,0-1.309-.168-1.98-.501,.085-.062,.168-.123,.244-.182,.691-.538,1.796-1.612,1.843-1.658,.396-.385,.403-1.019,.018-1.414-.385-.396-1.019-.403-1.414-.019-.011,.01-1.07,1.042-1.674,1.512-.239,.186-.561,.402-.766,.537-.168-.151-.335-.31-.504-.481-.92-.93-1.66-1.755-2.254-2.48,.249-.106,.52-.226,.753-.342,.956-.477,2.545-1.505,2.612-1.548,.464-.301,.596-.92,.295-1.383-.3-.463-.919-.595-1.383-.295-.016,.01-1.561,1.01-2.416,1.437-.341,.17-.806,.362-1.092,.477-1.04-1.578-1.141-2.395-1.074-2.577,.392-.158,1.824-.745,2.848-1.271,1.342-.691,3.444-1.865,4.51-2.465l6.676,6.675c-.171,.937-.699,3.117-2.096,4.529Z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="toolbar-btn"
+          title="Paragraph styles"
+          onClick={() => setIsStyleMenuOpen((prev) => !prev)}
+        >
+          <ChevronDown size={16} />
+        </button>
+        {isStyleMenuOpen && (
+          <div className="absolute top-full left-0 mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+            {styleOptions.map((option) => (
+              <button
+                key={option.label}
+                type="button"
+                onClick={() => {
+                  option.action();
+                  setIsStyleMenuOpen(false);
+                }}
+                className={`block w-full px-3 py-2 text-sm text-left transition-colors ${
+                  option.active ? 'bg-indigo-50 text-indigo-600 font-medium' : 'hover:bg-gray-100 text-gray-700'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
+
+      {/* Font Family */}
+      <select
+        onChange={(e) => {
+          const value = e.target.value;
+          if (value === 'default') {
+            editor.chain().focus().unsetFontFamily().run();
+          } else {
+            editor.chain().focus().setFontFamily(value).run();
+          }
+        }}
+        className="google-toolbar-select"
+        style={{ minWidth: '50px' }}
+        title="Font"
+      >
+        <option value="default">Arial</option>
+        <option value="Roboto">Roboto</option>
+        <option value="'Times New Roman'">Times New Roman</option>
+        <option value="'Courier New'">Courier New</option>
+        <option value="Georgia">Georgia</option>
+        <option value="Verdana">Verdana</option>
+        <option value="'Comic Sans MS'">Comic Sans MS</option>
+      </select>
 
         {/* Font Size */}
         <div className="relative">
