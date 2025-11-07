@@ -349,9 +349,9 @@ const LoginPage = () => {
           try {
             // Use Promise.race with timeout directly
             const profileQuery = supabase
-              .from('user_profiles')
-              .select('*')
-              .eq('user_id', authData.user.id)
+            .from('user_profiles')
+            .select('*')
+            .eq('user_id', authData.user.id)
               .maybeSingle();
             
             const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((_, reject) => {
