@@ -859,6 +859,7 @@ Use the toolbar above to format text, add headings, lists, and more."
                   onEditorReady={setEditor}
                 />
               </div>
+
             </div>
           )}
         </main>
@@ -867,13 +868,13 @@ Use the toolbar above to format text, add headings, lists, and more."
       <MobileNav />
 
       {/* Floating Zoom Controls - Bottom Left */}
-      <div className="fixed bottom-8 left-8 lg:left-64 z-40 flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2">
+      <div className="fixed bottom-4 left-8 lg:left-60 z-20 flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2">
         <Button
           variant="ghost"
           size="sm"
           onClick={handleZoomOut}
           disabled={zoomLevel <= 50}
-          className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+          className="h-2 w-4 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
           title="Zoom Out"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -892,10 +893,10 @@ Use the toolbar above to format text, add headings, lists, and more."
           size="sm"
           onClick={handleZoomIn}
           disabled={zoomLevel >= 200}
-          className="h-8 w-8 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+          className="h-2 w-4 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
           title="Zoom In"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
         </Button>
