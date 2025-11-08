@@ -16,12 +16,14 @@ import Highlight from '@tiptap/extension-highlight';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { NodeViewWrapper } from '@tiptap/react';
-import React, { useState, useRef, useEffect, useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, useImperativeHandle, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ReactRenderer } from '@tiptap/react';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import Suggestion from '@tiptap/suggestion';
+
+const SIMPLE_TEXT_FONT_SIZE = '16px';
 
 // Custom Font Size Extension
 declare module '@tiptap/core' {
@@ -130,7 +132,7 @@ import {
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, Quote, Code,
   Link2, Image as ImageIcon, Undo, Redo,
-  Heading1, Heading2, Heading3, Type, CheckSquare, ChevronDown
+  Heading1, Heading2, Heading3, Type, CheckSquare, ChevronDown, Braces
 } from 'lucide-react';
 import { useCallback } from 'react';
 
@@ -142,7 +144,7 @@ interface CommandItem {
   command: (editor: Editor) => void;
 }
 
-const slashCommands: CommandItem[] = [
+const BASE_SLASH_COMMANDS: CommandItem[] = [
   {
     title: 'Heading 1',
     description: 'Large section heading',
@@ -160,6 +162,13 @@ const slashCommands: CommandItem[] = [
     description: 'Small section heading',
     icon: Heading3,
     command: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+  },
+  {
+    title: 'Simple Text',
+    description: 'Regular text at 16px',
+    icon: Type,
+    command: (editor) =>
+      editor.chain().focus().setParagraph().setFontSize(SIMPLE_TEXT_FONT_SIZE).run(),
   },
   {
     title: 'Bold',
@@ -298,7 +307,7 @@ const SlashCommandMenu = React.forwardRef<SlashCommandMenuHandle, SlashCommandMe
   useImperativeHandle(ref, () => ({
     setSelectedIndex: (index: number) => {
       if (!items.length) return;
-      const bounded = ((index % items.length) + items.length) % items.length;
+      const bounded = Math.max(0, Math.min(index, items.length - 1));
       setSelectedIndex(bounded);
     },
     getSelectedIndex: () => selectedIndex,
@@ -808,6 +817,8 @@ interface TiptapEditorProps {
   onVariableClick?: () => void;
   onEditorReady?: (editor: Editor) => void;
   onImageUpload?: (file: File) => Promise<{ url: string; alignment?: 'left' | 'center' | 'right'; offsetX?: number }>;
+  onSupabaseMentionTrigger?: (context: { position: { left: number; top: number }; range: { from: number; to: number } }) => void;
+  onSupabaseNextRequest?: (context: { position: { left: number; top: number }; range: { from: number; to: number } }) => void;
 }
 
 const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | null; onVariableClick?: () => void; onImageUpload?: (file: File) => Promise<{ url: string; alignment?: 'left' | 'center' | 'right'; offsetX?: number }> }) => {
@@ -2395,7 +2406,40 @@ const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | 
   );
 };
 
-export default function TiptapEditor({ content, onChange, placeholder = 'Start typing...', onVariableClick, onEditorReady, onImageUpload }: TiptapEditorProps) {
+export default function TiptapEditor({
+  content,
+  onChange,
+  placeholder = 'Start typing...',
+  onVariableClick,
+  onEditorReady,
+  onImageUpload,
+  onSupabaseMentionTrigger,
+  onSupabaseNextRequest,
+}: TiptapEditorProps) {
+  const slashCommandItems = useMemo(() => {
+    const items = [...BASE_SLASH_COMMANDS];
+    items.unshift({
+      title: 'Variable',
+      description: 'Insert a variable placeholder',
+      icon: Braces,
+      command: (editorInstance: Editor) => {
+        if (onVariableClick) {
+          setTimeout(() => {
+            onVariableClick();
+          }, 0);
+          return;
+        }
+
+        editorInstance
+          .chain()
+          .focus()
+          .insertContent('var[{{variable}}] ')
+          .run();
+      },
+    });
+    return items;
+  }, [onVariableClick]);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -2434,12 +2478,24 @@ export default function TiptapEditor({ content, onChange, placeholder = 'Start t
         suggestion: {
           char: '/',
           startOfLine: false,
+          limit: 50,
           items: ({ query }: { query: string }) => {
-            return slashCommands
-              .filter((item) =>
-                item.title.toLowerCase().includes(query.toLowerCase())
-              )
-              .slice(0, 10);
+            const filtered = slashCommandItems.filter((item) =>
+              item.title.toLowerCase().includes(query.toLowerCase())
+            );
+
+            const variableIndex = filtered.findIndex((item) => item.title === 'Variable');
+            if (variableIndex > 0) {
+              const [variableItem] = filtered.splice(variableIndex, 1);
+              filtered.unshift(variableItem);
+            } else if (variableIndex === -1) {
+              const variableItem = slashCommandItems.find((item) => item.title === 'Variable');
+              if (variableItem) {
+                filtered.unshift(variableItem);
+              }
+            }
+
+            return filtered;
           },
           render: () => {
             let component: ReactRenderer<SlashCommandMenuHandle> | null = null;
@@ -2577,6 +2633,44 @@ export default function TiptapEditor({ content, onChange, placeholder = 'Start t
     editorProps: {
       attributes: {
         class: 'tiptap-editor prose prose-sm sm:prose lg:prose-lg xl:prose-xl focus:outline-none',
+      },
+      handleTextInput(view, from, to, text) {
+        if (text === '@' && onSupabaseMentionTrigger) {
+          const coords = view.coordsAtPos(from);
+          onSupabaseMentionTrigger({
+            position: {
+              left: (coords.left ?? 0) + window.scrollX,
+              top: (coords.bottom ?? coords.top ?? 0) + window.scrollY,
+            },
+            range: { from, to },
+          });
+          return true;
+        }
+        return false;
+      },
+      handleKeyDown(view, event) {
+        if (
+          event.key === 'Enter' &&
+          !event.shiftKey &&
+          onSupabaseNextRequest
+        ) {
+          const { state } = view;
+          const { $from } = state.selection;
+          if ($from.parent.textContent.trim().length === 0) {
+            setTimeout(() => {
+              const { state: nextState } = view;
+              const { from, to } = nextState.selection;
+              const coords = view.coordsAtPos(from);
+              const position = {
+                left: (coords.left ?? 0) + window.scrollX,
+                top: (coords.bottom ?? coords.top ?? 0) + window.scrollY,
+              };
+              const range = { from, to };
+              onSupabaseNextRequest({ position, range });
+            }, 0);
+          }
+        }
+        return false;
       },
     },
     onCreate: ({ editor }) => {

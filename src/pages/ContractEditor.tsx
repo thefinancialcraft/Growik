@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
@@ -41,6 +42,401 @@ interface ContractData {
   updated_at: string;
 }
 
+interface SupabaseTableMetadata {
+  name: string;
+  schema?: string;
+  comment?: string | null;
+}
+
+interface SupabaseColumnMetadata {
+  table: string;
+  name: string;
+  dataType?: string | null;
+  position?: number;
+}
+
+interface SupabaseValueOption {
+  table: string;
+  column: string;
+  display: string;
+  rawValue: unknown;
+  row: Record<string, any>;
+  rowIndex: number;
+}
+
+const SUPABASE_TABLE_EXCLUDE = new Set(['messages', 'admin_members', 'contracts']);
+
+const prettifyKey = (key: string): string =>
+  key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const tryParseJson = (value: string) => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+const formatValue = (value: unknown, indentLevel = 0): string => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    const parsed = typeof trimmed === 'string' ? tryParseJson(trimmed) : trimmed;
+    if (parsed !== trimmed) {
+      return formatValue(parsed, indentLevel);
+    }
+    return trimmed;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return '';
+    }
+    if (value.every((item) => typeof item === 'string' || typeof item === 'number')) {
+      return value.join(', ');
+    }
+    return value
+      .map((item, index) => {
+        const formatted = formatValue(item, indentLevel + 1);
+        if (!formatted) {
+          return '';
+        }
+        const label = `${index + 1}.`;
+        const indent = '  '.repeat(indentLevel);
+        return formatted
+          .split('\n')
+          .map((line, lineIdx) =>
+            lineIdx === 0
+              ? `${indent}${label} ${line}`
+              : `${indent}    ${line}`,
+          )
+          .join('\n');
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, any>);
+    if (entries.length === 0) {
+      return '';
+    }
+    return entries
+      .map(([key, val]) => {
+        const formatted = formatValue(val, indentLevel + 1);
+        if (!formatted) {
+          return '';
+        }
+        const indent = '  '.repeat(indentLevel);
+        return formatted
+          .split('\n')
+          .map((line, lineIdx) =>
+            lineIdx === 0
+              ? `${indent}${prettifyKey(key)}: ${line}`
+              : `${indent}  ${line}`,
+          )
+          .join('\n');
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return String(value);
+};
+
+const formatRowForInsertion = (row: Record<string, any>, omitKeys: Set<string>): string => {
+  return Object.entries(row)
+    .filter(([key]) => !omitKeys.has(key))
+    .map(([key, value]) => {
+      const prettyKey = prettifyKey(key);
+      const formattedValue = formatValue(value, 0);
+      if (!formattedValue) {
+        return '';
+      }
+      return `${prettyKey}: ${formattedValue}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+};
+
+const getRowEntries = (row: Record<string, any>, omitKeys: Set<string>) =>
+  Object.entries(row)
+    .filter(([key]) => !omitKeys.has(key))
+    .map(([key, value]) => ({
+      key: prettifyKey(key),
+      value: formatValue(value, 0),
+    }))
+    .filter((entry) => entry.value);
+
+interface SupabaseMentionPanelProps {
+  anchor: { left: number; top: number };
+  mode: 'tables' | 'columns' | 'values';
+  tables: SupabaseTableMetadata[];
+  tablesLoading: boolean;
+  tablesError: string | null;
+  columns: SupabaseColumnMetadata[];
+  columnsLoading: boolean;
+  columnsError: string | null;
+  selectedTable: SupabaseTableMetadata | null;
+  onTableSelect: (table: SupabaseTableMetadata) => void;
+  onColumnSelect: (column: SupabaseColumnMetadata) => void;
+  selectedColumn: SupabaseColumnMetadata | null;
+  values: SupabaseValueOption[];
+  valuesLoading: boolean;
+  valuesError: string | null;
+  valueSearch: string;
+  onValueSearchChange: (value: string) => void;
+  onValueSelect: (value: SupabaseValueOption) => void;
+  onBack: () => void;
+  onClose: (options?: { insertFallback?: boolean }) => void;
+}
+
+const SupabaseMentionPanel = ({
+  anchor,
+  mode,
+  tables,
+  tablesLoading,
+  tablesError,
+  columns,
+  columnsLoading,
+  columnsError,
+  selectedTable,
+  onTableSelect,
+  onColumnSelect,
+  selectedColumn,
+  values,
+  valuesLoading,
+  valuesError,
+  valueSearch,
+  onValueSearchChange,
+  onValueSelect,
+  onBack,
+  onClose,
+}: SupabaseMentionPanelProps) => {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const PANEL_WIDTH = 320;
+
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+  const scrollX = typeof window !== 'undefined' ? window.scrollX : 0;
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        onClose({ insertFallback: true });
+      }
+    };
+
+    document.addEventListener('mousedown', handleClick);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose({ insertFallback: true });
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
+  const computedLeft = Math.max(
+    16 + scrollX,
+    Math.min(anchor.left - PANEL_WIDTH / 2, scrollX + viewportWidth - PANEL_WIDTH - 16),
+  );
+  const computedTop = anchor.top + 12;
+
+  const headerTitle =
+    mode === 'tables'
+      ? 'Insert from Supabase'
+      : mode === 'columns'
+      ? `Select a column from ${selectedTable?.name ?? 'table'}`
+      : `Select a value for ${selectedTable?.name ?? 'table'}.${selectedColumn?.name ?? 'column'}`;
+
+  const headerSubtitle =
+    mode === 'tables'
+      ? 'Choose a table to browse columns and values'
+      : mode === 'columns'
+      ? 'Pick the column whose values you want to insert'
+      : 'Choose the value to insert into the editor';
+
+  const content = (
+    <div
+      ref={panelRef}
+      className="z-[9999] w-80 max-w-[90vw] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl"
+      style={{
+        position: 'absolute',
+        left: computedLeft,
+        top: computedTop,
+      }}
+    >
+      <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2">
+        <div className="flex flex-col">
+          <span className="text-sm font-semibold text-gray-800">{headerTitle}</span>
+          <span className="text-xs text-gray-500">{headerSubtitle}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onClose({ insertFallback: true })}
+          className="rounded p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700"
+          aria-label="Close supabase picker"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="border-b border-gray-100 px-3 py-2">
+        {mode === 'values' ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onBack}
+              className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-800"
+            >
+              Back
+            </button>
+            <input
+              value={valueSearch}
+              onChange={(event) => onValueSearchChange(event.target.value)}
+              autoFocus
+              className="flex-1 rounded border border-gray-200 px-2 py-1 text-sm text-gray-700 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-300"
+              placeholder="Search records..."
+            />
+          </div>
+        ) : (
+          <div className="space-y-1 text-xs text-gray-500">
+            <p className="font-medium text-gray-600">
+              {mode === 'columns' ? `Columns in ${selectedTable?.name}` : 'All accessible tables'}
+            </p>
+            <p className="leading-relaxed">
+              {mode === 'columns'
+                ? 'Select the column whose values you would like to insert.'
+                : "We list every table exposed to the current Supabase role. If you don't see a table, make sure it has read permissions or expose a view (see message below)."}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="max-h-80 overflow-y-auto">
+        {mode === 'tables' ? (
+          <>
+            {tablesLoading && (
+              <div className="px-3 py-4 text-sm text-gray-500">Loading tables from Supabase...</div>
+            )}
+            {!tablesLoading && tablesError && (
+              <div className="space-y-2 px-3 py-4 text-sm text-red-500">
+                <p>{tablesError}</p>
+                <p className="text-xs text-gray-600">
+                  Supabase REST only exposes schemas that you explicitly allow. To surface system tables, create a view
+                  in the <code>public</code> schema and grant <code>select</code> on it:
+                </p>
+                <pre className="whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs text-gray-700">
+{`create or replace view public.available_tables as
+  select tablename
+  from pg_catalog.pg_tables
+  where schemaname = 'public';`}
+                </pre>
+                <p className="text-xs text-gray-600">
+                  Then replace <code>pg_tables</code> with <code>available_tables</code> in the fetch helper or adjust
+                  the RLS policy accordingly.
+                </p>
+              </div>
+            )}
+            {!tablesLoading && !tablesError && tables.length === 0 && (
+              <div className="px-3 py-4 text-sm text-gray-500">No tables found.</div>
+            )}
+            {!tablesLoading &&
+              !tablesError &&
+              tables.map((table) => (
+                <button
+                  key={`${table.schema ?? 'public'}.${table.name}`}
+                  type="button"
+                  onClick={() => onTableSelect(table)}
+                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition hover:bg-violet-50"
+                >
+                  <span className="text-sm font-medium text-gray-900">{table.name}</span>
+                  <span className="text-xs text-gray-500">{table.schema ?? 'public'}</span>
+                </button>
+              ))}
+          </>
+        ) : mode === 'columns' ? (
+          <>
+            {columnsLoading && (
+              <div className="px-3 py-4 text-sm text-gray-500">Loading columns for {selectedTable?.name}…</div>
+            )}
+            {!columnsLoading && columnsError && (
+              <div className="px-3 py-4 text-sm text-red-500">
+                {columnsError || 'Unable to load columns. Check your Supabase policies.'}
+              </div>
+            )}
+            {!columnsLoading && !columnsError && columns.length === 0 && (
+              <div className="px-3 py-4 text-sm text-gray-500">
+                No columns found. Confirm the table exists and is accessible.
+              </div>
+            )}
+            {!columnsLoading &&
+              !columnsError &&
+              columns.map((column) => (
+                <button
+                  key={`${column.table}.${column.name}`}
+                  type="button"
+                  onClick={() => onColumnSelect(column)}
+                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition hover:bg-violet-50"
+                >
+                  <span className="text-sm font-medium text-gray-900">{column.name}</span>
+                  {column.dataType && <span className="text-xs text-gray-500">{column.dataType}</span>}
+                </button>
+              ))}
+          </>
+        ) : (
+          <>
+            {valuesLoading && (
+              <div className="px-3 py-4 text-sm text-gray-500">
+                Loading values for {selectedColumn?.name}…
+              </div>
+            )}
+            {!valuesLoading && valuesError && (
+              <div className="px-3 py-4 text-sm text-red-500">
+                {valuesError} Check table permissions if this persists.
+              </div>
+            )}
+            {!valuesLoading && !valuesError && values.length === 0 && (
+              <div className="px-3 py-4 text-sm text-gray-500">No matching values found.</div>
+            )}
+            {!valuesLoading &&
+              !valuesError &&
+              values.map((item) => (
+                <button
+                  key={`${item.table}.${item.column}.${item.display}`}
+                  type="button"
+                  onClick={() => onValueSelect(item)}
+                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition hover:bg-violet-50"
+                >
+                  <span className="text-sm font-medium text-gray-900 truncate max-w-full">{item.display}</span>
+                  <span className="text-xs text-gray-500">
+                    {selectedTable?.name}.{selectedColumn?.name}
+                  </span>
+                </button>
+              ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : null;
+};
+
 // Helper function to format time since last save
 const formatTimeSince = (date: Date): string => {
   const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
@@ -81,6 +477,547 @@ const ContractEditor = () => {
   const [isAutoSaving, setIsAutoSaving] = useState<boolean>(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [supabaseMentionState, setSupabaseMentionState] = useState<{
+    anchor: { left: number; top: number };
+    range: { from: number; to: number };
+  } | null>(null);
+  const [supabaseTables, setSupabaseTables] = useState<SupabaseTableMetadata[]>([]);
+  const [supabaseTablesLoading, setSupabaseTablesLoading] = useState<boolean>(false);
+  const [supabaseTablesError, setSupabaseTablesError] = useState<string | null>(null);
+  const [supabaseSelectedTable, setSupabaseSelectedTable] = useState<SupabaseTableMetadata | null>(null);
+  const [supabaseColumns, setSupabaseColumns] = useState<SupabaseColumnMetadata[]>([]);
+  const [supabaseColumnsLoading, setSupabaseColumnsLoading] = useState<boolean>(false);
+  const [supabaseColumnsError, setSupabaseColumnsError] = useState<string | null>(null);
+  const [supabaseSelectedColumn, setSupabaseSelectedColumn] = useState<SupabaseColumnMetadata | null>(null);
+  const [supabaseValues, setSupabaseValues] = useState<SupabaseValueOption[]>([]);
+  const [supabaseValuesLoading, setSupabaseValuesLoading] = useState<boolean>(false);
+  const [supabaseValuesError, setSupabaseValuesError] = useState<string | null>(null);
+  const [supabaseValueSearch, setSupabaseValueSearch] = useState<string>('');
+  const [supabaseSkipNextValueFetch, setSupabaseSkipNextValueFetch] = useState<boolean>(false);
+  const [supabaseLastSelection, setSupabaseLastSelection] = useState<{
+    table: SupabaseTableMetadata;
+    columns: SupabaseColumnMetadata[];
+    row: Record<string, any>;
+    rowIndex: number;
+    currentColumnIndex: number;
+  } | null>(null);
+  const [supabaseLastValueSequence, setSupabaseLastValueSequence] = useState<{
+    table: SupabaseTableMetadata;
+    column: SupabaseColumnMetadata;
+    columns: SupabaseColumnMetadata[];
+    values: SupabaseValueOption[];
+    currentIndex: number;
+    searchTerm: string;
+  } | null>(null);
+  const [supabaseRowDialog, setSupabaseRowDialog] = useState<{
+    open: boolean;
+    entries: Array<{ key: string; value: string }>;
+    table?: string;
+    rowIndex?: number;
+    row?: Record<string, any>;
+  }>({ open: false, entries: [] });
+  const closeSupabaseRowDialog = useCallback(() => {
+    setSupabaseRowDialog({ open: false, entries: [] });
+  }, []);
+  const handleInsertFullRow = useCallback(() => {
+    if (!editor || !supabaseRowDialog.row) {
+      closeSupabaseRowDialog();
+      return;
+    }
+    const text = formatRowForInsertion(supabaseRowDialog.row, new Set(['id']));
+    if (text) {
+      editor.chain().focus().insertContent(`${text}\n`).run();
+    }
+    closeSupabaseRowDialog();
+  }, [editor, supabaseRowDialog.row, closeSupabaseRowDialog]);
+
+  const fetchSupabaseTables = useCallback(async () => {
+      setSupabaseTablesLoading(true);
+      setSupabaseTablesError(null);
+      try {
+        const { data, error } = await supabase
+          .from('available_tables')
+          .select('tablename')
+          .order('tablename', { ascending: true })
+          .limit(200);
+
+        if (error) {
+          throw error;
+        }
+
+        const typedData = data as Array<{ tablename: string }> | null;
+
+        const mapped: SupabaseTableMetadata[] =
+          typedData
+            ?.map((item) => ({
+              name: item.tablename,
+              schema: 'public',
+            }))
+            .filter((item) => !SUPABASE_TABLE_EXCLUDE.has(item.name)) ?? [];
+
+        setSupabaseTables(mapped);
+      } catch (error: any) {
+        console.error('Supabase mention: failed to fetch tables', error);
+        setSupabaseTables([]);
+        setSupabaseTablesError(error?.message ?? 'Unable to load tables.');
+      } finally {
+        setSupabaseTablesLoading(false);
+      }
+    },
+    [supabase],
+  );
+
+  const fetchSupabaseTableColumns = useCallback(
+    async (tableName: string) => {
+      setSupabaseColumnsLoading(true);
+      setSupabaseColumnsError(null);
+      try {
+        const { data, error } = await supabase
+          .from('available_columns')
+          .select('column_name, data_type, ordinal_position')
+          .eq('tablename', tableName)
+          .order('ordinal_position', { ascending: true })
+          .limit(200);
+
+        if (error) {
+          throw error;
+        }
+
+        const typedData = data as Array<{ column_name: string; data_type: string | null; ordinal_position?: number }> | null;
+        const mapped: SupabaseColumnMetadata[] =
+          typedData?.map((item) => ({
+            table: tableName,
+            name: item.column_name,
+            dataType: item.data_type,
+            position: item.ordinal_position,
+          })) ?? [];
+
+        setSupabaseColumns(mapped);
+      } catch (error: any) {
+        console.error(`Supabase mention: failed to fetch columns for ${tableName}`, error);
+        setSupabaseColumns([]);
+        setSupabaseColumnsError(error?.message ?? 'Unable to load columns.');
+      } finally {
+        setSupabaseColumnsLoading(false);
+      }
+    },
+    [supabase],
+  );
+
+  const fetchSupabaseColumnValues = useCallback(
+    async (tableName: string, columnName: string, searchTerm: string) => {
+      setSupabaseValuesLoading(true);
+      setSupabaseValuesError(null);
+      try {
+        const { data, error } = await supabase
+          .from(tableName)
+          .select('*')
+          .limit(200);
+
+        if (error) {
+          throw error;
+        }
+
+        const rows = (data ?? []) as Array<Record<string, any>>;
+        const seen = new Set<string>();
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        const mapped: SupabaseValueOption[] = [];
+
+        rows.forEach((row, rowIndex) => {
+          const rawValue = row[columnName];
+          if (rawValue === null || rawValue === undefined) {
+            return;
+          }
+          const display =
+            typeof rawValue === 'string'
+              ? rawValue
+              : typeof rawValue === 'number'
+              ? String(rawValue)
+              : JSON.stringify(rawValue);
+
+          if (normalizedSearch && !display.toLowerCase().includes(normalizedSearch)) {
+            return;
+          }
+
+          if (seen.has(display)) {
+            return;
+          }
+          seen.add(display);
+
+          mapped.push({
+            table: tableName,
+            column: columnName,
+            display,
+            rawValue,
+            row,
+            rowIndex,
+          });
+        });
+
+        setSupabaseValues(mapped);
+      } catch (error: any) {
+        console.error(`Supabase mention: failed to fetch values for ${tableName}.${columnName}`, error);
+        setSupabaseValues([]);
+        setSupabaseValuesError(error?.message ?? 'Unable to load values.');
+      } finally {
+        setSupabaseValuesLoading(false);
+      }
+    },
+    [supabase],
+  );
+
+  const handleSupabaseMentionTrigger = useCallback(
+    ({ position, range }: { position: { left: number; top: number }; range: { from: number; to: number } }) => {
+      setSupabaseMentionState({ anchor: position, range });
+      setSupabaseLastSelection(null);
+      setSupabaseLastValueSequence(null);
+      setSupabaseSelectedTable(null);
+      setSupabaseColumns([]);
+      setSupabaseColumnsError(null);
+      setSupabaseSelectedColumn(null);
+      setSupabaseValues([]);
+      setSupabaseValueSearch('');
+      setSupabaseValuesError(null);
+      setSupabaseSkipNextValueFetch(false);
+      fetchSupabaseTables();
+    },
+    [fetchSupabaseTables],
+  );
+
+  const handleSupabaseMentionClose = useCallback(
+    (options?: { insertFallback?: boolean }) => {
+      if (options?.insertFallback && supabaseMentionState && editor) {
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(supabaseMentionState.range.from, '@')
+          .run();
+      }
+
+      setSupabaseMentionState(null);
+      setSupabaseSelectedTable(null);
+      setSupabaseTables([]);
+      setSupabaseColumns([]);
+      setSupabaseSelectedColumn(null);
+      setSupabaseValues([]);
+      setSupabaseValueSearch('');
+      setSupabaseTablesError(null);
+      setSupabaseColumnsError(null);
+      setSupabaseValuesError(null);
+      setSupabaseSkipNextValueFetch(false);
+      setSupabaseLastSelection(null);
+      setSupabaseLastValueSequence(null);
+    },
+    [editor, supabaseMentionState],
+  );
+
+  const handleSupabaseTableSelect = useCallback(
+    (table: SupabaseTableMetadata) => {
+      if (SUPABASE_TABLE_EXCLUDE.has(table.name)) {
+        return;
+      }
+      setSupabaseSelectedTable(table);
+      setSupabaseSelectedColumn(null);
+      setSupabaseColumns([]);
+      setSupabaseColumnsError(null);
+      setSupabaseValues([]);
+      setSupabaseValuesError(null);
+      setSupabaseValueSearch('');
+      setSupabaseSkipNextValueFetch(false);
+      setSupabaseLastSelection(null);
+      setSupabaseLastValueSequence(null);
+      fetchSupabaseTableColumns(table.name);
+    },
+    [fetchSupabaseTableColumns],
+  );
+
+  const handleSupabaseColumnSelect = useCallback(
+    (column: SupabaseColumnMetadata) => {
+      if (!supabaseSelectedTable) {
+        return;
+      }
+      setSupabaseSelectedColumn(column);
+      setSupabaseValues([]);
+      setSupabaseValuesError(null);
+      setSupabaseValueSearch('');
+      setSupabaseSkipNextValueFetch(false);
+      setSupabaseLastSelection(null);
+      setSupabaseLastValueSequence(null);
+      fetchSupabaseColumnValues(column.table, column.name, '');
+    },
+    [fetchSupabaseColumnValues, supabaseSelectedTable],
+  );
+
+  const handleSupabaseValueSelect = useCallback(
+    (item: SupabaseValueOption) => {
+      if (!supabaseMentionState) {
+        return;
+      }
+
+      const dialogEntries = getRowEntries(item.row, new Set(['id']));
+      setSupabaseRowDialog({
+        open: true,
+        entries: dialogEntries,
+        table: item.table,
+        rowIndex: item.rowIndex,
+        row: item.row,
+      });
+
+      if (supabaseSelectedTable && supabaseSelectedColumn && supabaseColumns.length > 0) {
+        const columnIndex = supabaseColumns.findIndex((column) => column.name === item.column);
+        if (columnIndex !== -1) {
+          setSupabaseLastSelection({
+            table: supabaseSelectedTable,
+            columns: supabaseColumns,
+            row: item.row,
+            rowIndex: item.rowIndex,
+            currentColumnIndex: columnIndex,
+          });
+          const valueIndex = supabaseValues.findIndex(
+            (value) =>
+              value.table === item.table &&
+              value.column === item.column &&
+              value.rowIndex === item.rowIndex &&
+              value.display === item.display,
+          );
+          if (valueIndex !== -1) {
+            setSupabaseLastValueSequence({
+              table: supabaseSelectedTable,
+              column: supabaseSelectedColumn,
+              columns: supabaseColumns,
+              values: supabaseValues,
+              currentIndex: valueIndex,
+              searchTerm: supabaseValueSearch,
+            });
+          } else {
+            setSupabaseLastValueSequence(null);
+          }
+        } else {
+          setSupabaseLastSelection(null);
+          setSupabaseLastValueSequence(null);
+        }
+      } else {
+        setSupabaseLastSelection(null);
+        setSupabaseLastValueSequence(null);
+      }
+
+      setSupabaseMentionState(null);
+      setSupabaseSelectedTable(null);
+      setSupabaseTables([]);
+      setSupabaseColumns([]);
+      setSupabaseSelectedColumn(null);
+      setSupabaseValues([]);
+      setSupabaseValueSearch('');
+      setSupabaseTablesError(null);
+      setSupabaseColumnsError(null);
+      setSupabaseValuesError(null);
+      setSupabaseSkipNextValueFetch(false);
+    },
+    [
+      editor,
+      supabaseMentionState,
+      supabaseSelectedTable,
+      supabaseSelectedColumn,
+      supabaseColumns,
+      supabaseValues,
+      supabaseValueSearch,
+    ],
+  );
+
+  const handleSupabaseMentionBack = useCallback(() => {
+    if (supabaseSelectedColumn) {
+      setSupabaseSelectedColumn(null);
+      setSupabaseValues([]);
+      setSupabaseValuesError(null);
+      setSupabaseValueSearch('');
+      setSupabaseSkipNextValueFetch(false);
+      setSupabaseLastValueSequence(null);
+      return;
+    }
+    setSupabaseSelectedTable(null);
+    setSupabaseColumns([]);
+    setSupabaseColumnsError(null);
+    setSupabaseSelectedColumn(null);
+    setSupabaseValues([]);
+    setSupabaseValuesError(null);
+    setSupabaseValueSearch('');
+    setSupabaseSkipNextValueFetch(false);
+    setSupabaseLastSelection(null);
+    setSupabaseLastValueSequence(null);
+  }, [supabaseSelectedColumn]);
+
+  useEffect(() => {
+    if (!supabaseMentionState) {
+      return;
+    }
+
+    fetchSupabaseTables();
+  }, [fetchSupabaseTables, supabaseMentionState]);
+
+  useEffect(() => {
+    if (!supabaseMentionState || !supabaseSelectedTable) {
+      return;
+    }
+
+    fetchSupabaseTableColumns(supabaseSelectedTable.name);
+  }, [fetchSupabaseTableColumns, supabaseMentionState, supabaseSelectedTable]);
+
+  useEffect(() => {
+    if (!supabaseMentionState || !supabaseSelectedTable || !supabaseSelectedColumn) {
+      return;
+    }
+
+    if (supabaseSkipNextValueFetch) {
+      setSupabaseSkipNextValueFetch(false);
+      return;
+    }
+
+    const handler = setTimeout(() => {
+      fetchSupabaseColumnValues(
+        supabaseSelectedTable.name,
+        supabaseSelectedColumn.name,
+        supabaseValueSearch,
+      );
+    }, 250);
+
+    return () => clearTimeout(handler);
+  }, [
+    fetchSupabaseColumnValues,
+    supabaseMentionState,
+    supabaseSelectedTable,
+    supabaseSelectedColumn,
+    supabaseValueSearch,
+    supabaseSkipNextValueFetch,
+  ]);
+
+  const supabasePanelMode: 'tables' | 'columns' | 'values' = supabaseSelectedTable
+    ? supabaseSelectedColumn
+      ? 'values'
+      : 'columns'
+    : 'tables';
+
+  const handleSupabaseNextRequest = useCallback(
+    ({ position, range }: { position: { left: number; top: number }; range: { from: number; to: number } }) => {
+      if (supabaseLastValueSequence) {
+        const { table, column, columns, values, currentIndex } = supabaseLastValueSequence;
+        let nextIndex = currentIndex + 1;
+        let nextValue: SupabaseValueOption | undefined;
+
+        while (nextIndex < values.length) {
+          const candidate = values[nextIndex];
+          if (candidate.display && candidate.display.trim().length > 0) {
+            nextValue = candidate;
+            break;
+          }
+          nextIndex++;
+        }
+
+        if (nextValue) {
+          setSupabaseMentionState({ anchor: position, range });
+          setSupabaseSelectedTable(table);
+          setSupabaseTables((prev) => (prev.some((item) => item.name === table.name) ? prev : [...prev, table]));
+          setSupabaseColumns(columns);
+          setSupabaseColumnsLoading(false);
+          setSupabaseColumnsError(null);
+          setSupabaseSelectedColumn(column);
+          setSupabaseValueSearch(supabaseLastValueSequence.searchTerm);
+          setSupabaseSkipNextValueFetch(true);
+          setSupabaseValues(values.slice(nextIndex));
+          setSupabaseValuesLoading(false);
+          setSupabaseValuesError(null);
+          setSupabaseLastSelection({
+            table,
+            columns,
+            row: nextValue.row,
+            rowIndex: nextValue.rowIndex,
+            currentColumnIndex: columns.findIndex((col) => col.name === column.name),
+          });
+          setSupabaseLastValueSequence({
+            table,
+            column,
+            columns,
+            values,
+            currentIndex: nextIndex,
+            searchTerm: supabaseLastValueSequence.searchTerm,
+          });
+          return;
+        }
+
+        setSupabaseLastValueSequence(null);
+      }
+
+      if (!supabaseLastSelection) {
+        return;
+      }
+
+      const { table, columns, row, rowIndex, currentColumnIndex } = supabaseLastSelection;
+
+      let nextIndex = currentColumnIndex + 1;
+      let nextColumn: SupabaseColumnMetadata | undefined;
+
+      while (nextIndex < columns.length) {
+        const candidate = columns[nextIndex];
+        const value = row[candidate.name];
+        if (
+          value !== null &&
+          value !== undefined &&
+          !(typeof value === 'string' && value.trim() === '')
+        ) {
+          nextColumn = candidate;
+          break;
+        }
+        nextIndex++;
+      }
+
+      if (!nextColumn) {
+        setSupabaseLastSelection(null);
+        return;
+      }
+
+      const rawValue = row[nextColumn.name];
+      const display =
+        typeof rawValue === 'string'
+          ? rawValue
+          : typeof rawValue === 'number'
+          ? String(rawValue)
+          : JSON.stringify(rawValue);
+
+      setSupabaseMentionState({ anchor: position, range });
+      setSupabaseSelectedTable(table);
+      setSupabaseTables((prev) => {
+        if (prev.some((item) => item.name === table.name)) {
+          return prev;
+        }
+        return [...prev, table];
+      });
+      setSupabaseColumns(columns);
+      setSupabaseColumnsLoading(false);
+      setSupabaseColumnsError(null);
+      setSupabaseSelectedColumn(nextColumn);
+      setSupabaseValueSearch('');
+      setSupabaseSkipNextValueFetch(true);
+      setSupabaseValues([
+        {
+          table: table.name,
+          column: nextColumn.name,
+          display,
+          rawValue,
+          row,
+          rowIndex,
+        },
+      ]);
+      setSupabaseValuesLoading(false);
+      setSupabaseValuesError(null);
+      setSupabaseLastSelection({
+        table,
+        columns,
+        row,
+        rowIndex,
+        currentColumnIndex: nextIndex,
+      });
+    },
+    [supabaseLastSelection, supabaseLastValueSequence],
+  );
 
   // Auto-save function with debouncing
   const autoSaveContract = useCallback(async () => {
@@ -671,20 +1608,29 @@ const ContractEditor = () => {
     }
 
     // Insert variable placeholder in format {{variable_key}}
-    const variablePlaceholder = `<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">{{${variableKey.trim()}}}</span>`;
-    
-    // Append variable to the end of current content
-    setContractContent(prev => prev + ' ' + variablePlaceholder + ' ');
+    const trimmedKey = variableKey.trim();
+    const variablePlaceholder = `<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">var[{{${trimmedKey}}}]</span>`;
+
+    if (editor) {
+      editor
+        .chain()
+        .focus()
+        .insertContent(`${variablePlaceholder} `)
+        .run();
+    } else {
+      // Fallback in case editor isn't ready yet
+      setContractContent((prev) => prev + ' ' + variablePlaceholder + ' ');
+    }
     
     // Store variable in state
     setVariables(prev => ({
       ...prev,
-      [variableKey.trim()]: variableValue.trim() || ''
+      [trimmedKey]: variableValue.trim() || ''
     }));
 
     toast({
       title: "Variable Added",
-      description: `Variable "${variableKey.trim()}" has been added to the document.`,
+      description: `Variable "${trimmedKey}" has been added to the document.`,
     });
 
     // Reset form and close dialog
@@ -924,7 +1870,11 @@ const ContractEditor = () => {
                   placeholder="Start writing your contract here...
 
 Use the toolbar above to format text, add headings, lists, and more."
+                  onVariableClick={() => setIsVariableDialogOpen(true)}
+                  onSupabaseMentionTrigger={handleSupabaseMentionTrigger}
+                  onSupabaseNextRequest={handleSupabaseNextRequest}
                   onEditorReady={setEditor}
+                  onImageUpload={handleImageUpload}
                 />
               </div>
 
@@ -934,6 +1884,72 @@ Use the toolbar above to format text, add headings, lists, and more."
       </div>
 
       <MobileNav />
+
+      {/* Supabase Row Dialog */}
+      <Dialog open={supabaseRowDialog.open} onOpenChange={(open) => open ? null : closeSupabaseRowDialog()}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>
+              {supabaseRowDialog.table
+                ? `Row from ${supabaseRowDialog.table}`
+                : 'Row Details'}
+            </DialogTitle>
+            <DialogDescription>
+              Drag any row into the editor to insert `Field: Value` pairs.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="max-h-96 overflow-auto divide-y divide-gray-100 text-sm">
+              {supabaseRowDialog.entries.map((entry, index) => {
+                const combined =
+                  entry.value && entry.value.includes('\n')
+                    ? `${entry.key}:\n${entry.value}`
+                    : `${entry.key}: ${entry.value}`;
+                return (
+                  <div
+                    key={`${entry.key}-${index}`}
+                    className="flex flex-col gap-1 px-4 py-3 hover:bg-violet-50"
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData('text/plain', combined);
+                    }}
+                  >
+                    <div className="text-xs font-semibold uppercase tracking-wide text-violet-600">
+                      {entry.key}
+                    </div>
+                    <div className="rounded-md border border-violet-100 bg-white px-3 py-2 text-gray-800 shadow-sm">
+                      <pre className="whitespace-pre-wrap font-sans text-sm">
+                        {combined}
+                      </pre>
+                    </div>
+                  </div>
+                );
+              })}
+              {supabaseRowDialog.entries.length === 0 && (
+                <div className="px-4 py-6 text-sm text-gray-500">
+                  No data to display.
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-gray-500">
+              Tip: Drag any row into the editor or insert them all at once.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={closeSupabaseRowDialog}>
+                Close
+              </Button>
+              <Button
+                onClick={handleInsertFullRow}
+                disabled={!supabaseRowDialog.row}
+              >
+                Insert Entire Row
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Floating Zoom Controls - Bottom Left */}
       <div className="fixed bottom-4 left-8 lg:left-60 z-20 flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2">
@@ -1032,6 +2048,30 @@ Use the toolbar above to format text, add headings, lists, and more."
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {supabaseMentionState && (
+        <SupabaseMentionPanel
+          anchor={supabaseMentionState.anchor}
+          mode={supabasePanelMode}
+          tables={supabaseTables}
+          tablesLoading={supabaseTablesLoading}
+          tablesError={supabaseTablesError}
+          selectedTable={supabaseSelectedTable}
+          onTableSelect={handleSupabaseTableSelect}
+          columns={supabaseColumns}
+          columnsLoading={supabaseColumnsLoading}
+          columnsError={supabaseColumnsError}
+          onColumnSelect={handleSupabaseColumnSelect}
+          selectedColumn={supabaseSelectedColumn}
+          values={supabaseValues}
+          valuesLoading={supabaseValuesLoading}
+          valuesError={supabaseValuesError}
+          valueSearch={supabaseValueSearch}
+          onValueSearchChange={setSupabaseValueSearch}
+          onValueSelect={handleSupabaseValueSelect}
+          onBack={handleSupabaseMentionBack}
+          onClose={handleSupabaseMentionClose}
+        />
+      )}
     </div>
   );
 };
