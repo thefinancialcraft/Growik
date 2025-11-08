@@ -63,6 +63,138 @@ interface Contract {
   updater_employee_id?: string;
 }
 
+const TIPTAP_STORAGE_STYLE = `
+:root {
+  --font-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --color-base: #111827;
+  --color-muted: #4b5563;
+}
+
+.tiptap-rendered {
+  font-family: var(--font-base);
+  font-size: 11pt;
+  line-height: 1.7;
+  color: var(--color-base);
+  word-break: break-word;
+}
+
+.tiptap-rendered p {
+  margin: 0 0 12px;
+}
+
+.tiptap-rendered h1,
+.tiptap-rendered h2,
+.tiptap-rendered h3,
+.tiptap-rendered h4,
+.tiptap-rendered h5,
+.tiptap-rendered h6 {
+  margin: 24px 0 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.tiptap-rendered h1 { font-size: 26px; }
+.tiptap-rendered h2 { font-size: 22px; }
+.tiptap-rendered h3 { font-size: 19px; }
+.tiptap-rendered h4 { font-size: 16px; }
+.tiptap-rendered h5 { font-size: 14px; }
+.tiptap-rendered h6 { font-size: 12px; }
+
+.tiptap-rendered ul,
+.tiptap-rendered ol {
+  margin: 0 0 12px 24px;
+  padding: 0;
+}
+
+.tiptap-rendered li {
+  margin: 0 0 8px;
+}
+
+.tiptap-rendered blockquote {
+  margin: 12px 0;
+  padding: 10px 16px;
+  border-left: 4px solid #d1d5db;
+  background-color: #f9fafb;
+  color: var(--color-muted);
+}
+
+.tiptap-rendered table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 10pt;
+}
+
+.tiptap-rendered table th,
+.tiptap-rendered table td {
+  border: 1px solid #d1d5db;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tiptap-rendered table thead th {
+  background-color: #f3f4f6;
+}
+
+.tiptap-rendered pre {
+  background-color: #1f2937;
+  color: #f9fafb;
+  padding: 12px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-size: 10pt;
+  white-space: pre-wrap;
+}
+
+.tiptap-rendered code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 10pt;
+}
+
+.tiptap-rendered a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.tiptap-rendered hr {
+  border: 0;
+  border-top: 1px solid #d1d5db;
+  margin: 24px 0;
+}
+
+.tiptap-rendered .tiptap-image-wrapper {
+  display: block;
+  margin: 18px 0;
+}
+
+.tiptap-rendered .tiptap-image-wrapper[data-alignment="right"] {
+  text-align: right;
+}
+
+.tiptap-rendered .tiptap-image-wrapper[data-alignment="center"] {
+  text-align: center;
+}
+
+.tiptap-rendered .tiptap-image-wrapper[data-alignment="left"] {
+  text-align: left;
+}
+
+.tiptap-rendered .tiptap-image-wrapper img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+}
+
+.tiptap-rendered img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 18px 0;
+}
+`;
+
 const Contract = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -1086,6 +1218,8 @@ const Contract = () => {
 
   // Generate PDF from contract content
   const handleViewContract = async (contract: Contract) => {
+    let container: HTMLDivElement | null = null;
+    let style: HTMLStyleElement | null = null;
     try {
       toast({
         title: "Generating PDF",
@@ -1093,7 +1227,7 @@ const Contract = () => {
       });
 
       // Create a temporary container for the contract content
-      const container = document.createElement('div');
+      container = document.createElement('div');
       container.style.position = 'absolute';
       container.style.left = '-9999px';
       container.style.width = '210mm'; // A4 width
@@ -1101,105 +1235,8 @@ const Contract = () => {
       container.style.backgroundColor = '#fff';
       
       // Add Quill editor styles to preserve formatting
-      const style = document.createElement('style');
-      style.textContent = `
-        .ql-editor {
-          box-sizing: border-box;
-          line-height: 1.42;
-          height: 100%;
-          outline: none;
-          overflow-y: auto;
-          padding: 12px 15px;
-          tab-size: 4;
-          -moz-tab-size: 4;
-          text-align: left;
-          white-space: pre-wrap;
-          word-wrap: break-word;
-        }
-        .ql-editor p,
-        .ql-editor ol,
-        .ql-editor ul,
-        .ql-editor pre,
-        .ql-editor blockquote,
-        .ql-editor h1,
-        .ql-editor h2,
-        .ql-editor h3,
-        .ql-editor h4,
-        .ql-editor h5,
-        .ql-editor h6 {
-          margin: 0;
-          padding: 0;
-          counter-reset: list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;
-        }
-        .ql-editor ol,
-        .ql-editor ul {
-          padding-left: 1.5em;
-        }
-        .ql-editor ol > li,
-        .ql-editor ul > li {
-          list-style-type: none;
-        }
-        .ql-editor ol > li::before {
-          counter-increment: list-1;
-          content: counter(list-1, decimal) '. ';
-        }
-        .ql-editor ul > li::before {
-          content: '\\2022';
-        }
-        .ql-editor h1 { font-size: 2em; font-weight: bold; }
-        .ql-editor h2 { font-size: 1.5em; font-weight: bold; }
-        .ql-editor h3 { font-size: 1.17em; font-weight: bold; }
-        .ql-editor h4 { font-size: 1em; font-weight: bold; }
-        .ql-editor h5 { font-size: 0.83em; font-weight: bold; }
-        .ql-editor h6 { font-size: 0.67em; font-weight: bold; }
-        .ql-editor a { color: #06c; text-decoration: underline; }
-        .ql-editor blockquote {
-          border-left: 4px solid #ccc;
-          margin-bottom: 5px;
-          margin-top: 5px;
-          padding-left: 16px;
-        }
-        .ql-editor code,
-        .ql-editor pre {
-          background-color: #f0f0f0;
-          border-radius: 3px;
-        }
-        .ql-editor pre {
-          white-space: pre-wrap;
-          margin-bottom: 5px;
-          margin-top: 5px;
-          padding: 5px 10px;
-        }
-        .ql-editor code {
-          font-size: 85%;
-          padding: 2px 4px;
-        }
-        .ql-editor pre.ql-syntax {
-          background-color: #23241f;
-          color: #f8f8f2;
-          overflow: visible;
-        }
-        .ql-editor img {
-          max-width: 100%;
-          height: auto;
-        }
-        /* Quill Font Styles */
-        .ql-font-roboto { font-family: 'Roboto', sans-serif; }
-        .ql-font-open-sans { font-family: 'Open Sans', sans-serif; }
-        .ql-font-lato { font-family: 'Lato', sans-serif; }
-        .ql-font-montserrat { font-family: 'Montserrat', sans-serif; }
-        .ql-font-raleway { font-family: 'Raleway', sans-serif; }
-        .ql-font-playfair-display { font-family: 'Playfair Display', serif; }
-        .ql-font-merriweather { font-family: 'Merriweather', serif; }
-        .ql-font-source-sans-pro { font-family: 'Source Sans Pro', sans-serif; }
-        .ql-font-poppins { font-family: 'Poppins', sans-serif; }
-        .ql-font-nunito { font-family: 'Nunito', sans-serif; }
-        .ql-font-inter { font-family: 'Inter', sans-serif; }
-        .ql-font-ubuntu { font-family: 'Ubuntu', sans-serif; }
-        .ql-font-crimson-text { font-family: 'Crimson Text', serif; }
-        .ql-font-lora { font-family: 'Lora', serif; }
-        .ql-font-pt-serif { font-family: 'PT Serif', serif; }
-      `;
+      style = document.createElement('style');
+      style.textContent = TIPTAP_STORAGE_STYLE;
       document.head.appendChild(style);
       
       // Add contract header
@@ -1217,11 +1254,68 @@ const Contract = () => {
       `;
       container.appendChild(header);
 
-      // Add contract content with Quill editor class to preserve styling
-      const content = document.createElement('div');
-      content.className = 'ql-editor';
-      content.innerHTML = contract.content || '<p>No content available.</p>';
-      container.appendChild(content);
+      const contentWrapper = document.createElement('div');
+      contentWrapper.style.padding = '0';
+      contentWrapper.style.backgroundColor = '#ffffff';
+
+      const rawHtml = contract.content && contract.content.trim().length
+        ? contract.content
+        : `<!DOCTYPE html><html><head><meta charset="utf-8" /><style>${TIPTAP_STORAGE_STYLE}</style></head><body><div class="tiptap-rendered"><p>No content available.</p></div></body></html>`;
+
+      try {
+        const parser = new DOMParser();
+        const parsedDoc = parser.parseFromString(rawHtml, 'text/html');
+        const styles = parsedDoc.head ? Array.from(parsedDoc.head.querySelectorAll('style, link[rel="stylesheet"]')) : [];
+        styles.forEach((styleNode) => {
+          container!.appendChild(styleNode.cloneNode(true));
+        });
+        const bodyContent = parsedDoc.body ? parsedDoc.body.innerHTML : rawHtml;
+        contentWrapper.innerHTML = bodyContent;
+      } catch {
+        contentWrapper.innerHTML = rawHtml;
+      }
+
+      container.appendChild(contentWrapper);
+
+      const images = Array.from(container.querySelectorAll('img')) as HTMLImageElement[];
+      await Promise.all(
+        images.map(async (img) => {
+          const src = img.getAttribute('src');
+          if (src && !src.startsWith('data:')) {
+            try {
+              const response = await fetch(src, { mode: 'cors' });
+              if (!response.ok) {
+                throw new Error(`Failed to fetch image: ${response.status}`);
+              }
+              const blob = await response.blob();
+              const dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = () => reject(new Error('Failed to convert image to data URL'));
+                reader.readAsDataURL(blob);
+              });
+              img.src = dataUrl;
+            } catch (error) {
+              console.warn('Contract: unable to inline image for PDF rendering', error);
+            }
+          }
+
+          await new Promise<void>((resolve) => {
+            const handleResolve = () => {
+              img.removeEventListener('load', handleResolve);
+              img.removeEventListener('error', handleResolve);
+              resolve();
+            };
+
+            if (img.complete) {
+              resolve();
+            } else {
+              img.addEventListener('load', handleResolve, { once: true });
+              img.addEventListener('error', handleResolve, { once: true });
+            }
+          });
+        })
+      );
 
       // Add footer with creator/updater info
       const footer = document.createElement('div');
@@ -1252,31 +1346,25 @@ const Contract = () => {
         backgroundColor: '#ffffff',
       });
 
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 297; // A4 height in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
       let heightLeft = imgHeight;
       let position = 0;
 
-      // Add first page
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pdfHeight;
 
-      // Add additional pages if needed
       while (heightLeft > 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
       }
 
-      // Clean up
-      document.body.removeChild(container);
-      document.head.removeChild(style);
-
-      // Save PDF
       pdf.save(`${contract.contract_name.replace(/[^a-z0-9]/gi, '_')}_${new Date().getTime()}.pdf`);
 
       toast({
@@ -1290,6 +1378,13 @@ const Contract = () => {
         description: error.message || "Failed to generate PDF. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      if (container && container.parentNode) {
+        document.body.removeChild(container);
+      }
+      if (style && document.head.contains(style)) {
+        document.head.removeChild(style);
+      }
     }
   };
 

@@ -396,6 +396,16 @@ const ResizableImageComponent = ({ node, updateAttributes, selected }: any) => {
   // Use node.attrs directly to always get the latest saved dimensions
   const currentWidth = node.attrs.width ? parseInt(node.attrs.width) : 300;
   const currentHeight = node.attrs.height ? parseInt(node.attrs.height) : 200;
+  const alignmentAttr: 'left' | 'center' | 'right' | 'custom' =
+    (node.attrs.alignment as any) ||
+    (node.attrs['data-alignment'] as any) ||
+    'left';
+  const offsetXAttr =
+    typeof node.attrs.offsetX === 'number'
+      ? node.attrs.offsetX
+      : typeof node.attrs['data-offset-x'] === 'number'
+      ? node.attrs['data-offset-x']
+      : 0;
   
   const [dimensions, setDimensions] = useState({ 
     width: currentWidth, 
@@ -509,9 +519,8 @@ const ResizableImageComponent = ({ node, updateAttributes, selected }: any) => {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const alignmentRaw: 'left' | 'center' | 'right' | 'custom' | undefined = node.attrs.alignment;
-  const alignment = alignmentRaw ?? 'left';
-  const offsetX = typeof node.attrs.offsetX === 'number' ? node.attrs.offsetX : 0;
+  const alignment = alignmentAttr;
+  const offsetX = offsetXAttr;
 
   const wrapperStyle: React.CSSProperties =
     alignment === 'custom'
@@ -550,6 +559,8 @@ const ResizableImageComponent = ({ node, updateAttributes, selected }: any) => {
       className="resizable-image-wrapper" 
       style={wrapperStyle}
       as="div"
+      data-alignment={alignment}
+      data-offset-x={offsetX}
       data-drag-handle
     >
       <span
@@ -567,6 +578,8 @@ const ResizableImageComponent = ({ node, updateAttributes, selected }: any) => {
           style={imageStyle}
         className={selected ? 'selected-image' : ''}
         data-drag-handle
+        data-alignment={alignment}
+        data-offset-x={offsetX}
           draggable={false}
       />
       {selected && (
@@ -775,11 +788,37 @@ const ResizableImage = Image.extend({
           return { height: attributes.height };
         },
       },
+      alignment: {
+        default: 'left',
+        parseHTML: element => {
+          const self = element.getAttribute('data-alignment');
+          if (self) return self;
+          const parent = element.parentElement?.getAttribute('data-alignment');
+          return parent || 'left';
+        },
+        renderHTML: attributes => {
+          if (!attributes.alignment || attributes.alignment === 'custom') {
+            return {};
+          }
+          return {
+            'data-alignment': attributes.alignment,
+          };
+        },
+      },
       offsetX: {
         default: 0,
         parseHTML: element => {
-          const value = element.getAttribute('data-offset-x');
-          return value ? parseFloat(value) || 0 : 0;
+          const self = element.getAttribute('data-offset-x');
+          if (self) {
+            const parsed = parseFloat(self);
+            return Number.isNaN(parsed) ? 0 : parsed;
+          }
+          const parent = element.parentElement?.getAttribute('data-offset-x');
+          if (parent) {
+            const parsed = parseFloat(parent);
+            return Number.isNaN(parsed) ? 0 : parsed;
+          }
+          return 0;
         },
         renderHTML: attributes => {
           if (typeof attributes.offsetX !== 'number') {
@@ -790,19 +829,43 @@ const ResizableImage = Image.extend({
           };
         },
       },
-      alignment: {
-        default: 'left',
-        parseHTML: element => element.getAttribute('data-alignment') || 'left',
-        renderHTML: attributes => {
-          if (!attributes.alignment || attributes.alignment === 'custom') {
-            return {};
-          }
-          return {
-            'data-alignment': attributes.alignment,
-          };
-        },
-      },
     };
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    const anyAttrs = HTMLAttributes as any;
+    const alignmentAttr = anyAttrs.alignment ?? anyAttrs['data-alignment'] ?? 'left';
+    const offsetX = typeof anyAttrs.offsetX === 'number' ? anyAttrs.offsetX : anyAttrs['data-offset-x'];
+
+    const imgAttrs = { ...anyAttrs };
+    delete imgAttrs.alignment;
+    delete imgAttrs['data-alignment'];
+    delete imgAttrs.offsetX;
+    delete imgAttrs['data-offset-x'];
+
+    const wrapperAttrs: Record<string, any> = {
+      class: 'tiptap-image-wrapper',
+      'data-alignment': alignmentAttr || 'left',
+    };
+
+    const inlineStyles: string[] = [];
+    if (alignmentAttr === 'right') {
+      inlineStyles.push('text-align: right');
+    } else if (alignmentAttr === 'center') {
+      inlineStyles.push('text-align: center');
+    } else if (alignmentAttr === 'custom' && typeof offsetX === 'number') {
+      inlineStyles.push(`margin-left: ${offsetX}px`);
+    }
+
+    if (inlineStyles.length) {
+      wrapperAttrs.style = inlineStyles.join('; ');
+    }
+
+    if (typeof offsetX === 'number') {
+      wrapperAttrs['data-offset-x'] = offsetX;
+    }
+
+    return ['span', wrapperAttrs, ['img', imgAttrs]];
   },
 
   addNodeView() {
@@ -1656,6 +1719,93 @@ const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | 
     input.click();
   }, [editor, onImageUpload]);
 
+  const handlePrint = useCallback(() => {
+    if (!editor) {
+      return;
+    }
+
+    const html = editor.getHTML();
+    const printWindow = window.open('', '_blank', 'width=816,height=1056');
+    if (!printWindow) {
+      window.alert('Unable to open print preview. Please allow pop-ups for this site.');
+      return;
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Print Preview</title>
+          <style>
+            @page {
+              size: A4;
+              margin: 20mm;
+            }
+
+            body {
+              margin: 0;
+              font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+              background: white;
+              color: #111827;
+            }
+
+            .print-container {
+              width: 100%;
+              box-sizing: border-box;
+            }
+
+            h1, h2, h3, h4, h5, h6 {
+              margin: 0 0 12px;
+              line-height: 1.2;
+            }
+
+            p {
+              margin: 0 0 12px;
+              line-height: 1.6;
+            }
+
+            ul, ol {
+              padding-left: 24px;
+              margin: 0 0 12px;
+            }
+
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 12px 0;
+            }
+
+            table th,
+            table td {
+              border: 1px solid #d1d5db;
+              padding: 8px;
+              text-align: left;
+              vertical-align: top;
+            }
+
+            img {
+              max-width: 100%;
+              height: auto;
+            }
+
+            blockquote {
+              margin: 0 0 12px;
+              padding-left: 16px;
+              border-left: 4px solid #d1d5db;
+              color: #4b5563;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-container">${html}</div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  }, [editor]);
+
   return (
     <div className="inline-flex items-center gap-0.5 flex-wrap">
         {/* Undo/Redo */}
@@ -1678,7 +1828,7 @@ const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | 
         
         {/* Print */}
         <button
-          onClick={() => window.print()}
+          onClick={handlePrint}
           className="toolbar-btn"
           title="Print (Ctrl+P)"
         >

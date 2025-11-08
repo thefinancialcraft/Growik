@@ -66,6 +66,232 @@ interface SupabaseValueOption {
 
 const SUPABASE_TABLE_EXCLUDE = new Set(['messages', 'admin_members', 'contracts']);
 
+const TIPTAP_STORAGE_STYLE = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --font-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --color-base: #111827;
+  --color-muted: #4b5563;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+}
+
+.tiptap-rendered {
+  font-family: var(--font-base);
+  font-size: 11.5pt;
+  line-height: 1.7;
+  color: var(--color-base);
+  word-break: break-word;
+}
+
+.tiptap-rendered strong {
+  font-weight: 600;
+}
+
+.tiptap-rendered em {
+  font-style: italic;
+}
+
+.tiptap-rendered u {
+  text-decoration: underline;
+}
+
+.tiptap-rendered s {
+  text-decoration: line-through;
+}
+
+.tiptap-rendered mark {
+  background-color: #fef08a;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.tiptap-rendered p {
+  margin: 0 0 14px;
+}
+
+.tiptap-rendered h1,
+.tiptap-rendered h2,
+.tiptap-rendered h3,
+.tiptap-rendered h4,
+.tiptap-rendered h5,
+.tiptap-rendered h6 {
+  margin: 26px 0 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.tiptap-rendered h1 { font-size: 30px; }
+.tiptap-rendered h2 { font-size: 24px; }
+.tiptap-rendered h3 { font-size: 20px; }
+.tiptap-rendered h4 { font-size: 18px; }
+.tiptap-rendered h5 { font-size: 16px; }
+.tiptap-rendered h6 { font-size: 14px; }
+
+.tiptap-rendered ul,
+.tiptap-rendered ol {
+  margin: 0 0 14px 26px;
+  padding: 0;
+}
+
+.tiptap-rendered ul { list-style: disc; }
+.tiptap-rendered ul ul { list-style: circle; }
+.tiptap-rendered ul ul ul { list-style: square; }
+
+.tiptap-rendered ol { list-style: decimal; }
+.tiptap-rendered ol ol { list-style: lower-alpha; }
+.tiptap-rendered ol ol ol { list-style: lower-roman; }
+
+.tiptap-rendered li {
+  margin: 0 0 8px;
+}
+
+.tiptap-rendered blockquote {
+  margin: 14px 0;
+  padding: 12px 18px;
+  border-left: 4px solid #d1d5db;
+  background-color: #f9fafb;
+  color: var(--color-muted);
+}
+
+.tiptap-rendered table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 18px 0;
+  font-size: 10.5pt;
+}
+
+.tiptap-rendered table th,
+.tiptap-rendered table td {
+  border: 1px solid #d1d5db;
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tiptap-rendered table thead th {
+  background-color: #f3f4f6;
+  font-weight: 600;
+}
+
+.tiptap-rendered pre {
+  background-color: #1f2937;
+  color: #f9fafb;
+  padding: 14px;
+  border-radius: 8px;
+  margin: 14px 0;
+  font-family: var(--font-mono);
+  font-size: 10pt;
+  white-space: pre-wrap;
+}
+
+.tiptap-rendered code {
+  font-family: var(--font-mono);
+  font-size: 10pt;
+  background-color: #f3f4f6;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.tiptap-rendered pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.tiptap-rendered a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.tiptap-rendered hr {
+  border: 0;
+  border-top: 1px solid #d1d5db;
+  margin: 28px 0;
+}
+
+.tiptap-rendered .text-left,
+.tiptap-rendered .has-text-align-left,
+.tiptap-rendered [style*='text-align: left'] {
+  text-align: left !important;
+}
+
+.tiptap-rendered .text-center,
+.tiptap-rendered .has-text-align-center,
+.tiptap-rendered [style*='text-align: center'] {
+  text-align: center !important;
+}
+
+.tiptap-rendered .text-right,
+.tiptap-rendered .has-text-align-right,
+.tiptap-rendered [style*='text-align: right'] {
+  text-align: right !important;
+}
+
+.tiptap-rendered .text-justify,
+.tiptap-rendered .has-text-align-justify,
+.tiptap-rendered [style*='text-align: justify'] {
+  text-align: justify !important;
+}
+
+.tiptap-rendered .tiptap-image-wrapper {
+  display: block;
+  margin: 18px 0;
+}
+
+.tiptap-rendered .tiptap-image-wrapper[data-alignment="right"] {
+  text-align: right;
+}
+
+.tiptap-rendered .tiptap-image-wrapper[data-alignment="center"] {
+  text-align: center;
+}
+
+.tiptap-rendered .tiptap-image-wrapper[data-alignment="left"] {
+  text-align: left;
+}
+
+.tiptap-rendered .tiptap-image-wrapper img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+}
+
+.tiptap-rendered img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 18px 0;
+}
+`;
+
+const wrapContentForStorage = (html: string): string => {
+  const safeHtml = html || '<p></p>';
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><style>${TIPTAP_STORAGE_STYLE}</style></head><body><div class="tiptap-rendered">${safeHtml}</div></body></html>`;
+};
+
+const unwrapContentFromStorage = (html?: string | null): string => {
+  if (!html) return '';
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const rendered = doc.querySelector('.tiptap-rendered');
+    return rendered ? rendered.innerHTML : doc.body.innerHTML || '';
+  } catch {
+    const match = html.match(/<div[^>]*class=[\"']?[^\"']*tiptap-rendered[^\"']*[\"']?[^>]*>([\s\S]*?)<\/div>/i);
+    if (match && match[1]) {
+      return match[1];
+    }
+    return html;
+  }
+};
+
 const prettifyKey = (key: string): string =>
   key
     .replace(/_/g, ' ')
@@ -1027,13 +1253,14 @@ const ContractEditor = () => {
 
     setIsAutoSaving(true);
     try {
+      const styledContent = wrapContentForStorage(contractContent);
       const { error } = await supabase
         .from('contracts')
         // @ts-ignore - Supabase type inference issue
         .update({
           contract_name: contractName.trim(),
           description: contractDescription.trim() || null,
-          content: contractContent,
+          content: styledContent,
           variables: variables,
           updated_at: new Date().toISOString(),
           updated_by: user.id,
@@ -1380,7 +1607,7 @@ const ContractEditor = () => {
 
           setContractName(contractData.contract_name || '');
           setContractDescription((contractData as ContractData).description || '');
-          setContractContent(contractData.content || '');
+          setContractContent(unwrapContentFromStorage(contractData.content));
           setVariables(contractData.variables || {});
           setLastSaved(new Date(contractData.updated_at));
         } else {
@@ -1441,6 +1668,7 @@ const ContractEditor = () => {
       return;
     }
 
+    const styledContent = wrapContentForStorage(contractContent);
     setIsSaving(true);
     try {
       if (contractId) {
@@ -1451,7 +1679,7 @@ const ContractEditor = () => {
           .update({
             contract_name: contractName.trim(),
             description: contractDescription.trim() || null,
-            content: contractContent,
+            content: styledContent,
             status: 'active',
             variables: variables,
             updated_at: new Date().toISOString(),
@@ -1477,7 +1705,7 @@ const ContractEditor = () => {
           .insert({
             contract_name: contractName.trim(),
             description: contractDescription.trim() || null,
-            content: contractContent,
+            content: styledContent,
             status: 'active',
             created_by: user.id,
             variables: variables,
@@ -1528,6 +1756,7 @@ const ContractEditor = () => {
       return;
     }
 
+    const styledContent = wrapContentForStorage(contractContent);
     setIsSavingDraft(true);
     try {
       if (contractId) {
@@ -1538,7 +1767,7 @@ const ContractEditor = () => {
           .update({
             contract_name: contractName.trim(),
             description: contractDescription.trim() || null,
-            content: contractContent || '',
+            content: styledContent || '',
             status: 'draft',
             variables: variables,
             updated_at: new Date().toISOString(),
@@ -1564,7 +1793,7 @@ const ContractEditor = () => {
           .insert({
             contract_name: contractName.trim(),
             description: contractDescription.trim() || null,
-            content: contractContent || '',
+            content: styledContent || '',
             status: 'draft',
             created_by: user.id,
             variables: variables,
