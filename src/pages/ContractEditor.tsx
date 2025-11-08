@@ -540,15 +540,21 @@ const SupabaseMentionPanel = ({
             />
           </div>
         ) : (
-          <div className="space-y-1 text-xs text-gray-500">
-            <p className="font-medium text-gray-600">
-              {mode === 'columns' ? `Columns in ${selectedTable?.name}` : 'All accessible tables'}
-            </p>
-            <p className="leading-relaxed">
+          <div className="flex items-center gap-2">
+            {mode === 'columns' && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-800"
+              >
+                Back
+              </button>
+            )}
+            <div className="flex flex-1 items-center gap-2 rounded border border-gray-200 px-3 py-1 text-xs text-gray-600 bg-gray-50">
               {mode === 'columns'
-                ? 'Select the column whose values you would like to insert.'
-                : "We list every table exposed to the current Supabase role. If you don't see a table, make sure it has read permissions or expose a view (see message below)."}
-            </p>
+                ? `Columns in ${selectedTable?.name ?? ''}`
+                : 'All accessible tables'}
+            </div>
           </div>
         )}
       </div>
@@ -742,6 +748,7 @@ const ContractEditor = () => {
     rowIndex?: number;
     row?: Record<string, any>;
   }>({ open: false, entries: [] });
+  const supabaseDragPreviewRef = useRef<HTMLElement | null>(null);
   const closeSupabaseRowDialog = useCallback(() => {
     setSupabaseRowDialog({ open: false, entries: [] });
   }, []);
@@ -1944,6 +1951,26 @@ const ContractEditor = () => {
     setZoomLevel(100);
   };
 
+  useEffect(() => {
+    if (!supabaseRowDialog.open) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeSupabaseRowDialog();
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [supabaseRowDialog.open, closeSupabaseRowDialog]);
 
   return (
     <div className="flex min-h-screen bg-[#f5f5f7]">
@@ -2114,71 +2141,108 @@ Use the toolbar above to format text, add headings, lists, and more."
 
       <MobileNav />
 
-      {/* Supabase Row Dialog */}
-      <Dialog open={supabaseRowDialog.open} onOpenChange={(open) => open ? null : closeSupabaseRowDialog()}>
-        <DialogContent className="sm:max-w-[560px]">
-          <DialogHeader>
-            <DialogTitle>
-              {supabaseRowDialog.table
-                ? `Row from ${supabaseRowDialog.table}`
-                : 'Row Details'}
-            </DialogTitle>
-            <DialogDescription>
-              Drag any row into the editor to insert `Field: Value` pairs.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="max-h-96 overflow-auto divide-y divide-gray-100 text-sm">
-              {supabaseRowDialog.entries.map((entry, index) => {
-                const combined =
-                  entry.value && entry.value.includes('\n')
-                    ? `${entry.key}:\n${entry.value}`
-                    : `${entry.key}: ${entry.value}`;
-                return (
-                  <div
-                    key={`${entry.key}-${index}`}
-                    className="flex flex-col gap-1 px-4 py-3 hover:bg-violet-50"
-                    draggable
-                    onDragStart={(event) => {
-                      event.dataTransfer.setData('text/plain', combined);
-                    }}
-                  >
-                    <div className="text-xs font-semibold uppercase tracking-wide text-violet-600">
-                      {entry.key}
-                    </div>
-                    <div className="rounded-md border border-violet-100 bg-white px-3 py-2 text-gray-800 shadow-sm">
-                      <pre className="whitespace-pre-wrap font-sans text-sm">
-                        {combined}
-                      </pre>
-                    </div>
-                  </div>
-                );
-              })}
-              {supabaseRowDialog.entries.length === 0 && (
-                <div className="px-4 py-6 text-sm text-gray-500">
-                  No data to display.
+      {/* Supabase Row Sidebar */}
+      {supabaseRowDialog.open &&
+        createPortal(
+          <aside className="fixed inset-y-0 right-0 z-[10000] w-full max-w-sm bg-white shadow-xl border-l border-gray-200 flex flex-col">
+              <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {supabaseRowDialog.table ? `Row from ${supabaseRowDialog.table}` : 'Row Details'}
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Drag any field card into the editor to insert `Field: Value` pairs.
+                  </p>
                 </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-gray-500">
-              Tip: Drag any row into the editor or insert them all at once.
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={closeSupabaseRowDialog}>
-                Close
-              </Button>
-              <Button
-                onClick={handleInsertFullRow}
-                disabled={!supabaseRowDialog.row}
-              >
-                Insert Entire Row
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                <button
+                  type="button"
+                  onClick={closeSupabaseRowDialog}
+                  className="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  aria-label="Close row details sidebar"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+                {supabaseRowDialog.entries.length === 0 ? (
+                  <div className="px-5 py-8 text-sm text-gray-500">
+                    No data to display.
+                  </div>
+                ) : (
+                  supabaseRowDialog.entries.map((entry, index) => {
+                    const combined =
+                      entry.value && entry.value.includes('\n')
+                        ? `${entry.key}:\n${entry.value}`
+                        : `${entry.key}: ${entry.value}`;
+                    const previewText = entry.value || '';
+                    return (
+                      <div
+                        key={`${entry.key}-${index}`}
+                        className="flex flex-col gap-1 px-5 py-4 hover:bg-violet-50 transition"
+                        draggable
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData('text/plain', previewText);
+                          if (supabaseDragPreviewRef.current) {
+                            document.body.removeChild(supabaseDragPreviewRef.current);
+                            supabaseDragPreviewRef.current = null;
+                          }
+                          const previewContainer = document.createElement('div');
+                          previewContainer.style.position = 'fixed';
+                          previewContainer.style.top = '-1000px';
+                          previewContainer.style.left = '-1000px';
+                          previewContainer.style.opacity = '1';
+                          previewContainer.style.pointerEvents = 'none';
+                          previewContainer.className = 'rounded-md border border-violet-100 bg-white px-3 py-2 text-gray-800 shadow-sm';
+                          const pre = document.createElement('pre');
+                          pre.className = 'whitespace-pre-wrap font-sans text-sm';
+                          pre.textContent = previewText;
+                          previewContainer.appendChild(pre);
+                          document.body.appendChild(previewContainer);
+                          supabaseDragPreviewRef.current = previewContainer;
+                          if (event.dataTransfer) {
+                            event.dataTransfer.setDragImage(
+                              previewContainer,
+                              previewContainer.offsetWidth / 2,
+                              previewContainer.offsetHeight / 2,
+                            );
+                          }
+                        }}
+                        onDragEnd={() => {
+                          if (supabaseDragPreviewRef.current) {
+                            document.body.removeChild(supabaseDragPreviewRef.current);
+                            supabaseDragPreviewRef.current = null;
+                          }
+                        }}
+                      >
+                        <div className="text-xs font-semibold uppercase tracking-wide text-violet-600">
+                          {entry.key}
+                        </div>
+                        <div className="rounded-md border border-violet-100 bg-white px-3 py-2 text-gray-800 shadow-sm">
+                          <pre className="whitespace-pre-wrap font-sans text-sm">
+                            {combined}
+                          </pre>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="border-t border-gray-200 px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between bg-gray-50">
+                <p className="text-xs text-gray-500">
+                  Tip: Drag any field into the editor or insert the entire row at once.
+                </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={closeSupabaseRowDialog}>
+                    Close
+                  </Button>
+                  <Button onClick={handleInsertFullRow} disabled={!supabaseRowDialog.row}>
+                    Insert Entire Row
+                  </Button>
+                </div>
+              </div>
+          </aside>,
+          document.body,
+        )}
 
       {/* Floating Zoom Controls - Bottom Left */}
       <div className="fixed bottom-4 left-8 lg:left-60 z-20 flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2">

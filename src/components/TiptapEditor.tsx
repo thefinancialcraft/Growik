@@ -13,6 +13,8 @@ import { Color } from '@tiptap/extension-color';
 import { FontFamily } from '@tiptap/extension-font-family';
 import { Extension } from '@tiptap/core';
 import Highlight from '@tiptap/extension-highlight';
+import Paragraph from '@tiptap/extension-paragraph';
+import Heading from '@tiptap/extension-heading';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { NodeViewWrapper } from '@tiptap/react';
@@ -22,7 +24,6 @@ import { ReactRenderer } from '@tiptap/react';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import Suggestion from '@tiptap/suggestion';
-
 const SIMPLE_TEXT_FONT_SIZE = '16px';
 
 // Custom Font Size Extension
@@ -31,6 +32,14 @@ declare module '@tiptap/core' {
     fontSize: {
       setFontSize: (size: string) => ReturnType;
       unsetFontSize: () => ReturnType;
+    };
+    lineHeight: {
+      setLineHeight: (value: string) => ReturnType;
+      unsetLineHeight: () => ReturnType;
+    };
+    wordSpacing: {
+      setWordSpacing: (value: string) => ReturnType;
+      unsetWordSpacing: () => ReturnType;
     };
   }
 }
@@ -78,6 +87,344 @@ const FontSize = Extension.create({
         ({ chain }) => {
           return chain().setMark('textStyle', { fontSize: null }).updateAttributes('textStyle', { fontSize: null }).run();
         },
+    };
+  },
+});
+
+const LineHeight = Extension.create({
+  name: 'lineHeight',
+
+  addOptions() {
+    return {
+      types: ['paragraph', 'heading'],
+    };
+  },
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          lineHeight: {
+            default: null,
+            parseHTML: (element) => element.style.lineHeight || null,
+            renderHTML: (attributes) => {
+              if (!attributes.lineHeight) {
+                return {};
+              }
+              return {
+                style: `line-height: ${attributes.lineHeight}`,
+              };
+            },
+          },
+        },
+      },
+    ];
+  },
+
+  addCommands() {
+    return {
+      setLineHeight:
+        (lineHeight: string) =>
+        ({ state, dispatch }) => {
+          const { selection } = state;
+          const tr = state.tr;
+          const view = this.editor?.view;
+          const types = this.options.types as string[];
+          const handled = new Set<number>();
+          let changed = false;
+
+          const applyToNode = (node: ProseMirrorNode, pos: number) => {
+            if (handled.has(pos)) return;
+            if (!types.includes(node.type.name)) return;
+            handled.add(pos);
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, lineHeight });
+            if (view) {
+              const dom = view.nodeDOM(pos) as HTMLElement | null;
+              if (dom) {
+                dom.style.lineHeight = lineHeight;
+              }
+            }
+            changed = true;
+          };
+
+          if (selection.empty) {
+            const { $from } = selection;
+            for (let depth = $from.depth; depth > 0; depth--) {
+              const node = $from.node(depth);
+              if (node.type.isTextblock && types.includes(node.type.name)) {
+                const pos = $from.before(depth);
+                applyToNode(node, pos);
+                break;
+              }
+            }
+          } else {
+            selection.ranges.forEach(({ $from, $to }) => {
+              state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+                if (node.isTextblock && types.includes(node.type.name)) {
+                  applyToNode(node, pos);
+                  return false;
+                }
+                return undefined;
+              });
+            });
+          }
+
+          if (changed && dispatch) {
+            dispatch(tr);
+          }
+          return changed;
+        },
+      unsetLineHeight:
+        () =>
+        ({ state, dispatch }) => {
+          const { selection } = state;
+          const tr = state.tr;
+          const view = this.editor?.view;
+          const types = this.options.types as string[];
+          const handled = new Set<number>();
+          let changed = false;
+
+          const clearNode = (node: ProseMirrorNode, pos: number) => {
+            if (handled.has(pos)) return;
+            if (!types.includes(node.type.name) || !node.attrs.lineHeight) return;
+            handled.add(pos);
+            const attrs = { ...node.attrs };
+            delete attrs.lineHeight;
+            tr.setNodeMarkup(pos, undefined, attrs);
+            if (view) {
+              const dom = view.nodeDOM(pos) as HTMLElement | null;
+              if (dom) {
+                dom.style.lineHeight = '';
+              }
+            }
+            changed = true;
+          };
+
+          if (selection.empty) {
+            const { $from } = selection;
+            for (let depth = $from.depth; depth > 0; depth--) {
+              const node = $from.node(depth);
+              if (node.type.isTextblock && types.includes(node.type.name)) {
+                const pos = $from.before(depth);
+                clearNode(node, pos);
+                break;
+              }
+            }
+          } else {
+            selection.ranges.forEach(({ $from, $to }) => {
+              state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+                if (node.isTextblock) {
+                  clearNode(node, pos);
+                  return false;
+                }
+                return undefined;
+              });
+            });
+          }
+
+          if (changed && dispatch) {
+            dispatch(tr);
+          }
+          return changed;
+        },
+    };
+  },
+});
+
+const WordSpacing = Extension.create({
+  name: 'wordSpacing',
+
+  addOptions() {
+    return {
+      types: ['paragraph', 'heading'],
+    };
+  },
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          wordSpacing: {
+            default: null,
+            parseHTML: (element) => element.style.wordSpacing || null,
+            renderHTML: (attributes) => {
+              if (!attributes.wordSpacing) {
+                return {};
+              }
+              return {
+                style: `word-spacing: ${attributes.wordSpacing}`,
+              };
+            },
+          },
+        },
+      },
+    ];
+  },
+
+  addCommands() {
+    return {
+      setWordSpacing:
+        (wordSpacing: string) =>
+        ({ state, dispatch }) => {
+          const { selection } = state;
+          const tr = state.tr;
+          const view = this.editor?.view;
+          const types = this.options.types as string[];
+          const handled = new Set<number>();
+          let changed = false;
+
+          const applyToNode = (node: ProseMirrorNode, pos: number) => {
+            if (handled.has(pos)) return;
+            if (!types.includes(node.type.name)) return;
+            handled.add(pos);
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, wordSpacing });
+            if (view) {
+              const dom = view.nodeDOM(pos) as HTMLElement | null;
+              if (dom) {
+                dom.style.wordSpacing = wordSpacing;
+              }
+            }
+            changed = true;
+          };
+
+          if (selection.empty) {
+            const { $from } = selection;
+            for (let depth = $from.depth; depth > 0; depth--) {
+              const node = $from.node(depth);
+              if (node.type.isTextblock && types.includes(node.type.name)) {
+                const pos = $from.before(depth);
+                applyToNode(node, pos);
+                break;
+              }
+            }
+          } else {
+            selection.ranges.forEach(({ $from, $to }) => {
+              state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+                if (node.isTextblock && types.includes(node.type.name)) {
+                  applyToNode(node, pos);
+                  return false;
+                }
+                return undefined;
+              });
+            });
+          }
+
+          if (changed && dispatch) {
+            dispatch(tr);
+          }
+          return changed;
+        },
+      unsetWordSpacing:
+        () =>
+        ({ state, dispatch }) => {
+          const { selection } = state;
+          const tr = state.tr;
+          const view = this.editor?.view;
+          const types = this.options.types as string[];
+          const handled = new Set<number>();
+          let changed = false;
+
+          const clearNode = (node: ProseMirrorNode, pos: number) => {
+            if (handled.has(pos)) return;
+            if (!types.includes(node.type.name) || !node.attrs.wordSpacing) return;
+            handled.add(pos);
+            const attrs = { ...node.attrs };
+            delete attrs.wordSpacing;
+            tr.setNodeMarkup(pos, undefined, attrs);
+            if (view) {
+              const dom = view.nodeDOM(pos) as HTMLElement | null;
+              if (dom) {
+                dom.style.wordSpacing = '';
+              }
+            }
+            changed = true;
+          };
+
+          if (selection.empty) {
+            const { $from } = selection;
+            for (let depth = $from.depth; depth > 0; depth--) {
+              const node = $from.node(depth);
+              if (node.type.isTextblock && types.includes(node.type.name)) {
+                const pos = $from.before(depth);
+                clearNode(node, pos);
+                break;
+              }
+            }
+          } else {
+            selection.ranges.forEach(({ $from, $to }) => {
+              state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+                if (node.isTextblock) {
+                  clearNode(node, pos);
+                  return false;
+                }
+                return undefined;
+              });
+            });
+          }
+
+          if (changed && dispatch) {
+            dispatch(tr);
+          }
+          return changed;
+        },
+    };
+  },
+});
+
+const CustomParagraph = Paragraph.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      lineHeight: {
+        default: null,
+        parseHTML: (element) => element.style.lineHeight || null,
+        renderHTML: (attributes) => {
+          if (!attributes.lineHeight) {
+            return {};
+          }
+          return { style: `line-height: ${attributes.lineHeight}` };
+        },
+      },
+      wordSpacing: {
+        default: null,
+        parseHTML: (element) => element.style.wordSpacing || null,
+        renderHTML: (attributes) => {
+          if (!attributes.wordSpacing) {
+            return {};
+          }
+          return { style: `word-spacing: ${attributes.wordSpacing}` };
+        },
+      },
+    };
+  },
+});
+
+const CustomHeading = Heading.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      lineHeight: {
+        default: null,
+        parseHTML: (element) => element.style.lineHeight || null,
+        renderHTML: (attributes) => {
+          if (!attributes.lineHeight) {
+            return {};
+          }
+          return { style: `line-height: ${attributes.lineHeight}` };
+        },
+      },
+      wordSpacing: {
+        default: null,
+        parseHTML: (element) => element.style.wordSpacing || null,
+        renderHTML: (attributes) => {
+          if (!attributes.wordSpacing) {
+            return {};
+          }
+          return { style: `word-spacing: ${attributes.wordSpacing}` };
+        },
+      },
     };
   },
 });
@@ -132,7 +479,7 @@ import {
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, Quote, Code,
   Link2, Image as ImageIcon, Undo, Redo,
-  Heading1, Heading2, Heading3, Type, CheckSquare, ChevronDown, Braces
+  Heading1, Heading2, Heading3, Type, CheckSquare, ChevronDown, Braces, Minus
 } from 'lucide-react';
 import { useCallback } from 'react';
 
@@ -211,6 +558,12 @@ const BASE_SLASH_COMMANDS: CommandItem[] = [
     description: 'Insert a quote',
     icon: Quote,
     command: (editor) => editor.chain().focus().toggleBlockquote().run(),
+  },
+  {
+    title: 'Divider',
+    description: 'Insert a horizontal divider',
+    icon: Minus,
+    command: (editor) => editor.chain().focus().setHorizontalRule().run(),
   },
   {
     title: 'Code Block',
@@ -1147,6 +1500,25 @@ const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | 
 
   const currentTextColor = normalizeColorValue(editor.getAttributes('textStyle').color);
   const currentHighlightColor = normalizeColorValue(editor.getAttributes('highlight').color);
+
+  const getActiveBlockAttr = useCallback(
+    (attr: 'lineHeight' | 'wordSpacing') => {
+      const { state } = editor;
+      const { $from } = state.selection;
+      for (let depth = $from.depth; depth > 0; depth--) {
+        const node = $from.node(depth);
+        if (node.type.isTextblock) {
+          const value = node.attrs?.[attr];
+          return value && value !== '' ? value : 'normal';
+        }
+      }
+      return 'normal';
+    },
+    [editor],
+  );
+
+  const currentLineHeight = getActiveBlockAttr('lineHeight');
+  const currentWordSpacing = getActiveBlockAttr('wordSpacing');
 
   const renderColorGrid = useCallback(
     (
@@ -2444,13 +2816,51 @@ const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | 
         <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
 
         {/* Line Spacing */}
-        <button className="toolbar-btn" title="Line & paragraph spacing">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 8h18M3 16h18M7 4v16M17 4v16" strokeLinecap="round"/>
-          </svg>
-        </button>
-        
-        <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
+        <select
+          value={currentLineHeight}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value === 'normal') {
+              editor.chain().focus().unsetLineHeight().run();
+            } else {
+              editor.chain().focus().setLineHeight(value).run();
+            }
+          }}
+          className="google-toolbar-select"
+          style={{ width: '70px' }}
+          title="Line spacing"
+        >
+          <option value="normal">Line</option>
+          <option value="1">1.0</option>
+          <option value="1.15">1.15</option>
+          <option value="1.5">1.5</option>
+          <option value="1.75">1.75</option>
+          <option value="2">2.0</option>
+        </select>
+
+        {/* Word Spacing */}
+        <select
+          value={currentWordSpacing}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value === 'normal') {
+              editor.chain().focus().unsetWordSpacing().run();
+            } else {
+              editor.chain().focus().setWordSpacing(value).run();
+            }
+          }}
+          className="google-toolbar-select"
+          style={{ width: '70px' }}
+          title="Word spacing"
+        >
+          <option value="normal">Words</option>
+          <option value="0.05em">+0.05</option>
+          <option value="0.1em">+0.10</option>
+          <option value="0.2em">+0.20</option>
+          <option value="0.3em">+0.30</option>
+        </select>
+
+         <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
 
         {/* Lists */}
         <div className="relative inline-flex" ref={bulletStyleMenuRef}>
@@ -2593,10 +3003,14 @@ export default function TiptapEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
+        paragraph: false,
+        heading: false,
         bulletList: false,
         orderedList: false,
         listItem: false,
       }),
+      CustomParagraph,
+      CustomHeading,
       CustomBulletList.configure({
         keepMarks: true,
         keepAttributes: true,
@@ -2817,6 +3231,28 @@ export default function TiptapEditor({
               };
               const range = { from, to };
               onSupabaseNextRequest({ position, range });
+            }, 0);
+          }
+        }
+        if (event.key === 'Enter' && !event.shiftKey) {
+          const { state } = view;
+          const { $from } = state.selection;
+          const parent = $from.parent;
+          const align = parent?.attrs?.textAlign;
+          if (align && align !== 'left') {
+            setTimeout(() => {
+              const { state: currentState, dispatch } = view;
+              const { $from: currentFrom } = currentState.selection;
+              const parentPos = currentFrom.before();
+              const node = currentState.doc.nodeAt(parentPos);
+              if (node && node.type.isTextblock && node.attrs?.textAlign && node.attrs.textAlign !== 'left') {
+                dispatch(
+                  currentState.tr.setNodeMarkup(parentPos, node.type, {
+                    ...node.attrs,
+                    textAlign: null,
+                  }),
+                );
+              }
             }, 0);
           }
         }
