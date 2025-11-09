@@ -1101,52 +1101,87 @@ const Influencer = () => {
         <div className="flex-1 lg:ml-56">
           <Header />
           <main className="container mx-auto max-w-7xl px-3 sm:px-4 py-4 sm:py-6 space-y-4 pb-24 lg:pb-8 animate-fade-in">
-            <div className="bg-gradient-primary rounded-xl p-4 md:p-6 text-white shadow-glow">
-              <h2 className="text-xl md:text-2xl font-bold mb-1">Influencer Management</h2>
-              <p className="text-white/80 text-sm">Oversee influencer relationships, performance, and availability</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {summaryTiles.map(({ id, title, value, subtext, trend, icon: Icon, accent, statusBadge }) => (
-                <Card
-                  key={id}
-                  className="relative overflow-hidden p-4 md:p-6 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02]"
-                >
-                  <div className={cn("absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br", accent)} />
-                  <div className="relative space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.12em] mb-1">
-                          {title}
-                        </p>
-                        <div className="flex items-end gap-2">
-                          <span className="text-2xl md:text-3xl font-bold text-foreground">
-                            {typeof value === 'number' ? value.toLocaleString() : value}
-                          </span>
-                          {statusBadge && (
-                            <Badge variant={statusBadge.variant} className="rounded-full text-xs px-2.5 py-0.5">
-                              {statusBadge.label}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <div
-                        className={cn(
-                          "w-12 h-12 rounded-xl flex items-center justify-center text-primary-foreground",
-                          "bg-gradient-to-br",
-                          accent
-                        )}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </div>
+            <div className="space-y-6">
+              <div className="relative overflow-hidden rounded-3xl bg-primary text-white ">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_55%)]" />
+                <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+                <div className="relative p-6 sm:p-8 space-y-8">
+                  <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Creators</p>
+                      <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">Influencer Management</h1>
+                      <p className="text-sm sm:text-base text-white/80 max-w-2xl">
+                        Build, monitor, and activate your influencer roster with live platform stats, imports, and fast edits.
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">{subtext}</p>
-                    <div className="text-xs font-medium text-primary/80 bg-primary/10 inline-flex px-2.5 py-1 rounded-full">
-                      {trend}
+                    <div className="flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 min-w-[240px]">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold">Total Creators</span>
+                        <span>{influencers.length}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-white/80">
+                        <span>Active</span>
+                        <span>{activeCount}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-white/80">
+                        <span>Inactive</span>
+                        <span>{inactiveCount}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-white/80">
+                        <span>Categories</span>
+                        <span>{categoryCount}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-white/70 border-t border-white/20 pt-3 mt-2">
+                        <span>View mode</span>
+                        <span>{viewMode === 'grid' ? 'Grid view' : 'List view'}</span>
+                      </div>
                     </div>
                   </div>
-                </Card>
-              ))}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {summaryTiles.map(({ id, title, value, subtext, trend, icon: Icon, accent, statusBadge }) => (
+                      <Card
+                        key={id}
+                        className="relative overflow-hidden p-4 md:p-6 bg-white/90 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"
+                      >
+                        <div className={cn("absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br", accent)} />
+                        <div className="relative space-y-4">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="text-xs font-medium text-slate-500 uppercase tracking-[0.12em] mb-1">
+                                {title}
+                              </p>
+                              <div className="flex items-end gap-2">
+                                <span className="text-2xl md:text-3xl font-bold text-slate-900">
+                                  {typeof value === 'number' ? value.toLocaleString() : value}
+                                </span>
+                                {statusBadge && (
+                                  <Badge variant={statusBadge.variant} className="rounded-full text-xs px-2.5 py-0.5">
+                                    {statusBadge.label}
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            <div
+                              className={cn(
+                                "w-12 h-12 rounded-xl flex items-center justify-center text-white",
+                                "bg-gradient-to-br",
+                                accent
+                              )}
+                            >
+                              <Icon className="h-5 w-5" />
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-600">{subtext}</p>
+                          <div className="text-xs font-medium text-indigo-500/80 bg-indigo-50 inline-flex px-2.5 py-1 rounded-full">
+                            {trend}
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 items-stretch">

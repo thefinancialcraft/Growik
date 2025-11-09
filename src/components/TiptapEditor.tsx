@@ -13,8 +13,6 @@ import { Color } from '@tiptap/extension-color';
 import { FontFamily } from '@tiptap/extension-font-family';
 import { Extension } from '@tiptap/core';
 import Highlight from '@tiptap/extension-highlight';
-import Paragraph from '@tiptap/extension-paragraph';
-import Heading from '@tiptap/extension-heading';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { NodeViewWrapper } from '@tiptap/react';
@@ -24,7 +22,19 @@ import { ReactRenderer } from '@tiptap/react';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import Suggestion from '@tiptap/suggestion';
+import { Minus } from 'lucide-react';
+// TenCinque: RegisterExtensions – custom spacing extensions
+// @ts-ignore importing JS module in TSX
+import LineHeight from '../extensions/LineHeight.js';
+// @ts-ignore importing JS module in TSX
+import LetterSpacing from '../extensions/LetterSpacing.js';
+// @ts-ignore importing JS module in TSX
+import FontWeight from '../extensions/FontWeight.js';
+
 const SIMPLE_TEXT_FONT_SIZE = '16px';
+const LINE_HEIGHT_OPTIONS = ['0.5', '1', '1.2', '1.5', '1.75', '2', '2.5'];
+const LETTER_SPACING_OPTIONS = ['0em', '0.05em', '0.1em', '0.15em', '0.2em', '0.5px'];
+const FONT_WEIGHT_OPTIONS = ['300', '400', '500', '600', '700', '800', '900'];
 
 // Custom Font Size Extension
 declare module '@tiptap/core' {
@@ -34,12 +44,16 @@ declare module '@tiptap/core' {
       unsetFontSize: () => ReturnType;
     };
     lineHeight: {
-      setLineHeight: (value: string) => ReturnType;
+      setLineHeight: (lineHeight: string) => ReturnType;
       unsetLineHeight: () => ReturnType;
     };
-    wordSpacing: {
-      setWordSpacing: (value: string) => ReturnType;
-      unsetWordSpacing: () => ReturnType;
+    letterSpacing: {
+      setLetterSpacing: (letterSpacing: string) => ReturnType;
+      unsetLetterSpacing: () => ReturnType;
+    };
+    fontWeight: {
+      setFontWeight: (fontWeight: string) => ReturnType;
+      unsetFontWeight: () => ReturnType;
     };
   }
 }
@@ -87,344 +101,6 @@ const FontSize = Extension.create({
         ({ chain }) => {
           return chain().setMark('textStyle', { fontSize: null }).updateAttributes('textStyle', { fontSize: null }).run();
         },
-    };
-  },
-});
-
-const LineHeight = Extension.create({
-  name: 'lineHeight',
-
-  addOptions() {
-    return {
-      types: ['paragraph', 'heading'],
-    };
-  },
-
-  addGlobalAttributes() {
-    return [
-      {
-        types: this.options.types,
-        attributes: {
-          lineHeight: {
-            default: null,
-            parseHTML: (element) => element.style.lineHeight || null,
-            renderHTML: (attributes) => {
-              if (!attributes.lineHeight) {
-                return {};
-              }
-              return {
-                style: `line-height: ${attributes.lineHeight}`,
-              };
-            },
-          },
-        },
-      },
-    ];
-  },
-
-  addCommands() {
-    return {
-      setLineHeight:
-        (lineHeight: string) =>
-        ({ state, dispatch }) => {
-          const { selection } = state;
-          const tr = state.tr;
-          const view = this.editor?.view;
-          const types = this.options.types as string[];
-          const handled = new Set<number>();
-          let changed = false;
-
-          const applyToNode = (node: ProseMirrorNode, pos: number) => {
-            if (handled.has(pos)) return;
-            if (!types.includes(node.type.name)) return;
-            handled.add(pos);
-            tr.setNodeMarkup(pos, undefined, { ...node.attrs, lineHeight });
-            if (view) {
-              const dom = view.nodeDOM(pos) as HTMLElement | null;
-              if (dom) {
-                dom.style.lineHeight = lineHeight;
-              }
-            }
-            changed = true;
-          };
-
-          if (selection.empty) {
-            const { $from } = selection;
-            for (let depth = $from.depth; depth > 0; depth--) {
-              const node = $from.node(depth);
-              if (node.type.isTextblock && types.includes(node.type.name)) {
-                const pos = $from.before(depth);
-                applyToNode(node, pos);
-                break;
-              }
-            }
-          } else {
-            selection.ranges.forEach(({ $from, $to }) => {
-              state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
-                if (node.isTextblock && types.includes(node.type.name)) {
-                  applyToNode(node, pos);
-                  return false;
-                }
-                return undefined;
-              });
-            });
-          }
-
-          if (changed && dispatch) {
-            dispatch(tr);
-          }
-          return changed;
-        },
-      unsetLineHeight:
-        () =>
-        ({ state, dispatch }) => {
-          const { selection } = state;
-          const tr = state.tr;
-          const view = this.editor?.view;
-          const types = this.options.types as string[];
-          const handled = new Set<number>();
-          let changed = false;
-
-          const clearNode = (node: ProseMirrorNode, pos: number) => {
-            if (handled.has(pos)) return;
-            if (!types.includes(node.type.name) || !node.attrs.lineHeight) return;
-            handled.add(pos);
-            const attrs = { ...node.attrs };
-            delete attrs.lineHeight;
-            tr.setNodeMarkup(pos, undefined, attrs);
-            if (view) {
-              const dom = view.nodeDOM(pos) as HTMLElement | null;
-              if (dom) {
-                dom.style.lineHeight = '';
-              }
-            }
-            changed = true;
-          };
-
-          if (selection.empty) {
-            const { $from } = selection;
-            for (let depth = $from.depth; depth > 0; depth--) {
-              const node = $from.node(depth);
-              if (node.type.isTextblock && types.includes(node.type.name)) {
-                const pos = $from.before(depth);
-                clearNode(node, pos);
-                break;
-              }
-            }
-          } else {
-            selection.ranges.forEach(({ $from, $to }) => {
-              state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
-                if (node.isTextblock) {
-                  clearNode(node, pos);
-                  return false;
-                }
-                return undefined;
-              });
-            });
-          }
-
-          if (changed && dispatch) {
-            dispatch(tr);
-          }
-          return changed;
-        },
-    };
-  },
-});
-
-const WordSpacing = Extension.create({
-  name: 'wordSpacing',
-
-  addOptions() {
-    return {
-      types: ['paragraph', 'heading'],
-    };
-  },
-
-  addGlobalAttributes() {
-    return [
-      {
-        types: this.options.types,
-        attributes: {
-          wordSpacing: {
-            default: null,
-            parseHTML: (element) => element.style.wordSpacing || null,
-            renderHTML: (attributes) => {
-              if (!attributes.wordSpacing) {
-                return {};
-              }
-              return {
-                style: `word-spacing: ${attributes.wordSpacing}`,
-              };
-            },
-          },
-        },
-      },
-    ];
-  },
-
-  addCommands() {
-    return {
-      setWordSpacing:
-        (wordSpacing: string) =>
-        ({ state, dispatch }) => {
-          const { selection } = state;
-          const tr = state.tr;
-          const view = this.editor?.view;
-          const types = this.options.types as string[];
-          const handled = new Set<number>();
-          let changed = false;
-
-          const applyToNode = (node: ProseMirrorNode, pos: number) => {
-            if (handled.has(pos)) return;
-            if (!types.includes(node.type.name)) return;
-            handled.add(pos);
-            tr.setNodeMarkup(pos, undefined, { ...node.attrs, wordSpacing });
-            if (view) {
-              const dom = view.nodeDOM(pos) as HTMLElement | null;
-              if (dom) {
-                dom.style.wordSpacing = wordSpacing;
-              }
-            }
-            changed = true;
-          };
-
-          if (selection.empty) {
-            const { $from } = selection;
-            for (let depth = $from.depth; depth > 0; depth--) {
-              const node = $from.node(depth);
-              if (node.type.isTextblock && types.includes(node.type.name)) {
-                const pos = $from.before(depth);
-                applyToNode(node, pos);
-                break;
-              }
-            }
-          } else {
-            selection.ranges.forEach(({ $from, $to }) => {
-              state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
-                if (node.isTextblock && types.includes(node.type.name)) {
-                  applyToNode(node, pos);
-                  return false;
-                }
-                return undefined;
-              });
-            });
-          }
-
-          if (changed && dispatch) {
-            dispatch(tr);
-          }
-          return changed;
-        },
-      unsetWordSpacing:
-        () =>
-        ({ state, dispatch }) => {
-          const { selection } = state;
-          const tr = state.tr;
-          const view = this.editor?.view;
-          const types = this.options.types as string[];
-          const handled = new Set<number>();
-          let changed = false;
-
-          const clearNode = (node: ProseMirrorNode, pos: number) => {
-            if (handled.has(pos)) return;
-            if (!types.includes(node.type.name) || !node.attrs.wordSpacing) return;
-            handled.add(pos);
-            const attrs = { ...node.attrs };
-            delete attrs.wordSpacing;
-            tr.setNodeMarkup(pos, undefined, attrs);
-            if (view) {
-              const dom = view.nodeDOM(pos) as HTMLElement | null;
-              if (dom) {
-                dom.style.wordSpacing = '';
-              }
-            }
-            changed = true;
-          };
-
-          if (selection.empty) {
-            const { $from } = selection;
-            for (let depth = $from.depth; depth > 0; depth--) {
-              const node = $from.node(depth);
-              if (node.type.isTextblock && types.includes(node.type.name)) {
-                const pos = $from.before(depth);
-                clearNode(node, pos);
-                break;
-              }
-            }
-          } else {
-            selection.ranges.forEach(({ $from, $to }) => {
-              state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
-                if (node.isTextblock) {
-                  clearNode(node, pos);
-                  return false;
-                }
-                return undefined;
-              });
-            });
-          }
-
-          if (changed && dispatch) {
-            dispatch(tr);
-          }
-          return changed;
-        },
-    };
-  },
-});
-
-const CustomParagraph = Paragraph.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      lineHeight: {
-        default: null,
-        parseHTML: (element) => element.style.lineHeight || null,
-        renderHTML: (attributes) => {
-          if (!attributes.lineHeight) {
-            return {};
-          }
-          return { style: `line-height: ${attributes.lineHeight}` };
-        },
-      },
-      wordSpacing: {
-        default: null,
-        parseHTML: (element) => element.style.wordSpacing || null,
-        renderHTML: (attributes) => {
-          if (!attributes.wordSpacing) {
-            return {};
-          }
-          return { style: `word-spacing: ${attributes.wordSpacing}` };
-        },
-      },
-    };
-  },
-});
-
-const CustomHeading = Heading.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      lineHeight: {
-        default: null,
-        parseHTML: (element) => element.style.lineHeight || null,
-        renderHTML: (attributes) => {
-          if (!attributes.lineHeight) {
-            return {};
-          }
-          return { style: `line-height: ${attributes.lineHeight}` };
-        },
-      },
-      wordSpacing: {
-        default: null,
-        parseHTML: (element) => element.style.wordSpacing || null,
-        renderHTML: (attributes) => {
-          if (!attributes.wordSpacing) {
-            return {};
-          }
-          return { style: `word-spacing: ${attributes.wordSpacing}` };
-        },
-      },
     };
   },
 });
@@ -479,7 +155,7 @@ import {
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, Quote, Code,
   Link2, Image as ImageIcon, Undo, Redo,
-  Heading1, Heading2, Heading3, Type, CheckSquare, ChevronDown, Braces, Minus
+  Heading1, Heading2, Heading3, Type, CheckSquare, ChevronDown, Braces
 } from 'lucide-react';
 import { useCallback } from 'react';
 
@@ -1267,6 +943,9 @@ const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | 
   const formatPainterSourceRef = useRef<{ from: number; to: number } | null>(null);
   const formatPainterLastAppliedRef = useRef<{ from: number; to: number } | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [currentLineHeight, setCurrentLineHeight] = useState<string>('default');
+  const [currentLetterSpacing, setCurrentLetterSpacing] = useState<string>('default');
+  const [currentFontWeight, setCurrentFontWeight] = useState<string>('default');
 
   const updateBulletStyleMenuPosition = useCallback(() => {
     const container = bulletStyleMenuRef.current;
@@ -1329,10 +1008,86 @@ const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | 
     });
   }, []);
 
+  const handleLineHeightChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
+      if (!editor) {
+        return;
+      }
+      const chain = editor.chain().focus();
+      if (value === 'default') {
+        chain.unsetLineHeight().run();
+      } else {
+        chain.setLineHeight(value).run();
+      }
+    },
+    [editor],
+  );
+
+  const handleLetterSpacingChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
+      if (!editor) {
+        return;
+      }
+      const chain = editor.chain().focus();
+      if (value === 'default') {
+        chain.unsetLetterSpacing().run();
+      } else {
+        chain.setLetterSpacing(value).run();
+      }
+    },
+    [editor],
+  );
+
+  const handleFontWeightChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
+      if (!editor) {
+        return;
+      }
+      const chain = editor.chain().focus();
+      if (value === 'default') {
+        chain.unsetFontWeight().run();
+      } else {
+        chain.setFontWeight(value).run();
+      }
+    },
+    [editor],
+  );
+
   useEffect(() => {
     formatPainterDataRef.current = copiedFormatting;
     formatPainterActiveRef.current = isFormatPainterActive && !!copiedFormatting;
   }, [copiedFormatting, isFormatPainterActive]);
+
+  useEffect(() => {
+    if (!editor) {
+      setCurrentLineHeight('default');
+      setCurrentLetterSpacing('0em');
+      setCurrentFontWeight('default');
+      return;
+    }
+
+    const updateSpacing = () => {
+      const attrs = editor.getAttributes('textStyle') ?? {};
+      const nextLineHeight = (attrs.lineHeight as string | null | undefined) ?? 'default';
+      const nextLetterSpacing = (attrs.letterSpacing as string | null | undefined) ?? 'default';
+      const nextFontWeight = (attrs.fontWeight as string | null | undefined) ?? 'default';
+      setCurrentLineHeight(nextLineHeight);
+      setCurrentLetterSpacing(nextLetterSpacing);
+      setCurrentFontWeight(nextFontWeight);
+    };
+
+    updateSpacing();
+    editor.on('selectionUpdate', updateSpacing);
+    editor.on('transaction', updateSpacing);
+
+    return () => {
+      editor.off('selectionUpdate', updateSpacing);
+      editor.off('transaction', updateSpacing);
+    };
+  }, [editor]);
 
   useEffect(() => {
     if (!isTextColorMenuOpen && !isHighlightColorMenuOpen) {
@@ -1500,25 +1255,6 @@ const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | 
 
   const currentTextColor = normalizeColorValue(editor.getAttributes('textStyle').color);
   const currentHighlightColor = normalizeColorValue(editor.getAttributes('highlight').color);
-
-  const getActiveBlockAttr = useCallback(
-    (attr: 'lineHeight' | 'wordSpacing') => {
-      const { state } = editor;
-      const { $from } = state.selection;
-      for (let depth = $from.depth; depth > 0; depth--) {
-        const node = $from.node(depth);
-        if (node.type.isTextblock) {
-          const value = node.attrs?.[attr];
-          return value && value !== '' ? value : 'normal';
-        }
-      }
-      return 'normal';
-    },
-    [editor],
-  );
-
-  const currentLineHeight = getActiveBlockAttr('lineHeight');
-  const currentWordSpacing = getActiveBlockAttr('wordSpacing');
 
   const renderColorGrid = useCallback(
     (
@@ -2815,52 +2551,50 @@ const MenuBar = ({ editor, onVariableClick, onImageUpload }: { editor: Editor | 
         
         <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
 
-        {/* Line Spacing */}
-        <select
-          value={currentLineHeight}
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value === 'normal') {
-              editor.chain().focus().unsetLineHeight().run();
-            } else {
-              editor.chain().focus().setLineHeight(value).run();
-            }
-          }}
-          className="google-toolbar-select"
-          style={{ width: '70px' }}
-          title="Line spacing"
-        >
-          <option value="normal">Line</option>
-          <option value="1">1.0</option>
-          <option value="1.15">1.15</option>
-          <option value="1.5">1.5</option>
-          <option value="1.75">1.75</option>
-          <option value="2">2.0</option>
-        </select>
+        {/* Line & Letter Spacing */}
+        <div className="flex items-center gap-1">
+          <select
+            className="google-toolbar-select"
+            title="Line height"
+            value={currentLineHeight}
+            onChange={handleLineHeightChange}
+          >
+            <option value="default">Line height</option>
+            {LINE_HEIGHT_OPTIONS.map(option => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <select
+            className="google-toolbar-select"
+            title="Letter spacing"
+            value={currentLetterSpacing}
+            onChange={handleLetterSpacingChange}
+          >
+            <option value="default">Letter spacing</option>
+            {LETTER_SPACING_OPTIONS.map(option => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <select
+            className="google-toolbar-select"
+            title="Font weight"
+            value={currentFontWeight}
+            onChange={handleFontWeightChange}
+          >
+            <option value="default">Font weight</option>
+            {FONT_WEIGHT_OPTIONS.map(option => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        {/* Word Spacing */}
-        <select
-          value={currentWordSpacing}
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value === 'normal') {
-              editor.chain().focus().unsetWordSpacing().run();
-            } else {
-              editor.chain().focus().setWordSpacing(value).run();
-            }
-          }}
-          className="google-toolbar-select"
-          style={{ width: '70px' }}
-          title="Word spacing"
-        >
-          <option value="normal">Words</option>
-          <option value="0.05em">+0.05</option>
-          <option value="0.1em">+0.10</option>
-          <option value="0.2em">+0.20</option>
-          <option value="0.3em">+0.30</option>
-        </select>
-
-         <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
+        <div className="w-px h-6 bg-[#dadce0] mx-1"></div>
 
         {/* Lists */}
         <div className="relative inline-flex" ref={bulletStyleMenuRef}>
@@ -3003,14 +2737,10 @@ export default function TiptapEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        paragraph: false,
-        heading: false,
         bulletList: false,
         orderedList: false,
         listItem: false,
       }),
-      CustomParagraph,
-      CustomHeading,
       CustomBulletList.configure({
         keepMarks: true,
         keepAttributes: true,
@@ -3025,6 +2755,9 @@ export default function TiptapEditor({
       Color,
       FontFamily,
       FontSize,
+      LineHeight,
+      LetterSpacing,
+      FontWeight,
       Highlight.configure({
         multicolor: true,
       }),

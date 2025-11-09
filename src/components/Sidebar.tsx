@@ -712,6 +712,14 @@ const Sidebar = () => {
       ),
       adminOnly: false,
     },
+    {
+      name: "Campaign",
+      path: "/campaign",
+      icon: (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m4 6.341l1.553 1.552a1.414 1.414 0 002 0L21 9l-3.447-3.894a1.414 1.414 0 00-2 0L14 6.659m-1 2.682L3 18" />
+      ),
+      adminOnly: false,
+    },
   ];
 
   // Filter nav items based on user role

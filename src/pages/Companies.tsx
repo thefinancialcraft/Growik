@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { Building2, Filter, Plus, LayoutGrid, List, Loader2, Pencil, Trash2, User, Phone, Upload, Download } from "lucide-react";
+import { Building2, Filter, Plus, LayoutGrid, List, Loader2, Pencil, Trash2, User, Phone, Upload, Download, Search } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -105,7 +105,7 @@ const Companies = () => {
       subtext: "Registered companies",
       trend: "Growing network",
       icon: Building2,
-      accent: "from-blue-500 to-cyan-500",
+      accent: "from-sky-500/90 to-cyan-500/60",
     },
   ];
 
@@ -543,186 +543,227 @@ const Companies = () => {
         <div className="flex-1 lg:ml-56">
           <Header />
           <main className="container mx-auto max-w-7xl px-3 sm:px-4 py-4 sm:py-6 space-y-4 pb-24 lg:pb-8 animate-fade-in">
-            <div className="bg-gradient-primary rounded-xl p-4 md:p-6 text-white shadow-glow">
-              <h2 className="text-xl md:text-2xl font-bold mb-1">Company Management</h2>
-              <p className="text-white/80 text-sm">Manage your partner companies and their information</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {summaryTiles.map(({ id, title, value, subtext, trend, icon: Icon, accent }) => (
-                <Card
-                  key={id}
-                  className="relative overflow-hidden p-4 md:p-6 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02]"
-                >
-                  <div className={cn("absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br", accent)} />
-                  <div className="relative space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.12em] mb-1">
-                          {title}
-                        </p>
-                        <div className="flex items-end gap-2">
-                          <span className="text-2xl md:text-3xl font-bold text-foreground">
-                            {typeof value === 'number' ? value.toLocaleString() : value}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">{subtext}</p>
-                      </div>
-                      <div className={cn("p-3 rounded-xl bg-gradient-to-br shadow-md", accent)}>
-                        <Icon className="h-5 w-5 text-white" />
-                      </div>
+            <div className="space-y-6">
+              <div className="relative overflow-hidden rounded-3xl bg-primary text-white ">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_55%)]" />
+                <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+                <div className="relative p-6 sm:p-8 space-y-8">
+                  <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Companies</p>
+                      <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">Company Management</h1>
+                      <p className="text-sm sm:text-base text-white/80 max-w-2xl">
+                        Oversee partner organizations, contacts, and categories to keep your marketplace connected and ready for campaigns.
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="font-medium">{trend}</span>
+                    <div className="flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 min-w-[240px]">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold">Total Companies</span>
+                        <span>{companyCount}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-white/80">
+                        <span>View mode</span>
+                        <span>{viewMode === 'grid' ? 'Grid view' : 'List view'}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-white/70 border-t border-white/20 pt-3 mt-2">
+                        <span>Search</span>
+                        <span>{searchTerm ? 'Filtered' : 'All'}</span>
                       </div>
                     </div>
                   </div>
-                </Card>
-              ))}
-            </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 items-stretch">
-              <div className="flex-1 flex items-center gap-3">
-                <div className="flex-1">
-                  <SearchBar
-                    value={searchTerm}
-                    onChange={setSearchTerm}
-                    placeholder="Search companies..."
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant={viewMode === 'grid' ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => setViewMode('grid')}
-                    className="h-10 w-10"
-                  >
-                    <LayoutGrid className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant={viewMode === 'list' ? 'default' : 'outline'}
-                    size="icon"
-                    onClick={() => setViewMode('list')}
-                    className="h-10 w-10"
-                  >
-                    <List className="h-4 w-4" />
-                  </Button>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {summaryTiles.map(({ id, title, value, subtext, trend, icon: Icon, accent }) => (
+                      <Card
+                        key={id}
+                        className="relative overflow-hidden p-4 md:p-6 bg-white/90 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"
+                      >
+                        <div className={cn("absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br", accent)} />
+                        <div className="relative space-y-4">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="text-xs font-medium text-slate-500 uppercase tracking-[0.12em] mb-1">
+                                {title}
+                              </p>
+                              <div className="flex items-end gap-2">
+                                <span className="text-2xl md:text-3xl font-bold text-slate-900">
+                                  {typeof value === 'number' ? value.toLocaleString() : value}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-600">{subtext}</p>
+                            </div>
+                            <div className={cn("p-3 rounded-xl text-white bg-gradient-to-br", accent)}>
+                              <Icon className="h-5 w-5" />
+                            </div>
+                          </div>
+                          <div className="text-xs font-medium text-indigo-500/80 bg-indigo-50 inline-flex px-2.5 py-1 rounded-full">
+                            {trend}
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
                 </div>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 px-4 rounded-lg border-border/60"
-                onClick={handleImportClick}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Import
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 px-4 rounded-lg border-border/60"
-                onClick={handleExportClick}
-                disabled={!companies.length}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export
-              </Button>
-              <Dialog
-                  open={isAddDialogOpen}
-                  onOpenChange={(open) => {
-                    setIsAddDialogOpen(open);
-                    if (!open) resetForm();
-                  }}
-                >
-                  <DialogTrigger asChild>
-                    <Button className="w-full sm:w-auto h-11 px-5 rounded-lg shadow-md bg-gradient-primary hover:opacity-90 transition-all duration-300">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Company
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Add New Company</DialogTitle>
-                      <DialogDescription>Fill in the details to add a new company.</DialogDescription>
-                    </DialogHeader>
-                    <form className="space-y-4" onSubmit={handleCreateCompany}>
-                      <div className="space-y-1">
-                        <Label htmlFor="name">Company Name *</Label>
-                        <Input
-                          id="name"
-                          value={formData.name}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                          placeholder="Enter company name"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor="description">Description</Label>
-                        <Textarea
-                          id="description"
-                          value={formData.description}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                          placeholder="Enter company description"
-                          rows={3}
-                          className="resize-none"
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <Label htmlFor="manager_name">Manager Name</Label>
-                          <Input
-                            id="manager_name"
-                            value={formData.manager_name}
-                            onChange={(e) => setFormData((prev) => ({ ...prev, manager_name: e.target.value }))}
-                            placeholder="Enter manager name"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label htmlFor="manager_contact">Manager Contact</Label>
-                          <Input
-                            id="manager_contact"
-                            value={formData.manager_contact}
-                            onChange={(e) => setFormData((prev) => ({ ...prev, manager_contact: e.target.value }))}
-                            placeholder="Enter contact number"
-                            type="tel"
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor="categories">Categories</Label>
-                        <Input
-                          id="categories"
-                          value={formData.categories}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, categories: e.target.value }))}
-                          placeholder="Enter categories (comma-separated)"
-                        />
-                        <p className="text-xs text-muted-foreground">Example: Technology, Healthcare, Finance</p>
-                      </div>
-                      <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={isSaving}>
-                          Cancel
-                        </Button>
-                        <Button type="submit" disabled={isSaving}>
-                          {isSaving ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Adding...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="mr-2 h-4 w-4" />
-                              Add Company
-                            </>
-                          )}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
-                </Dialog>
             </div>
+
+            <Card className="border outline-indigo-200 bg-white/95 backdrop-blur">
+              <div className="p-5 sm:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row gap-4 items-stretch">
+                  <div className="flex-1 flex items-center gap-3">
+                    <div className="relative w-full">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                      <Input
+                        value={searchTerm}
+                        onChange={(event) => setSearchTerm(event.target.value)}
+                        placeholder="Search companies..."
+                        className="pl-10 h-10 bg-card border-border/50 focus:shadow-md transition-all duration-300"
+                      />
+                    </div>
+                    <div className="flex items-center rounded-lg border border-border/60 bg-background p-1 shadow-sm">
+                      <Button
+                        variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                        size="icon"
+                        onClick={() => setViewMode('grid')}
+                        className="h-10 w-10"
+                        title="Grid view"
+                      >
+                        <LayoutGrid className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant={viewMode === 'list' ? 'default' : 'ghost'}
+                        size="icon"
+                        onClick={() => setViewMode('list')}
+                        className="h-10 w-10"
+                        title="List view"
+                      >
+                        <List className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".csv"
+                      className="hidden"
+                      onChange={handleImportFileChange}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-10 px-4"
+                      onClick={handleImportClick}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-10 px-4"
+                      onClick={handleExportClick}
+                      disabled={!companies.length}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </Button>
+                    <Dialog
+                      open={isAddDialogOpen}
+                      onOpenChange={(open) => {
+                        setIsAddDialogOpen(open);
+                        if (!open) resetForm();
+                      }}
+                    >
+                      <DialogTrigger asChild>
+                        <Button className="h-10 px-4 bg-gradient-to-r from-indigo-500 via-sky-500 to-purple-500 text-white shadow-md hover:opacity-90">
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Company
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Add New Company</DialogTitle>
+                          <DialogDescription>Fill in the details to add a new company.</DialogDescription>
+                        </DialogHeader>
+                        <form className="space-y-4" onSubmit={handleCreateCompany}>
+                          <div className="space-y-1">
+                            <Label htmlFor="name">Company Name *</Label>
+                            <Input
+                              id="name"
+                              value={formData.name}
+                              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                              placeholder="Enter company name"
+                              required
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="description">Description</Label>
+                            <Textarea
+                              id="description"
+                              value={formData.description}
+                              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+                              placeholder="Enter company description"
+                              rows={3}
+                              className="resize-none"
+                            />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <Label htmlFor="manager_name">Manager Name</Label>
+                              <Input
+                                id="manager_name"
+                                value={formData.manager_name}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, manager_name: e.target.value }))}
+                                placeholder="Enter manager name"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="manager_contact">Manager Contact</Label>
+                              <Input
+                                id="manager_contact"
+                                value={formData.manager_contact}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, manager_contact: e.target.value }))}
+                                placeholder="Enter contact number"
+                                type="tel"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="categories">Categories</Label>
+                            <Input
+                              id="categories"
+                              value={formData.categories}
+                              onChange={(e) => setFormData((prev) => ({ ...prev, categories: e.target.value }))}
+                              placeholder="Enter categories (comma-separated)"
+                            />
+                            <p className="text-xs text-muted-foreground">Example: Technology, Healthcare, Finance</p>
+                          </div>
+                          <DialogFooter>
+                            <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={isSaving}>
+                              Cancel
+                            </Button>
+                            <Button type="submit" disabled={isSaving}>
+                              {isSaving ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Adding...
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="mr-2 h-4 w-4" />
+                                  Add Company
+                                </>
+                              )}
+                            </Button>
+                          </DialogFooter>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+              </div>
+            </Card>
 
             {isLoading ? (
               <Card className="p-8 text-center border-border/60">
@@ -744,63 +785,78 @@ const Companies = () => {
                 )}
               </Card>
             ) : viewMode === 'grid' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {filteredCompanies.map((company) => (
-                    <Card key={company.id} className="p-4 border-border/60 hover:shadow-md transition-shadow">
-                      <div className="space-y-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-lg truncate flex items-center gap-2">
-                              <Building2 className="h-5 w-5 text-primary shrink-0" />
-                              {company.name}
-                            </h3>
-                          </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredCompanies.map((company) => (
+                  <Card
+                    key={company.id}
+                    className="p-4 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02] flex flex-col"
+                  >
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.12em]">
+                            Company
+                          </p>
+                          <h3 className="text-lg font-semibold text-foreground truncate flex items-center gap-2">
+                            <Building2 className="h-5 w-5 text-primary shrink-0" />
+                            {company.name}
+                          </h3>
                         </div>
-                        {company.description && (
-                          <p className="text-sm text-muted-foreground line-clamp-2">{company.description}</p>
-                        )}
-                        {company.manager_name && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <User className="h-4 w-4" />
-                            <span className="truncate">{company.manager_name}</span>
-                          </div>
-                        )}
-                        {company.manager_contact && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Phone className="h-4 w-4" />
-                            <span className="truncate">{company.manager_contact}</span>
-                          </div>
-                        )}
                         {company.categories && company.categories.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            {company.categories.map((category, idx) => (
-                              <Badge key={idx} variant="secondary" className="text-xs px-2.5 py-1">
-                                {category}
-                              </Badge>
-                            ))}
-                          </div>
+                          <Badge className="rounded-full px-3 py-1 text-xs bg-indigo-50 text-indigo-600 border border-indigo-100">
+                            {company.categories.length} {company.categories.length === 1 ? 'Category' : 'Categories'}
+                          </Badge>
                         )}
-                        <div className="flex items-center gap-2 pt-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openEditDialog(company)}
-                            className="flex-1 h-9 text-sm"
-                          >
-                            <Pencil className="h-4 w-4 mr-1" />
-                            Edit
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setDeleteTarget(company)}
-                            className="text-destructive hover:text-destructive h-9 w-9 p-0"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                      </div>
+
+                      <div className="grid gap-3 text-sm text-muted-foreground">
+                        {company.description && (
+                          <p className="text-sm text-muted-foreground line-clamp-2">
+                            {company.description}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4" />
+                          <span>{company.manager_name || 'No manager assigned'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Phone className="h-4 w-4" />
+                          <span>{company.manager_contact || 'No contact provided'}</span>
                         </div>
                       </div>
-                    </Card>
+
+                      {company.categories && company.categories.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {company.categories.map((category, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-xs px-2.5 py-1">
+                              {category}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-border/30">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEditDialog(company)}
+                          className="flex items-center gap-1"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setDeleteTarget(company)}
+                          className="flex items-center gap-1"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
                 ))}
               </div>
             ) : (

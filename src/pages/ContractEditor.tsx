@@ -9,6 +9,7 @@ import MobileNav from "@/components/MobileNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import TiptapEditor, { MenuBar } from '@/components/TiptapEditor';
@@ -65,6 +66,23 @@ interface SupabaseValueOption {
 }
 
 const SUPABASE_TABLE_EXCLUDE = new Set(['messages', 'admin_members', 'contracts']);
+
+const VARIABLE_KEY_DEFAULT = 'plain_text';
+
+const VARIABLE_KEY_OPTIONS = [
+  { label: 'Plain Text', value: 'plain_text' },
+  { label: 'User Id', value: 'user_id' },
+  { label: 'Influencer Name', value: 'influencer_name' },
+  { label: 'address', value: 'address' },
+  { label: 'Phone No', value: 'phone_no' },
+  { label: 'Date', value: 'date' },
+  { label: 'Product', value: 'product' },
+  { label: 'Company name', value: 'company_name' },
+  { label: 'Signature', value: 'signature' },
+  { label: 'Custom', value: 'custom' },
+] as const;
+
+type VariableKeyOptionValue = (typeof VARIABLE_KEY_OPTIONS)[number]['value'];
 
 const TIPTAP_STORAGE_STYLE = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -698,7 +716,8 @@ const ContractEditor = () => {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
   const [isVariableDialogOpen, setIsVariableDialogOpen] = useState<boolean>(false);
-  const [variableKey, setVariableKey] = useState<string>("");
+  const [variableKeyOption, setVariableKeyOption] = useState<VariableKeyOptionValue>(VARIABLE_KEY_DEFAULT);
+  const [variableKey, setVariableKey] = useState<string>(VARIABLE_KEY_DEFAULT);
   const [variableValue, setVariableValue] = useState<string>("");
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [contractId, setContractId] = useState<string | null>(null);
@@ -749,6 +768,34 @@ const ContractEditor = () => {
     row?: Record<string, any>;
   }>({ open: false, entries: [] });
   const supabaseDragPreviewRef = useRef<HTMLElement | null>(null);
+
+  const handleOpenVariableDialog = useCallback(() => {
+    setVariableKeyOption(VARIABLE_KEY_DEFAULT);
+    setVariableKey(VARIABLE_KEY_DEFAULT);
+    setVariableValue('');
+    setIsVariableDialogOpen(true);
+  }, []);
+
+  const handleVariableDialogOpenChange = useCallback(
+    (open: boolean) => {
+      setIsVariableDialogOpen(open);
+      if (!open) {
+        setVariableKeyOption(VARIABLE_KEY_DEFAULT);
+        setVariableKey(VARIABLE_KEY_DEFAULT);
+        setVariableValue('');
+      }
+    },
+    []
+  );
+
+  const handleVariableKeyOptionChange = useCallback((value: VariableKeyOptionValue) => {
+    setVariableKeyOption(value);
+    if (value === 'custom') {
+      setVariableKey('');
+    } else {
+      setVariableKey(value);
+    }
+  }, []);
   const closeSupabaseRowDialog = useCallback(() => {
     setSupabaseRowDialog({ open: false, entries: [] });
   }, []);
@@ -1332,7 +1379,7 @@ const ContractEditor = () => {
         event.preventDefault();
         // Only open if not already saving/loading
         if (!isSaving && !isSavingDraft && !isLoadingContract) {
-          setIsVariableDialogOpen(true);
+          handleOpenVariableDialog();
         }
       }
     };
@@ -1344,7 +1391,7 @@ const ContractEditor = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isSaving, isSavingDraft, isLoadingContract]);
+  }, [handleOpenVariableDialog, isSaving, isSavingDraft, isLoadingContract]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -1837,7 +1884,7 @@ const ContractEditor = () => {
     if (!variableKey.trim()) {
       toast({
         title: "Validation Error",
-        description: "Please enter a variable key.",
+        description: "Please select or enter a variable key.",
         variant: "destructive",
       });
       return;
@@ -1870,9 +1917,7 @@ const ContractEditor = () => {
     });
 
     // Reset form and close dialog
-    setVariableKey("");
-    setVariableValue("");
-    setIsVariableDialogOpen(false);
+    handleVariableDialogOpenChange(false);
   };
 
   const handleImageUpload = useCallback(async (file: File) => {
@@ -2065,7 +2110,7 @@ const ContractEditor = () => {
           <div className="px-3 py-2">
             <MenuBar
               editor={editor}
-              onVariableClick={() => setIsVariableDialogOpen(true)}
+              onVariableClick={handleOpenVariableDialog}
               onImageUpload={handleImageUpload}
             />
           </div>
@@ -2126,7 +2171,7 @@ const ContractEditor = () => {
                   placeholder="Start writing your contract here...
 
 Use the toolbar above to format text, add headings, lists, and more."
-                  onVariableClick={() => setIsVariableDialogOpen(true)}
+                  onVariableClick={handleOpenVariableDialog}
                   onSupabaseMentionTrigger={handleSupabaseMentionTrigger}
                   onSupabaseNextRequest={handleSupabaseNextRequest}
                   onEditorReady={setEditor}
@@ -2280,7 +2325,7 @@ Use the toolbar above to format text, add headings, lists, and more."
       </div>
 
       {/* Variable Dialog */}
-      <Dialog open={isVariableDialogOpen} onOpenChange={setIsVariableDialogOpen}>
+      <Dialog open={isVariableDialogOpen} onOpenChange={handleVariableDialogOpenChange}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Add Custom Variable</DialogTitle>
@@ -2290,21 +2335,47 @@ Use the toolbar above to format text, add headings, lists, and more."
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="variableKey">Variable Key *</Label>
-              <Input
-                id="variableKey"
-                type="text"
-                value={variableKey}
-                onChange={(e) => setVariableKey(e.target.value)}
-                placeholder="e.g., client_name, contract_date"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && variableKey.trim()) {
-                    handleAddVariable();
-                  }
-                }}
-              />
+              <Label htmlFor="variableKeySelect">Variable Key *</Label>
+              <Select value={variableKeyOption} onValueChange={handleVariableKeyOptionChange}>
+                <SelectTrigger id="variableKeySelect" className="w-full">
+                  <SelectValue placeholder="Select a variable key" />
+                </SelectTrigger>
+                <SelectContent>
+                  {VARIABLE_KEY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {variableKeyOption === 'custom' ? (
+                <>
+                  <Input
+                    id="variableKeyCustom"
+                    type="text"
+                    value={variableKey}
+                    onChange={(e) => setVariableKey(e.target.value)}
+                    placeholder="Enter a custom key (e.g., client_name)"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && variableKey.trim()) {
+                        handleAddVariable();
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Placeholder preview:&nbsp;
+                    <span className="font-mono text-[11px] text-indigo-600">
+                      {`var[{{${variableKey.trim() || 'your_key'}}}]`}
+                    </span>
+                  </p>
+                </>
+              ) : (
+                <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
+                  {`var[{{${variableKey}}}]`}
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
-                The key will be used as a placeholder: {"{"}{"{"}key{"}"}{"}"}
+                Select a preset placeholder or choose Custom to define your own key.
               </p>
             </div>
             <div className="space-y-2">
@@ -2324,11 +2395,7 @@ Use the toolbar above to format text, add headings, lists, and more."
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => {
-                setIsVariableDialogOpen(false);
-                setVariableKey("");
-                setVariableValue("");
-              }}
+              onClick={() => handleVariableDialogOpenChange(false)}
             >
               Cancel
             </Button>

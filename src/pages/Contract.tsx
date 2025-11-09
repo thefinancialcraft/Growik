@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import SearchBar from "@/components/SearchBar";
 import { useToast } from "@/hooks/use-toast";
-import { Edit, Trash2, Eye, MoreVertical, RefreshCw } from "lucide-react";
+import { Edit, Trash2, Eye, MoreVertical, RefreshCw, FileText, FolderOpen, PenSquare } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import {
@@ -1445,106 +1445,144 @@ const Contract = () => {
     }
   };
 
+  const contractStats = useMemo(
+    () => [
+      {
+        id: "active",
+        title: "Active",
+        value: activeContracts,
+        subtext: "Currently live agreements",
+        accent: "from-emerald-500/90 to-teal-500/60",
+        icon: FileText,
+      },
+      {
+        id: "inactive",
+        title: "Inactive",
+        value: inactiveContracts,
+        subtext: "Shelved or completed",
+        accent: "from-slate-500/90 to-slate-800/60",
+        icon: FolderOpen,
+      },
+      {
+        id: "draft",
+        title: "Drafts",
+        value: draftContracts,
+        subtext: "Work in progress",
+        accent: "from-amber-500/90 to-orange-500/60",
+        icon: PenSquare,
+      },
+    ],
+    [activeContracts, inactiveContracts, draftContracts]
+  );
+
   return (
     <div className="flex min-h-screen bg-gradient-subtle">
       <Sidebar />
       
       <div className="flex-1 lg:ml-56">
         <Header />
-        <main className="container mx-auto px-3 sm:px-4 py-3 sm:py-4 space-y-3 sm:space-y-4 pb-24 lg:pb-6 animate-fade-in max-w-7xl">
-          <div className="bg-gradient-primary rounded-xl p-4 md:p-6 text-white shadow-glow mb-6">
-            <h2 className="text-xl md:text-2xl font-bold mb-1">Contract Management</h2>
-            <p className="text-white/80 text-sm">Manage all contracts and agreements</p>
-          </div>
-
-          {/* Contract Stats Tiles */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            {/* Active Contracts Tile */}
-            <Card className="p-4 md:p-6 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02] cursor-pointer">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Active Contracts</p>
-                  <h3 className="text-2xl md:text-3xl font-bold text-foreground mb-2">{activeContracts}</h3>
-                  <p className="text-xs text-muted-foreground">Currently active</p>
+        <main className="container mx-auto px-3 sm:px-4 py-4 space-y-6 pb-24 lg:pb-8 animate-fade-in max-w-7xl">
+          <div className="space-y-6">
+            <div className="relative overflow-hidden rounded-3xl bg-primary text-white">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_55%)]" />
+              <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+              <div className="relative p-6 sm:p-8 space-y-8">
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Contracts</p>
+                    <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">Contract Management Hub</h1>
+                    <p className="text-sm sm:text-base text-white/80 max-w-2xl">
+                      Keep every agreement aligned. Monitor statuses, flip drafts into live contracts, and export polished PDFs in seconds.
+                    </p>
+                    {profile && (profile.role === 'admin' || profile.role === 'super_admin' || profile.super_admin === true) && (
+                      <Button
+                        onClick={() => navigate('/contract/editor')}
+                        className="bg-white text-indigo-600 hover:bg-white/90  h-11 px-5 rounded-full font-semibold flex items-center gap-2 w-full sm:w-auto"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        Create Contract
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 min-w-[240px]">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">Total Contracts</span>
+                      <span>{activeContracts + inactiveContracts + draftContracts}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-white/80">
+                      <span>Active</span>
+                      <span>{activeContracts}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-white/80">
+                      <span>Inactive</span>
+                      <span>{inactiveContracts}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-white/80">
+                      <span>Drafts</span>
+                      <span>{draftContracts}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-white/70 border-t border-white/20 pt-3 mt-2">
+                      <span>Filters applied</span>
+                      <span>{searchQuery ? 'Search' : 'None'}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="w-12 h-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {contractStats.map(({ id, title, value, subtext, accent, icon: Icon }) => (
+                    <Card
+                      key={id}
+                      className="relative overflow-hidden p-4 md:p-6 bg-white/90 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"
+                    >
+                      <div className={`absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br ${accent}`} />
+                      <div className="relative flex items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <p className="text-[11px] uppercase tracking-wide text-slate-500">{title}</p>
+                          <p className="text-2xl font-semibold text-slate-900">{value}</p>
+                          <p className="text-[11px] text-slate-500">{subtext}</p>
+                        </div>
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-white bg-gradient-to-br ${accent}`}>
+                          <Icon className="h-5 w-5" />
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
                 </div>
               </div>
-            </Card>
-
-            {/* Inactive Contracts Tile */}
-            <Card className="p-4 md:p-6 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02] cursor-pointer">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Inactive Contracts</p>
-                  <h3 className="text-2xl md:text-3xl font-bold text-foreground mb-2">{inactiveContracts}</h3>
-                  <p className="text-xs text-muted-foreground">Not currently active</p>
-                </div>
-                <div className="w-12 h-12 rounded-lg bg-gray-500/10 text-gray-500 flex items-center justify-center">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-              </div>
-            </Card>
-
-            {/* Draft Contracts Tile */}
-            <Card className="p-4 md:p-6 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02] cursor-pointer">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Draft Contracts</p>
-                  <h3 className="text-2xl md:text-3xl font-bold text-foreground mb-2">{draftContracts}</h3>
-                  <p className="text-xs text-muted-foreground">In draft stage</p>
-                </div>
-                <div className="w-12 h-12 rounded-lg bg-yellow-500/10 text-yellow-500 flex items-center justify-center">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* Search Bar, Refresh Button and Create Button */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="flex-1 flex items-center gap-3">
-              <div className="flex-1">
-                <SearchBar 
-                  value={searchQuery} 
-                  onChange={setSearchQuery}
-                  placeholder="Search contracts..."
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRefresh}
-                disabled={isRefreshing || isLoading}
-                className="flex items-center gap-2 shrink-0"
-                title="Refresh data"
-              >
-                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh</span>
-              </Button>
             </div>
-            {profile && (profile.role === 'admin' || profile.role === 'super_admin' || profile.super_admin === true) && (
-              <Button 
-                className="w-full sm:w-auto bg-gradient-primary hover:opacity-90 transition-all duration-300 shadow-md hover:shadow-lg"
-                onClick={() => {
-                  navigate('/contract/editor');
-                }}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Create Contract
-              </Button>
-            )}
-          </div>
 
+            <Card className="border outline-indigo-200 bg-white/95 backdrop-blur">
+              <div className="p-5 sm:p-6 space-y-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="w-full lg:max-w-xl">
+                    <SearchBar
+                      value={searchQuery}
+                      onChange={setSearchQuery}
+                      placeholder="Search contracts by name or description..."
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefresh}
+                      disabled={isRefreshing || isLoading}
+                      className="flex items-center gap-2 shrink-0"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </Button>
+                    <Badge className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
+                      Showing {filteredContracts.length} of {activeContracts + inactiveContracts + draftContracts} contracts
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </div>
+ 
           {/* Contracts List */}
           {isLoading ? (
             <div className="bg-card rounded-lg p-8 border border-border/50">

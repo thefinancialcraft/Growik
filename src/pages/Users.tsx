@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
 import MobileNav from "@/components/MobileNav";
@@ -20,7 +20,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase, supabaseAdmin } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Plus, Trash2, Shield, CheckCircle, XCircle, Clock, MoreVertical, Settings2, Circle } from "lucide-react";
+import { Eye, EyeOff, Plus, Trash2, Shield, CheckCircle, XCircle, Clock, MoreVertical, Settings2, Circle, Search, Users as UsersIcon, UserCheck, UserX, UserPlus, Activity } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
 
 interface User {
   id: string;
@@ -1288,6 +1289,75 @@ const Users = () => {
     return matchesSearch && matchesRole && matchesStatus && matchesApproval;
   });
 
+  const {
+    totalUsers: totalUsersCount,
+    activeUsers,
+    holdUsers,
+    suspendedUsers,
+    onlineCount,
+    pendingApprovals,
+  } = useMemo(() => {
+    const summary = {
+      totalUsers: users.length,
+      activeUsers: 0,
+      holdUsers: 0,
+      suspendedUsers: 0,
+      pendingApprovals: 0,
+      onlineCount: onlineUsers.size,
+    };
+
+    users.forEach((u) => {
+      if (u.status === 'active') summary.activeUsers += 1;
+      if (u.status === 'hold') summary.holdUsers += 1;
+      if (u.status === 'suspend') summary.suspendedUsers += 1;
+      if (u.approval_status === 'pending') summary.pendingApprovals += 1;
+    });
+
+    return summary;
+  }, [users, onlineUsers]);
+
+  const statTiles = useMemo(
+    () => [
+      {
+        label: 'Total Users',
+        value: totalUsersCount,
+        subtext: 'All registered accounts',
+        icon: UsersIcon,
+      },
+      {
+        label: 'Active',
+        value: activeUsers,
+        subtext: 'Currently active status',
+        icon: UserCheck,
+      },
+      {
+        label: 'On Hold',
+        value: holdUsers,
+        subtext: 'Temporarily paused',
+        icon: Clock,
+      },
+      {
+        label: 'Suspended',
+        value: suspendedUsers,
+        subtext: 'Awaiting review',
+        icon: UserX,
+      },
+      {
+        label: 'Pending',
+        value: pendingApprovals,
+        subtext: 'Awaiting approval',
+        icon: UserPlus,
+      },
+      {
+        label: 'Online',
+        value: onlineCount,
+        subtext: 'Active in last minute',
+        icon: Activity,
+      },
+    ],
+    [totalUsersCount, activeUsers, holdUsers, suspendedUsers, pendingApprovals, onlineCount],
+  );
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active': return 'bg-green-50 text-green-700 border-green-200';
@@ -1338,244 +1408,281 @@ const Users = () => {
       
       <div className="flex-1 lg:ml-56">
         <Header />
-        <main className="container mx-auto px-3 sm:px-4 py-3 sm:py-4 space-y-3 sm:space-y-4 pb-24 lg:pb-6 animate-fade-in max-w-7xl">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
-            <div>
-              <h1 className="text-lg sm:text-xl md:text-2xl font-bold mb-1">User Management</h1>
-              <p className="text-muted-foreground text-xs sm:text-sm">Manage all users and their access permissions</p>
-            </div>
-            <Button
-              onClick={() => setIsAddUserOpen(true)}
-              className="h-9 px-3 sm:px-4 text-xs sm:text-sm w-full sm:w-auto"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add User
-            </Button>
-          </div>
-
-          <div className="space-y-3">
-            <Input
-              placeholder="Search by name, email, or employee ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 text-sm"
-            />
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:flex sm:flex-wrap">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <label className="text-xs text-muted-foreground whitespace-nowrap">Role:</label>
-                <select
-                  value={filterRole}
-                  onChange={(e) => setFilterRole(e.target.value as any)}
-                  className="h-8 px-2 text-xs border border-border rounded-md bg-card flex-1 sm:flex-none"
-                >
-                  <option value="all">All</option>
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                  <option value="super_admin">Super Admin</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <label className="text-xs text-muted-foreground whitespace-nowrap">Status:</label>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value as any)}
-                  className="h-8 px-2 text-xs border border-border rounded-md bg-card flex-1 sm:flex-none"
-                >
-                  <option value="all">All</option>
-                  <option value="active">Active</option>
-                  <option value="hold">Hold</option>
-                  <option value="suspend">Suspended</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <label className="text-xs text-muted-foreground whitespace-nowrap">Approval:</label>
-                <select
-                  value={filterApproval}
-                  onChange={(e) => setFilterApproval(e.target.value as any)}
-                  className="h-8 px-2 text-xs border border-border rounded-md bg-card flex-1 sm:flex-none"
-                >
-                  <option value="all">All</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3">
-            {filteredUsers.map((userData) => (
-              <Card key={userData.id} className="p-3 sm:p-4 hover:shadow-lg transition-all duration-300">
-                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 lg:gap-4">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-primary flex items-center justify-center text-white font-semibold text-sm shrink-0">
-                      {userData.user_name?.charAt(0).toUpperCase() || userData.email?.charAt(0).toUpperCase() || "U"}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-sm sm:text-base truncate">
-                            {userData.user_name || userData.email || "Unknown User"}
-                          </h3>
-                          {/* Online/Offline Status Indicator */}
-                          <div className="flex items-center gap-1">
-                            {isUserCurrentlyOnline(userData) ? (
-                              <div className="flex items-center gap-1">
-                                <Circle className="w-2 h-2 fill-green-500 text-green-500" />
-                                <span className="text-[10px] text-green-600 font-medium">Online</span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1">
-                                <Circle className="w-2 h-2 fill-gray-400 text-gray-400" />
-                                <span className="text-[10px] text-gray-500 font-medium">
-                                  {userData.last_seen ? `Last seen: ${formatLastSeen(userData.last_seen)}` : 'Offline'}
-                                </span>
-                              </div>
-                            )}
+        <main className="container mx-auto px-3 sm:px-4 py-4 space-y-6 pb-24 lg:pb-8 animate-fade-in max-w-7xl">
+          <div className="space-y-6">
+            <div className="relative overflow-hidden rounded-3xl bg-primary text-white ">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_55%)]" />
+              <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+              <div className="relative p-6 sm:p-8 space-y-8">
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Control Center</p>
+                    <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">User Management Dashboard</h1>
+                    <p className="text-sm sm:text-base text-white/80 max-w-2xl">
+                      Monitor access, update roles, and keep a pulse on your organisation's health with real-time insights.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => setIsAddUserOpen(true)}
+                    className="bg-white text-indigo-600 hover:bg-white/90 shadow-lg h-11 px-5 rounded-full font-semibold flex items-center gap-2 w-full sm:w-auto"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add User
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+                  {statTiles.map((tile) => {
+                    const Icon = tile.icon;
+                    return (
+                      <div
+                        key={tile.label}
+                        className="group relative overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur px-4 py-4 shadow-lg transition-transform duration-200 hover:-translate-y-1"
+                      >
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/10" />
+                        <div className="relative flex items-start gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/25 shadow-inner">
+                            <Icon className="h-5 w-5 text-white" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[11px] uppercase tracking-wide text-white/70">{tile.label}</p>
+                            <p className="text-lg font-semibold">{tile.value}</p>
+                            <p className="text-[11px] text-white/70">{tile.subtext}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                          <Badge className={`text-[10px] sm:text-xs ${getRoleColor(userData.role, userData.super_admin)}`}>
-                            {userData.super_admin ? 'Super Admin' : userData.role}
-                          </Badge>
-                          <Badge className={`text-[10px] sm:text-xs ${getStatusColor(userData.status)}`}>
-                            {userData.status}
-                          </Badge>
-                          <Badge className={`text-[10px] sm:text-xs ${getApprovalColor(userData.approval_status)}`}>
-                            {userData.approval_status}
-                          </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <Card className="border outline-indigo-200 bg-white/90 backdrop-blur">
+              <div className="p-5 sm:p-6 space-y-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="relative w-full lg:max-w-md">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name, email, or employee ID..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50/80 pl-9 pr-4 text-sm focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    />
+                  </div>
+                  <Badge className="w-fit rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
+                    Showing {filteredUsers.length} of {totalUsersCount} users
+                  </Badge>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Role</Label>
+                    <select
+                      value={filterRole}
+                      onChange={(e) => setFilterRole(e.target.value as any)}
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    >
+                      <option value="all">All roles</option>
+                      <option value="user">User</option>
+                      <option value="admin">Admin</option>
+                      <option value="super_admin">Super Admin</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</Label>
+                    <select
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value as any)}
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    >
+                      <option value="all">All statuses</option>
+                      <option value="active">Active</option>
+                      <option value="hold">Hold</option>
+                      <option value="suspend">Suspended</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approval</Label>
+                    <select
+                      value={filterApproval}
+                      onChange={(e) => setFilterApproval(e.target.value as any)}
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    >
+                      <option value="all">All approvals</option>
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Online</Label>
+                    <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50/80 px-4 text-sm text-slate-600 ">
+                      <span className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70 opacity-75"></span>
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                        </span>
+                        {onlineCount} users active
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {filteredUsers.map((userData) => (
+                <Card
+                  key={userData.id}
+                  className="p-4 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02] flex flex-col"
+                >
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 ">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-sky-500 text-sm font-semibold text-white ]">
+                          {userData.user_name?.charAt(0).toUpperCase() || userData.email?.charAt(0).toUpperCase() || "U"}
+                        </div>
+                        <div className="space-y-1 ">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.12em]">
+                            {userData.employee_id || userData.user_id?.slice(0, 8) || '—'}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-semibold text-foreground">
+                              {userData.user_name || userData.email || "Unknown User"}
+                            </h3>
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1.5 text-xs font-medium",
+                                isUserCurrentlyOnline(userData) ? 'text-emerald-600' : 'text-slate-400'
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "inline-block h-2.5 w-2.5 rounded-full ",
+                                  isUserCurrentlyOnline(userData) ? 'bg-emerald-500' : 'bg-slate-300'
+                                )}
+                              />
+                              {isUserCurrentlyOnline(userData)
+                                ? 'Online'
+                                : userData.last_seen
+                                  ? `Offline · ${formatLastSeen(userData.last_seen)}`
+                                  : 'Offline'}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate mb-1.5">
-                        {userData.email}
-                      </p>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 sm:gap-4 text-xs text-muted-foreground">
-                        {userData.employee_id && (
-                          <span className="font-semibold text-primary">ID: {userData.employee_id}</span>
-                        )}
-                        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
-                          {userData.user_id && (
-                            <span className="text-[11px] sm:text-xs">User ID: {userData.user_id.slice(0, 8)}...</span>
-                          )}
-                          {userData.contact_no && (
-                            <span className="text-[11px] sm:text-xs">Phone: {userData.contact_no}</span>
-                          )}
-                          <span className="text-[11px] sm:text-xs">Joined: {new Date(userData.created_at).toLocaleDateString()}</span>
-                        </div>
+                      <div className="flex pt-2 items-center gap-2 flex-wrap justify-end ">
+                        <Badge className={cn("rounded-full px-3 py-1 text-xs", getRoleColor(userData.role, userData.super_admin))}>
+                          {userData.super_admin ? 'Super Admin' : userData.role}
+                        </Badge>
+                        <Badge className={cn("rounded-full px-3 py-1 text-xs", getStatusColor(userData.status))}>
+                          {userData.status}
+                        </Badge>
+                        <Badge className={cn("rounded-full px-3 py-1 text-xs", getApprovalColor(userData.approval_status))}>
+                          {userData.approval_status}
+                        </Badge>
                       </div>
-                      {userData.status_reason && (
-                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
-                          <span className="font-semibold text-yellow-800">Status Reason: </span>
-                          <span className="text-yellow-700">{userData.status_reason}</span>
-                        </div>
+                    </div>
+
+                    <div className="grid gap-3 border-t border-border/30 pt-4 text-sm text-muted-foreground">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 md:gap-3">
+                        <span className="font-medium text-foreground">Email</span>
+                        <span>{userData.email || 'N/A'}</span>
+                      </div>
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 md:gap-3">
+                        <span className="font-medium text-foreground">Phone</span>
+                        <span>{userData.contact_no || 'N/A'}</span>
+                      </div>
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 md:gap-3">
+                        <span className="font-medium text-foreground">User ID</span>
+                        <span>{userData.user_id || 'N/A'}</span>
+                      </div>
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 md:gap-3">
+                        <span className="font-medium text-foreground">Joined</span>
+                        <span>{new Date(userData.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    {userData.status_reason && (
+                      <div className="flex items-start gap-2 rounded-xl border border-amber-200/70 bg-amber-50/80 px-3 py-2 text-xs text-amber-700">
+                        <span className="font-semibold uppercase tracking-wide text-amber-800">Note:</span>
+                        <span className="leading-relaxed">{userData.status_reason}</span>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2 border-t border-border/30 pt-4">
+                      {userData.super_admin ? (
+                        <Badge variant="destructive" className="rounded-full text-xs">
+                          Super admin · status locked
+                        </Badge>
+                      ) : (
+                        <>
+                         
+                            
+                            <select
+                              value={userData.status}
+                              onChange={(e) => handleStatusChange(userData.user_id, e.target.value as any)}
+                              disabled={userData.approval_status === 'pending'}
+                              className={cn(
+                                "h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200",
+                                userData.approval_status === 'pending' && 'cursor-not-allowed opacity-60'
+                              )}
+                              title={userData.approval_status === 'pending' ? 'User must be approved or rejected before changing status' : ''}
+                            >
+                              <option value="active">🟢 Active</option>
+                              <option value="hold">🟡 Hold</option>
+                              <option value="suspend">🔴 Suspend</option>
+                            </select>
+                          
+                         
+                            {userData.approval_status !== 'approved' && (
+                              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-2 py-1.5 text-[11px] text-slate-500 shadow-inner">
+                                <span className="font-semibold text-slate-600">Approval</span>
+                                <select
+                                  value={userData.approval_status}
+                                  onChange={(e) => handleApprovalChange(userData.user_id, e.target.value as any)}
+                                  className={cn(
+                                    "h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                                  )}
+                                >
+                                  <option value="pending">⏳ Pending</option>
+                                  <option value="approved">✅ Approved</option>
+                                  <option value="rejected">❌ Rejected</option>
+                                </select>
+                              </div>
+                            )}
+                         
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                              if (userData.user_id) {
+                                setDeleteUserId(userData.user_id);
+                                setDeleteUserEmail("");
+                              } else {
+                                setDeleteUserId(null);
+                                setDeleteUserEmail(userData.email);
+                              }
+                              setDeleteUserName(userData.user_name || userData.email || "User");
+                            }}
+                            className="h-9 rounded-lg px-3 ml-2 text-xs font-semibold shadow-sm hover:shadow-md"
+                          >
+                            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
-
-                  <div className="flex flex-col gap-2 shrink-0 w-full lg:w-auto lg:min-w-[200px]">
-                    {userData.super_admin ? (
-                      <div className="flex items-center justify-center lg:justify-start gap-2 px-3 py-2 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-lg">
-                        <Shield className="w-4 h-4 text-red-600" />
-                        <span className="text-xs font-semibold text-red-700">Protected</span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        {/* Status and Approval Controls */}
-                        <div className="flex flex-col gap-2 p-2 bg-gray-50/50 rounded-lg border border-gray-200">
-                          {/* Status Dropdown */}
-                          <div className="flex flex-col gap-1">
-                            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-                              Status
-                            </label>
-                            <div className="relative">
-                              <select
-                                value={userData.status}
-                                onChange={(e) => handleStatusChange(userData.user_id, e.target.value as any)}
-                                disabled={userData.approval_status === 'pending'}
-                                className={`w-full h-8 px-3 pr-8 text-xs font-medium border rounded-md transition-all ${
-                                  userData.approval_status === 'pending'
-                                    ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-300 text-gray-500'
-                                    : 'bg-white border-gray-300 text-gray-700 hover:border-primary hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary'
-                                }`}
-                                title={userData.approval_status === 'pending' ? 'User must be approved or rejected before changing status' : ''}
-                              >
-                                <option value="active">🟢 Active</option>
-                                <option value="hold">🟡 Hold</option>
-                                <option value="suspend">🔴 Suspend</option>
-                              </select>
-                              {userData.approval_status === 'pending' && (
-                                <div className="absolute inset-0 flex items-center justify-end pr-2 pointer-events-none">
-                                  <Clock className="w-3 h-3 text-gray-400" />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Approval Status Dropdown */}
-                          <div className="flex flex-col gap-1">
-                            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-                              Approval
-                            </label>
-                            <div className="relative">
-                              <select
-                                value={userData.approval_status}
-                                onChange={(e) => handleApprovalChange(userData.user_id, e.target.value as any)}
-                                disabled={userData.approval_status === 'approved'}
-                                className={`w-full h-8 px-3 pr-8 text-xs font-medium border rounded-md transition-all ${
-                                  userData.approval_status === 'approved'
-                                    ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-300 text-gray-500'
-                                    : 'bg-white border-gray-300 text-gray-700 hover:border-primary hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary'
-                                }`}
-                                title={userData.approval_status === 'approved' ? 'Approved users cannot change approval status' : ''}
-                              >
-                                <option value="pending">⏳ Pending</option>
-                                <option value="approved">✅ Approved</option>
-                                <option value="rejected">❌ Rejected</option>
-                              </select>
-                              {userData.approval_status === 'approved' && (
-                                <div className="absolute inset-0 flex items-center justify-end pr-2 pointer-events-none">
-                                  <CheckCircle className="w-3 h-3 text-green-500" />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Delete Button */}
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => {
-                            if (userData.user_id) {
-                              setDeleteUserId(userData.user_id);
-                              setDeleteUserEmail("");
-                            } else {
-                              setDeleteUserId(null);
-                              setDeleteUserEmail(userData.email);
-                            }
-                            setDeleteUserName(userData.user_name || userData.email || "User");
-                          }}
-                          className="h-8 w-full text-xs font-medium shadow-sm hover:shadow-md transition-all duration-200"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                          Delete User
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-
-          {filteredUsers.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">No users found matching your filters.</p>
+                </Card>
+              ))}
             </div>
-          )}
+
+            {filteredUsers.length === 0 && (
+              <Card className="border-dashed border-2 border-slate-200 bg-white/80 py-12 shadow-inner text-center">
+                <p className="text-sm text-slate-500">
+                  No users match the current filters. Try adjusting your search criteria.
+                </p>
+              </Card>
+            )}
+          </div>
         </main>
       </div>
 

@@ -19,6 +19,7 @@ import ContractEditor from "./pages/ContractEditor";
 import Messaging from "./pages/Messaging";
 import Influencer from "./pages/Influencer";
 import Product from "./pages/Product";
+import Campaign from "./pages/Campaign";
 import Companies from "./pages/Companies";
 import Settings from "./pages/Settings";
 import ApprovalPending from "./components/ApprovalPending";
@@ -150,6 +151,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Companies />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/campaign"
+              element={
+                <ProtectedRoute>
+                  <Campaign />
                 </ProtectedRoute>
               }
             />
