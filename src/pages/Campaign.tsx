@@ -19,31 +19,55 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import {
   Calendar,
+  CalendarRange,
   CheckCircle2,
   Clock,
   Filter,
   LayoutGrid,
   Layers,
   List,
+  Megaphone,
   Loader2,
+  Power,
+  PowerOff,
   Plus,
   Search,
+  Trash2,
   Upload,
   Users,
+  UserPlus,
   X,
 } from "lucide-react";
 
-type CampaignStatus = "draft" | "scheduled" | "live" | "completed";
+type CampaignStatus = "draft" | "scheduled" | "live" | "completed" | "inactive";
 
 interface CampaignUserRef {
   id: string;
@@ -74,6 +98,9 @@ interface CampaignRecord {
   users: CampaignUserRef[];
   influencers: CampaignInfluencerRef[];
   contract?: CampaignContractRef | null;
+  startDate: string | null;
+  endDate: string | null;
+  isLongTerm: boolean;
   status: CampaignStatus;
   progress: number;
   createdAt: string;
@@ -189,6 +216,9 @@ const mapCampaignRow = (row: any): CampaignRecord => ({
           status: (row.contract_status as string | null) ?? null,
         }
       : null),
+  startDate: (row.start_date as string | null) ?? null,
+  endDate: (row.end_date as string | null) ?? null,
+  isLongTerm: Boolean(row.is_long_term),
   status: row.status ?? "draft",
   progress: typeof row.progress === "number" ? row.progress : 0,
   createdAt: row.created_at ?? new Date().toISOString(),
@@ -199,6 +229,7 @@ const STATUS_STYLES: Record<CampaignStatus, string> = {
   scheduled: "bg-amber-100 text-amber-700 border border-amber-200",
   live: "bg-emerald-100 text-emerald-700 border border-emerald-200",
   completed: "bg-indigo-100 text-indigo-700 border border-indigo-200",
+  inactive: "bg-rose-100 text-rose-700 border border-rose-200",
 };
 
 const Campaign = () => {
@@ -212,6 +243,9 @@ const Campaign = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newCampaignName, setNewCampaignName] = useState("");
   const [newBrandName, setNewBrandName] = useState("");
+  const [newStartDate, setNewStartDate] = useState<string>("");
+  const [newEndDate, setNewEndDate] = useState<string>("");
+  const [isLongTerm, setIsLongTerm] = useState<boolean>(false);
   const [selectedUsers, setSelectedUsers] = useState<CampaignUserRef[]>([]);
   const [selectedInfluencers, setSelectedInfluencers] = useState<CampaignInfluencerRef[]>([]);
   const [selectedContract, setSelectedContract] = useState<CampaignContractRef | null>(null);
@@ -243,6 +277,24 @@ const Campaign = () => {
   const [isInfluencerPickerOpen, setIsInfluencerPickerOpen] = useState<boolean>(false);
   const [influencerPickerSelection, setInfluencerPickerSelection] = useState<Set<string>>(new Set());
   const [influencersSearch, setInfluencersSearch] = useState<string>("");
+  const [editingCampaignIdForUsers, setEditingCampaignIdForUsers] = useState<string | null>(null);
+  const [editingCampaignIdForInfluencers, setEditingCampaignIdForInfluencers] = useState<string | null>(null);
+  const [campaignActionLoading, setCampaignActionLoading] = useState<Record<string, boolean>>({});
+  const [campaignToDelete, setCampaignToDelete] = useState<CampaignRecord | null>(null);
+  const [isDeletingCampaign, setIsDeletingCampaign] = useState<boolean>(false);
+
+  const formatDateForDisplay = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    try {
+      const date = new Date(`${value}T00:00:00`);
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+      return date.toLocaleDateString();
+    } catch {
+      return value;
+    }
+  };
 
   useEffect(() => {
     const fetchCompanies = async () => {
@@ -419,7 +471,7 @@ const Campaign = () => {
         const { data, error } = await supabase
           .from("campaigns")
           .select(
-            "id, name, brand, objective, users, influencers, contract_id, contract_snapshot, status, progress, created_at"
+            "id, name, brand, objective, users, influencers, contract_id, contract_snapshot, start_date, end_date, is_long_term, status, progress, created_at"
           )
           .order("created_at", { ascending: false });
 
@@ -454,6 +506,9 @@ const Campaign = () => {
   const resetCreateForm = () => {
     setNewCampaignName("");
     setNewBrandName("");
+    setNewStartDate("");
+    setNewEndDate("");
+    setIsLongTerm(false);
     setSelectedContract(null);
     setNewDescription("");
     setSelectedUsers([]);
@@ -487,6 +542,13 @@ const Campaign = () => {
     setNewBrandName(value);
   };
 
+  const handleLongTermToggle = (checked: boolean) => {
+    setIsLongTerm(checked);
+    if (checked) {
+      setNewEndDate("");
+    }
+  };
+
   const handleContractSelect = (value: string) => {
     if (value === "__loading" || value === "__no_contracts") {
       return;
@@ -499,8 +561,206 @@ const Campaign = () => {
     setSelectedContract(null);
   };
 
-  const handleOpenUserPicker = () => {
-    setUserPickerSelection(new Set(selectedUsers.map((user) => user.id)));
+  const setCampaignLoadingState = (campaignId: string, loading: boolean) => {
+    setCampaignActionLoading((prev) => {
+      const next = { ...prev };
+      if (loading) {
+        next[campaignId] = true;
+      } else {
+        delete next[campaignId];
+      }
+      return next;
+    });
+  };
+
+  const handleUpdateCampaignStatus = async (campaign: CampaignRecord, status: CampaignStatus) => {
+    if (campaign.status === status) {
+      return;
+    }
+
+    setCampaignLoadingState(campaign.id, true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("campaigns")
+        .update({ status })
+        .eq("id", campaign.id)
+        .select("id");
+
+      if (error) {
+        throw error;
+      }
+
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error("Campaign not found or could not be updated.");
+      }
+
+      setCampaigns((prev) =>
+        prev.map((item) => (item.id === campaign.id ? { ...item, status } : item))
+      );
+
+      toast({
+        title: status === "live" ? "Campaign activated" : "Campaign updated",
+        description:
+          status === "live"
+            ? `"${campaign.name}" is now marked as active.`
+            : status === "inactive"
+            ? `"${campaign.name}" has been moved to inactive.`
+            : `"${campaign.name}" status updated.`,
+      });
+    } catch (error: any) {
+      console.error("Campaign: Error updating status", error);
+      toast({
+        title: "Unable to update status",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setCampaignLoadingState(campaign.id, false);
+    }
+  };
+
+  const handleUpdateCampaignUsers = async (
+    campaign: CampaignRecord,
+    updatedUsers: CampaignUserRef[]
+  ): Promise<boolean> => {
+    setCampaignLoadingState(campaign.id, true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("campaigns")
+        .update({ users: updatedUsers })
+        .eq("id", campaign.id)
+        .select("id");
+
+      if (error) {
+        throw error;
+      }
+
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error("Campaign not found or could not be updated.");
+      }
+
+      setCampaigns((prev) =>
+        prev.map((item) => (item.id === campaign.id ? { ...item, users: updatedUsers } : item))
+      );
+
+      toast({
+        title: "Users updated",
+        description: `"${campaign.name}" now has ${updatedUsers.length} assigned ${
+          updatedUsers.length === 1 ? "user" : "users"
+        }.`,
+      });
+      return true;
+    } catch (error: any) {
+      console.error("Campaign: Error updating users", error);
+      toast({
+        title: "Unable to update users",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setCampaignLoadingState(campaign.id, false);
+    }
+  };
+
+  const handleUpdateCampaignInfluencers = async (
+    campaign: CampaignRecord,
+    updatedInfluencers: CampaignInfluencerRef[]
+  ): Promise<boolean> => {
+    setCampaignLoadingState(campaign.id, true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("campaigns")
+        .update({ influencers: updatedInfluencers })
+        .eq("id", campaign.id)
+        .select("id");
+
+      if (error) {
+        throw error;
+      }
+
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error("Campaign not found or could not be updated.");
+      }
+
+      setCampaigns((prev) =>
+        prev.map((item) =>
+          item.id === campaign.id ? { ...item, influencers: updatedInfluencers } : item
+        )
+      );
+
+      toast({
+        title: "Influencers updated",
+        description: `"${campaign.name}" now has ${updatedInfluencers.length} assigned ${
+          updatedInfluencers.length === 1 ? "influencer" : "influencers"
+        }.`,
+      });
+      return true;
+    } catch (error: any) {
+      console.error("Campaign: Error updating influencers", error);
+      toast({
+        title: "Unable to update influencers",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setCampaignLoadingState(campaign.id, false);
+    }
+  };
+
+  const handleDeleteCampaignConfirm = async () => {
+    if (!campaignToDelete) {
+      return;
+    }
+
+    setIsDeletingCampaign(true);
+    try {
+      const { error } = await supabase.from("campaigns").delete().eq("id", campaignToDelete.id);
+      if (error) {
+        throw error;
+      }
+
+      const { data: verify, error: verifyError } = await supabase
+        .from("campaigns")
+        .select("id")
+        .eq("id", campaignToDelete.id)
+        .maybeSingle();
+
+      if (verifyError && verifyError.code !== "PGRST116") {
+        console.warn("Campaign: Verification select failed", verifyError);
+      }
+
+      if (verify) {
+        throw new Error("Campaign not found or already deleted.");
+      }
+
+      setCampaigns((prev) => prev.filter((campaign) => campaign.id !== campaignToDelete.id));
+      toast({
+        title: "Campaign deleted",
+        description: `"${campaignToDelete.name}" has been removed.`,
+      });
+      setCampaignToDelete(null);
+    } catch (error: any) {
+      console.error("Campaign: Error deleting campaign", error);
+      toast({
+        title: "Unable to delete campaign",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeletingCampaign(false);
+    }
+  };
+
+  const handleOpenUserPicker = (campaign?: CampaignRecord) => {
+    if (campaign) {
+      setEditingCampaignIdForUsers(campaign.id);
+      setUserPickerSelection(new Set(campaign.users.map((user) => user.id)));
+    } else {
+      setEditingCampaignIdForUsers(null);
+      setUserPickerSelection(new Set(selectedUsers.map((user) => user.id)));
+    }
     setUsersSearch("");
     setIsUserPickerOpen(true);
   };
@@ -517,11 +777,30 @@ const Campaign = () => {
     });
   };
   
-  const applyUserSelection = () => {
+  const applyUserSelection = async () => {
     const selected = users
       .filter((user) => userPickerSelection.has(user.id))
       .map(({ id, name, email, employeeId }) => ({ id, name, email, employeeId }));
-    setSelectedUsers(selected);
+
+    if (editingCampaignIdForUsers) {
+      const campaign = campaigns.find((item) => item.id === editingCampaignIdForUsers);
+      if (!campaign) {
+        toast({
+          title: "Campaign not found",
+          description: "Unable to update users for this campaign.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const success = await handleUpdateCampaignUsers(campaign, selected);
+      if (!success) {
+        return;
+      }
+      setEditingCampaignIdForUsers(null);
+    } else {
+      setSelectedUsers(selected);
+    }
+
     setIsUserPickerOpen(false);
   };
 
@@ -534,11 +813,20 @@ const Campaign = () => {
     setUserPickerSelection(new Set());
   };
 
-  const handleOpenInfluencerPicker = () => {
-    setInfluencerPickerSelection(new Set(selectedInfluencers.map((influencer) => influencer.id)));
+  const handleOpenInfluencerPicker = (campaign?: CampaignRecord) => {
+    if (campaign) {
+      setEditingCampaignIdForInfluencers(campaign.id);
+      setInfluencerPickerSelection(new Set(campaign.influencers.map((influencer) => influencer.id)));
+    } else {
+      setEditingCampaignIdForInfluencers(null);
+      setInfluencerPickerSelection(new Set(selectedInfluencers.map((influencer) => influencer.id)));
+    }
     setInfluencersSearch("");
     setIsInfluencerPickerOpen(true);
   };
+
+  const handleOpenUserPickerForCreate = () => handleOpenUserPicker();
+  const handleOpenInfluencerPickerForCreate = () => handleOpenInfluencerPicker();
 
   const toggleInfluencerSelection = (influencerId: string) => {
     setInfluencerPickerSelection((prev) => {
@@ -552,7 +840,7 @@ const Campaign = () => {
     });
   };
 
-  const applyInfluencerSelection = () => {
+  const applyInfluencerSelection = async () => {
     const selected = influencers
       .filter((influencer) => influencerPickerSelection.has(influencer.id))
       .map(({ id, pid, name, email, handles, country }) => ({
@@ -563,7 +851,26 @@ const Campaign = () => {
         handles,
         country: country ?? null,
       }));
-    setSelectedInfluencers(selected);
+
+    if (editingCampaignIdForInfluencers) {
+      const campaign = campaigns.find((item) => item.id === editingCampaignIdForInfluencers);
+      if (!campaign) {
+        toast({
+          title: "Campaign not found",
+          description: "Unable to update influencers for this campaign.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const success = await handleUpdateCampaignInfluencers(campaign, selected);
+      if (!success) {
+        return;
+      }
+      setEditingCampaignIdForInfluencers(null);
+    } else {
+      setSelectedInfluencers(selected);
+    }
+
     setIsInfluencerPickerOpen(false);
   };
 
@@ -587,10 +894,34 @@ const Campaign = () => {
       return;
     }
 
+    if (!isLongTerm && (!newStartDate || !newEndDate)) {
+      toast({
+        title: "Timeline required",
+        description: "Please provide both a start and end date, or mark the campaign as long-term.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!isLongTerm && newStartDate && newEndDate) {
+      const start = new Date(newStartDate);
+      const end = new Date(newEndDate);
+      if (end < start) {
+        toast({
+          title: "Invalid timeline",
+          description: "End date cannot be earlier than start date.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     const nextId = nextCampaignPreview;
     const name = newCampaignName.trim();
     const brand = newBrandName.trim();
     const objective = newDescription.trim() || null;
+    const startDateValue = newStartDate ? newStartDate : null;
+    const endDateValue = isLongTerm ? null : newEndDate ? newEndDate : null;
 
     const payload = {
       id: nextId,
@@ -601,6 +932,9 @@ const Campaign = () => {
       influencers: selectedInfluencers,
       contract_id: selectedContract?.id ?? null,
       contract_snapshot: selectedContract ? { ...selectedContract } : null,
+      start_date: startDateValue,
+      end_date: endDateValue,
+      is_long_term: isLongTerm,
       status: "draft",
       progress: 0,
     };
@@ -652,6 +986,13 @@ const Campaign = () => {
         (campaign.contract?.name ?? "").toLowerCase().includes(query) ||
         (campaign.contract?.status ?? "").toLowerCase().includes(query) ||
         (campaign.contract?.description ?? "").toLowerCase().includes(query)
+      ) {
+        return true;
+      }
+      if (
+        (campaign.startDate ?? "").toLowerCase().includes(query) ||
+        (campaign.endDate ?? "").toLowerCase().includes(query) ||
+        (campaign.isLongTerm ? "long term" : "").includes(query)
       ) {
         return true;
       }
@@ -970,22 +1311,28 @@ const Campaign = () => {
               <Separator />
 
               <div className={viewMode === "grid" ? "grid gap-4 md:grid-cols-2" : "space-y-3"}>
-                {filteredCampaigns.map((campaign) => (
+                {filteredCampaigns.map((campaign) => {
+                  const startDisplay = formatDateForDisplay(campaign.startDate);
+                  const endDisplay = formatDateForDisplay(campaign.endDate);
+                  const isCampaignBusy = Boolean(campaignActionLoading[campaign.id]);
+                  const isLive = campaign.status === "live";
+                  const isInactive = campaign.status === "inactive";
+                  return (
                   <div
                     key={campaign.id}
                     className="group rounded-2xl border border-border/50 bg-background/80 backdrop-blur-sm shadow-sm hover:shadow-xl transition-all duration-300 p-5 flex flex-col gap-4"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div>
+                      <div className="space-y-2">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline" className="rounded-full border-primary/40 bg-primary/5 text-xs">
+                          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
                             {campaign.brand}
-                          </Badge>
+                          </p>
                           <Badge className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[campaign.status]}`}>
                             {campaign.status}
                           </Badge>
                         </div>
-                        <h3 className="mt-3 text-lg font-semibold text-foreground">{campaign.name}</h3>
+                        <h3 className="text-lg font-semibold text-foreground">{campaign.name}</h3>
                         <p className="text-sm text-muted-foreground">{campaign.objective}</p>
                       </div>
                       <div className="text-right">
@@ -994,97 +1341,87 @@ const Campaign = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                      <div className="space-y-1">
-                        <p className="text-xs uppercase text-muted-foreground">Users Assigned</p>
-                        {campaign.users.length ? (
-                          <div className="grid gap-1.5">
-                            {campaign.users.map((user) => (
-                              <span
-                                key={`${campaign.id}-user-${user.id}`}
-                                className="flex flex-col rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary"
-                              >
-                                <span className="font-semibold text-primary">{user.name}</span>
-                                <span className="text-[11px] text-primary/80">{user.email}</span>
-                                {user.employeeId && (
-                                  <span className="text-[11px] font-medium text-primary/70">
-                                    Emp Code: {user.employeeId}
-                                  </span>
-                                )}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm font-medium text-muted-foreground">No users added</p>
-                        )}
+                    <div className="grid grid-cols-1 gap-4 text-sm">
+                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-4 flex items-start gap-3">
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <CalendarRange className="h-5 w-5" />
+                        </span>
+                        <div className="flex-1 space-y-1.5">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Timeline
+                          </p>
+                          {campaign.isLongTerm ? (
+                            <div className="space-y-1">
+                              <p className="text-sm font-semibold text-foreground">
+                                Long-term engagement
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {startDisplay ? `Starts ${startDisplay}` : "Start date not set"}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground/80">
+                                Running without a scheduled end date.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <p className="text-sm font-semibold text-foreground">
+                                {startDisplay ?? "Start date not set"}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {endDisplay ? `Ends ${endDisplay}` : "End date not set"}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground/80">
+                                Scheduled activation window for this brief.
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-xs uppercase text-muted-foreground">Influencers</p>
-                        {campaign.influencers.length ? (
-                          <div className="grid gap-1.5">
-                            {campaign.influencers.map((influencer) => {
-                              const uniquePlatforms = Array.from(
-                                new Set(
-                                  influencer.handles
-                                    .map((handle) => handle.platform.toLowerCase())
-                                    .filter(Boolean)
-                                )
-                              );
-                              return (
-                                <div
-                                  key={`${campaign.id}-influencer-${influencer.id}`}
-                                  className="flex flex-col gap-1 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-800"
-                                >
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-sm font-semibold text-emerald-900">{influencer.name}</span>
-                                    {influencer.pid && (
-                                      <span className="rounded-full border border-emerald-300 bg-white px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                                        ID: {influencer.pid}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="text-[11px] text-emerald-700/80">
-                                    {influencer.email ?? "Email not available"}
-                                  </span>
-                                  {influencer.country && (
-                                    <span className="text-[11px] text-emerald-700/70">
-                                      Country: {influencer.country}
-                                    </span>
-                                  )}
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    {uniquePlatforms.length > 0 ? (
-                                      uniquePlatforms.slice(0, 6).map((platform) => {
-                                        const meta = getPlatformMeta(platform);
-                                        return meta.icon ? (
-                                          <img
-                                            key={`${campaign.id}-${influencer.id}-${platform}`}
-                                            src={meta.icon}
-                                            alt={meta.label}
-                                            title={meta.label}
-                                            className="h-6 w-6 rounded-full border border-emerald-200 bg-white p-[2px]"
-                                          />
-                                        ) : (
-                                          <span
-                                            key={`${campaign.id}-${influencer.id}-${platform}`}
-                                            className="flex h-6 w-6 items-center justify-center rounded-full border border-emerald-200 bg-emerald-100 text-emerald-700"
-                                            title={meta.label}
-                                          >
-                                            <Layers className="h-3.5 w-3.5" />
-                                          </span>
-                                        );
-                                      })
-                                    ) : (
-                                      <span className="text-[11px] text-emerald-700/70">No platforms listed</span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-4 flex items-start gap-3">
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <Users className="h-5 w-5" />
+                        </span>
+                        <div className="flex-1 space-y-1.5">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Users
+                          </p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-semibold text-foreground">
+                              {campaign.users.length}
+                            </span>
+                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              {campaign.users.length === 1 ? "User" : "Users"}
+                            </span>
                           </div>
-                        ) : (
-                          <p className="text-sm font-medium text-muted-foreground">No influencers assigned</p>
-                        )}
+                          <p className="text-[11px] text-muted-foreground/80">
+                            Assigned collaborators in this campaign.
+                          </p>
+                        </div>
                       </div>
+                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-4 flex items-start gap-3">
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                          <Megaphone className="h-5 w-5" />
+                        </span>
+                        <div className="flex-1 space-y-1.5">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Influencers
+                          </p>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-semibold text-foreground">
+                              {campaign.influencers.length}
+                            </span>
+                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              {campaign.influencers.length === 1 ? "Influencer" : "Influencers"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground/80">
+                            Creators attached to campaign deliverables.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 text-sm">
                       <div className="space-y-1">
                         <p className="text-xs uppercase text-muted-foreground">Contract</p>
                         <div className="flex flex-col gap-1">
@@ -1124,7 +1461,7 @@ const Campaign = () => {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                    <div className="flex flex-col gap-3 pt-2">
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                         {campaign.status === "completed"
@@ -1133,17 +1470,76 @@ const Campaign = () => {
                           ? "Content approvals on-track"
                           : "Draft insights auto-saved"}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
                         <Button variant="outline" size="sm" className="h-9 px-3">
                           View Brief
                         </Button>
-                        <Button size="sm" className="h-9 px-3 bg-primary text-white">
-                          Manage
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              className="h-9 px-3 bg-primary text-white hover:bg-primary/90 focus-visible:ring-primary"
+                              disabled={isCampaignBusy}
+                            >
+                              Manage
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>Campaign Actions</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => handleOpenUserPicker(campaign)}
+                              disabled={isCampaignBusy || (usersLoading && !users.length)}
+                            >
+                              <UserPlus className="mr-2 h-4 w-4" />
+                              Add Users
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={() => handleOpenInfluencerPicker(campaign)}
+                              disabled={isCampaignBusy || (influencersLoading && !influencers.length)}
+                            >
+                              <Megaphone className="mr-2 h-4 w-4" />
+                              Add Influencers
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => handleUpdateCampaignStatus(campaign, "live")}
+                              disabled={isCampaignBusy || isLive}
+                            >
+                              {isCampaignBusy && !isLive ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Power className="mr-2 h-4 w-4 text-emerald-600" />
+                              )}
+                              Set Active
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={() => handleUpdateCampaignStatus(campaign, "inactive")}
+                              disabled={isCampaignBusy || isInactive}
+                            >
+                              {isCampaignBusy && !isInactive ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <PowerOff className="mr-2 h-4 w-4 text-amber-600" />
+                              )}
+                              Set Inactive
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => setCampaignToDelete(campaign)}
+                              disabled={isCampaignBusy}
+                              className="text-rose-600 focus:text-rose-700"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete Campaign
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   </div>
-                ))}
+                );
+              })}
 
                 {filteredCampaigns.length === 0 && (
                   <div className="col-span-full rounded-2xl border border-dashed border-border/50 bg-background/60 backdrop-blur-sm py-16 text-center">
@@ -1260,6 +1656,50 @@ const Campaign = () => {
                 </p>
               )}
             </div>
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Timeline</Label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="campaignStart">Start Date</Label>
+                  <Input
+                    id="campaignStart"
+                    type="date"
+                    value={newStartDate}
+                    onChange={(event) => setNewStartDate(event.target.value)}
+                    className="bg-background"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="campaignEnd">End Date</Label>
+                  <Input
+                    id="campaignEnd"
+                    type="date"
+                    value={isLongTerm ? "" : newEndDate}
+                    onChange={(event) => setNewEndDate(event.target.value)}
+                    className="bg-background"
+                    disabled={isLongTerm}
+                    min={newStartDate || undefined}
+                    placeholder={isLongTerm ? "Long-term campaign" : undefined}
+                  />
+                </div>
+              </div>
+              <div className="flex items-start gap-3 rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 py-2">
+                <Checkbox
+                  id="campaignLongTerm"
+                  checked={isLongTerm}
+                  onCheckedChange={(checked) => handleLongTermToggle(checked === true)}
+                  className="mt-1"
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="campaignLongTerm" className="text-sm font-medium leading-none">
+                    Long-term campaign
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Skip the end date to keep this campaign running without a defined end window.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label>Assign Users</Label>
               <div className="min-h-[64px] rounded-lg border border-border/60 bg-background/70 p-3 flex flex-wrap items-start gap-2">
@@ -1289,7 +1729,7 @@ const Campaign = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleOpenUserPicker}
+                  onClick={handleOpenUserPickerForCreate}
                   disabled={usersLoading && !users.length}
                   className="flex items-center gap-2"
                 >
@@ -1397,7 +1837,7 @@ const Campaign = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleOpenInfluencerPicker}
+                  onClick={handleOpenInfluencerPickerForCreate}
                   disabled={influencersLoading && !influencers.length}
                   className="flex items-center gap-2"
                 >
@@ -1659,7 +2099,13 @@ const Campaign = () => {
         open={isUserPickerOpen}
         onOpenChange={(open) => {
           if (open) {
-            setUserPickerSelection(new Set(selectedUsers.map((user) => user.id)));
+            if (!editingCampaignIdForUsers) {
+              setUserPickerSelection(new Set(selectedUsers.map((user) => user.id)));
+            }
+            setUsersSearch("");
+          } else {
+            setEditingCampaignIdForUsers(null);
+            setUserPickerSelection(new Set());
             setUsersSearch("");
           }
           setIsUserPickerOpen(open);
@@ -1770,7 +2216,15 @@ const Campaign = () => {
         open={isInfluencerPickerOpen}
         onOpenChange={(open) => {
           if (open) {
-            setInfluencerPickerSelection(new Set(selectedInfluencers.map((influencer) => influencer.id)));
+            if (!editingCampaignIdForInfluencers) {
+              setInfluencerPickerSelection(
+                new Set(selectedInfluencers.map((influencer) => influencer.id))
+              );
+            }
+            setInfluencersSearch("");
+          } else {
+            setEditingCampaignIdForInfluencers(null);
+            setInfluencerPickerSelection(new Set());
             setInfluencersSearch("");
           }
           setIsInfluencerPickerOpen(open);
@@ -1917,6 +2371,44 @@ const Campaign = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={Boolean(campaignToDelete)}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingCampaign) {
+            setCampaignToDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete campaign?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove{" "}
+              <span className="font-semibold text-foreground">
+                {campaignToDelete?.name ?? "this campaign"}
+              </span>{" "}
+              and its assignments. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingCampaign}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCampaignConfirm}
+              disabled={isDeletingCampaign}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingCampaign ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Deleting...
+                </span>
+              ) : (
+                "Delete Campaign"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
