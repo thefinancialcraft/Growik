@@ -167,6 +167,33 @@ const parseHandles = (raw: any, fallbackPlatform?: string): SocialHandle[] => {
   return single ? [single] : [];
 };
 
+const extractCampaignNumber = (code: string): number => {
+  const match = `${code}`.match(/(\d+)/);
+  return match ? Number.parseInt(match[1], 10) : -1;
+};
+
+const mapCampaignRow = (row: any): CampaignRecord => ({
+  id: row.id,
+  name: row.name ?? "",
+  brand: row.brand ?? "",
+  objective: row.objective ?? "",
+  users: Array.isArray(row.users) ? row.users : [],
+  influencers: Array.isArray(row.influencers) ? row.influencers : [],
+  contract:
+    row.contract_snapshot ??
+    (row.contract_id && row.contract_name
+      ? {
+          id: row.contract_id as string,
+          name: row.contract_name as string,
+          description: (row.contract_description as string | null) ?? null,
+          status: (row.contract_status as string | null) ?? null,
+        }
+      : null),
+  status: row.status ?? "draft",
+  progress: typeof row.progress === "number" ? row.progress : 0,
+  createdAt: row.created_at ?? new Date().toISOString(),
+});
+
 const STATUS_STYLES: Record<CampaignStatus, string> = {
   draft: "bg-slate-100 text-slate-700 border border-slate-200",
   scheduled: "bg-amber-100 text-amber-700 border border-amber-200",
@@ -179,6 +206,9 @@ const Campaign = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [campaigns, setCampaigns] = useState<CampaignRecord[]>([]);
+  const [isCampaignsLoading, setIsCampaignsLoading] = useState<boolean>(true);
+  const [campaignsError, setCampaignsError] = useState<string | null>(null);
+  const [isSavingCampaign, setIsSavingCampaign] = useState<boolean>(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newCampaignName, setNewCampaignName] = useState("");
   const [newBrandName, setNewBrandName] = useState("");
@@ -382,10 +412,43 @@ const Campaign = () => {
       }
     };
 
+    const fetchCampaigns = async () => {
+      setIsCampaignsLoading(true);
+      setCampaignsError(null);
+      try {
+        const { data, error } = await supabase
+          .from("campaigns")
+          .select(
+            "id, name, brand, objective, users, influencers, contract_id, contract_snapshot, status, progress, created_at"
+          )
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          throw error;
+        }
+
+        const items =
+          ((data as any[]) ?? []).map((row: any) => mapCampaignRow(row)) ?? [];
+
+        setCampaigns(items);
+      } catch (error: any) {
+        console.error("Campaign: Error fetching campaigns", error);
+        setCampaignsError(error?.message || "Unable to load campaigns.");
+        toast({
+          title: "Unable to load campaigns",
+          description: error?.message || "Please try again later.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsCampaignsLoading(false);
+      }
+    };
+
     fetchCompanies();
     fetchContracts();
     fetchUsers();
     fetchInfluencers();
+    fetchCampaigns();
   }, [toast]);
 
   const resetCreateForm = () => {
@@ -425,6 +488,9 @@ const Campaign = () => {
   };
 
   const handleContractSelect = (value: string) => {
+    if (value === "__loading" || value === "__no_contracts") {
+      return;
+    }
     const contract = contracts.find((item) => item.id === value) ?? null;
     setSelectedContract(contract);
   };
@@ -510,35 +576,68 @@ const Campaign = () => {
     setInfluencerPickerSelection(new Set());
   };
 
-  const handleCreateCampaign = (event: FormEvent<HTMLFormElement>) => {
+  const handleCreateCampaign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newCampaignName.trim() || !newBrandName.trim()) {
-    toast({
-      title: "Missing details",
-      description: "Please provide a campaign name and select a brand.",
-      variant: "destructive",
-    });
-    return;
+      toast({
+        title: "Missing details",
+        description: "Please provide a campaign name and select a brand.",
+        variant: "destructive",
+      });
+      return;
     }
 
-    const nextId = `CAM${(campaigns.length + 1).toString().padStart(3, "0")}`;
+    const nextId = nextCampaignPreview;
+    const name = newCampaignName.trim();
+    const brand = newBrandName.trim();
+    const objective = newDescription.trim() || null;
 
-    const newCampaign: CampaignRecord = {
+    const payload = {
       id: nextId,
-      name: newCampaignName.trim(),
-      brand: newBrandName.trim(),
-      objective: newDescription.trim() || "No description provided.",
+      name,
+      brand,
+      objective,
       users: selectedUsers,
       influencers: selectedInfluencers,
-      contract: selectedContract ? { ...selectedContract } : null,
+      contract_id: selectedContract?.id ?? null,
+      contract_snapshot: selectedContract ? { ...selectedContract } : null,
       status: "draft",
       progress: 0,
-      createdAt: new Date().toISOString(),
     };
 
-    setCampaigns((prev) => [...prev, newCampaign]);
-    resetCreateForm();
-    setIsCreateDialogOpen(false);
+    setIsSavingCampaign(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("campaigns")
+        .insert(payload as any)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const inserted = mapCampaignRow(data);
+      setCampaigns((prev) => [inserted, ...prev.filter((campaign) => campaign.id !== inserted.id)]);
+
+      toast({
+        title: "Campaign Created",
+        description: `"${inserted.name}" has been saved.`,
+      });
+
+      resetCreateForm();
+      setIsCreateDialogOpen(false);
+    } catch (error: any) {
+      console.error("Campaign: Error creating campaign", error);
+      toast({
+        title: "Unable to create campaign",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingCampaign(false);
+    }
   };
 
   const filteredCampaigns = useMemo(() => {
@@ -588,10 +687,14 @@ const Campaign = () => {
     return Math.round(totalInfluencers / campaigns.length);
   }, [campaigns.length, totalInfluencers]);
 
-  const nextCampaignPreview = useMemo(
-    () => `CAM${(campaigns.length + 1).toString().padStart(3, "0")}`,
-    [campaigns.length]
-  );
+  const nextCampaignPreview = useMemo(() => {
+    const maxNumber = campaigns.reduce((max, campaign) => {
+      const value = extractCampaignNumber(campaign.id);
+      return value > max ? value : max;
+    }, -1);
+    const nextNumber = maxNumber >= 0 ? maxNumber + 1 : 1;
+    return `CAM${nextNumber.toString().padStart(3, "0")}`;
+  }, [campaigns]);
 
   const sortedCompanies = useMemo(
     () => [...companies].sort((a, b) => a.name.localeCompare(b.name)),
@@ -712,6 +815,11 @@ const Campaign = () => {
       <div className="flex-1 lg:ml-56">
         <Header />
         <main className="container mx-auto px-3 sm:px-4 py-4 space-y-6 pb-24 lg:pb-10 max-w-7xl">
+          {campaignsError && (
+            <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {campaignsError}
+            </div>
+          )}
           <section className="space-y-6">
             <div className="relative overflow-hidden rounded-3xl bg-primary text-white">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.22),transparent_58%)]" />
@@ -1410,7 +1518,16 @@ const Campaign = () => {
               >
                 Cancel
               </Button>
-              <Button type="submit">Create Campaign</Button>
+              <Button type="submit" disabled={isSavingCampaign}>
+                {isSavingCampaign ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Campaign"
+                )}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
