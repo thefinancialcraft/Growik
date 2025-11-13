@@ -720,6 +720,14 @@ const Sidebar = () => {
       ),
       adminOnly: false,
     },
+    {
+      name: "Collaboration",
+      path: "/collaboration",
+      icon: (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4a8 8 0 00-8 8 8 8 0 0014.32 4.906l2.36.864-1.012-2.764A8 8 0 0012 4zm0 4a4 4 0 11-2.828 6.828l-1.414 1.414A6 6 0 1012 6zm0 2a2 2 0 100 4 2 2 0 000-4z" />
+      ),
+      adminOnly: false,
+    },
   ];
 
   // Filter nav items based on user role

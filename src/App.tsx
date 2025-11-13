@@ -20,6 +20,8 @@ import Messaging from "./pages/Messaging";
 import Influencer from "./pages/Influencer";
 import Product from "./pages/Product";
 import Campaign from "./pages/Campaign";
+import CampaignDetail from "./pages/CampaignDetail";
+import Collaboration from "./pages/Collaboration";
 import Companies from "./pages/Companies";
 import Settings from "./pages/Settings";
 import ApprovalPending from "./components/ApprovalPending";
@@ -159,6 +161,30 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Campaign />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/campaign/:id"
+              element={
+                <ProtectedRoute>
+                  <CampaignDetail />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/collaboration"
+              element={
+                <ProtectedRoute>
+                  <Collaboration />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/collaboration/:id"
+              element={
+                <ProtectedRoute>
+                  <Collaboration />
                 </ProtectedRoute>
               }
             />

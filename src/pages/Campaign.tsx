@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
 import MobileNav from "@/components/MobileNav";
@@ -46,6 +47,22 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import {
+  CampaignContractRef,
+  CampaignInfluencerRef,
+  CampaignRecord,
+  CampaignStatus,
+  CampaignUserRef,
+  CompanyOption,
+  ContractOption,
+  InfluencerOption,
+  STATUS_STYLES,
+  UserOption,
+  extractCampaignNumber,
+  getPlatformMeta,
+  mapCampaignRow,
+  parseHandles,
+} from "@/lib/campaign";
+import {
   Calendar,
   CalendarRange,
   CheckCircle2,
@@ -67,173 +84,9 @@ import {
   X,
 } from "lucide-react";
 
-type CampaignStatus = "draft" | "scheduled" | "live" | "completed" | "inactive";
-
-interface CampaignUserRef {
-  id: string;
-  name: string;
-  email: string;
-  employeeId?: string | null;
-}
-
-type SocialHandle = {
-  platform: string;
-  url: string;
-};
-
-interface CampaignInfluencerRef {
-  id: string;
-  pid: string | null;
-  name: string;
-  email: string | null;
-  handles: SocialHandle[];
-  country?: string | null;
-}
-
-interface CampaignRecord {
-  id: string;
-  name: string;
-  brand: string;
-  objective: string;
-  users: CampaignUserRef[];
-  influencers: CampaignInfluencerRef[];
-  contract?: CampaignContractRef | null;
-  startDate: string | null;
-  endDate: string | null;
-  isLongTerm: boolean;
-  status: CampaignStatus;
-  progress: number;
-  createdAt: string;
-}
-
-interface CompanyOption {
-  id: string;
-  name: string;
-}
-
-interface UserOption extends CampaignUserRef {
-  status?: string | null;
-  role?: string | null;
-  approvalStatus?: string | null;
-}
-
-interface InfluencerOption extends CampaignInfluencerRef {
-  status?: string | null;
-}
-
-interface CampaignContractRef {
-  id: string;
-  name: string;
-  description?: string | null;
-  status?: string | null;
-}
-
-interface ContractOption extends CampaignContractRef {}
-
-const SOCIAL_PLATFORM_OPTIONS: Array<{ value: string; label: string; icon: string }> = [
-  { value: "instagram", label: "Instagram", icon: "https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png" },
-  { value: "facebook", label: "Facebook", icon: "https://upload.wikimedia.org/wikipedia/commons/1/1b/Facebook_icon.svg" },
-  { value: "youtube", label: "YouTube", icon: "https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" },
-  { value: "twitter", label: "Twitter (X)", icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/X_%28formerly_Twitter%29_logo_late_2025.svg/120px-X_%28formerly_Twitter%29_logo_late_2025.svg.png" },
-  { value: "snapchat", label: "Snapchat", icon: "https://upload.wikimedia.org/wikipedia/en/thumb/c/c4/Snapchat_logo.svg/120px-Snapchat_logo.svg.png" },
-  { value: "linkedin", label: "LinkedIn", icon: "https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png" },
-  { value: "pinterest", label: "Pinterest", icon: "https://upload.wikimedia.org/wikipedia/commons/0/08/Pinterest-logo.png" },
-  { value: "threads", label: "Threads", icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Threads_%28app%29.svg/250px-Threads_%28app%29.svg.png" },
-  { value: "tiktok", label: "TikTok", icon: "https://www.edigitalagency.com.au/wp-content/uploads/TikTok-icon-glyph.png" },
-  { value: "moj", label: "Moj", icon: "https://yt3.googleusercontent.com/cf4RTYDMH_vrpiBoOxmuQ0z9KNRQKp58UtpdbaYTUKZV7SoX_QvjkjzH3pxiPs-ylcpYI-cPmdk=s900-c-k-c0x00ffffff-no-rj" },
-  { value: "twitch", label: "Twitch", icon: "https://img.freepik.com/premium-vector/vector-twitch-social-media-logo_1093524-449.jpg?semt=ais_hybrid&w=740&q=80" },
-  { value: "other", label: "Other", icon: "" },
-];
-
-const getPlatformMeta = (value: string) =>
-  SOCIAL_PLATFORM_OPTIONS.find((option) => option.value.toLowerCase() === value.toLowerCase()) ?? {
-    value,
-    label: value.charAt(0).toUpperCase() + value.slice(1),
-    icon: "",
-  };
-
-const parseHandles = (raw: any, fallbackPlatform?: string): SocialHandle[] => {
-  const sanitize = (handle: any): SocialHandle | null => {
-    if (!handle) return null;
-    if (typeof handle === "string") {
-      const trimmed = handle.trim();
-      return trimmed ? { platform: fallbackPlatform ?? "other", url: trimmed } : null;
-    }
-    if (typeof handle === "object") {
-      const platform =
-        typeof handle.platform === "string" && handle.platform.trim()
-          ? handle.platform.trim()
-          : fallbackPlatform ?? "other";
-      const url = typeof handle.url === "string" ? handle.url.trim() : "";
-      return url ? { platform, url } : null;
-    }
-    return null;
-  };
-
-  if (!raw) return [];
-
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.map(sanitize).filter((item): item is SocialHandle => Boolean(item));
-      }
-      const single = sanitize(raw);
-      return single ? [single] : [];
-    } catch {
-      const single = sanitize(raw);
-      return single ? [single] : [];
-    }
-  }
-
-  if (Array.isArray(raw)) {
-    return raw.map(sanitize).filter((item): item is SocialHandle => Boolean(item));
-  }
-
-  const single = sanitize(raw);
-  return single ? [single] : [];
-};
-
-const extractCampaignNumber = (code: string): number => {
-  const match = `${code}`.match(/(\d+)/);
-  return match ? Number.parseInt(match[1], 10) : -1;
-};
-
-const mapCampaignRow = (row: any): CampaignRecord => ({
-  id: row.id,
-  name: row.name ?? "",
-  brand: row.brand ?? "",
-  objective: row.objective ?? "",
-  users: Array.isArray(row.users) ? row.users : [],
-  influencers: Array.isArray(row.influencers) ? row.influencers : [],
-  contract:
-    row.contract_snapshot ??
-    (row.contract_id && row.contract_name
-      ? {
-          id: row.contract_id as string,
-          name: row.contract_name as string,
-          description: (row.contract_description as string | null) ?? null,
-          status: (row.contract_status as string | null) ?? null,
-        }
-      : null),
-  startDate: (row.start_date as string | null) ?? null,
-  endDate: (row.end_date as string | null) ?? null,
-  isLongTerm: Boolean(row.is_long_term),
-  status: row.status ?? "draft",
-  progress: typeof row.progress === "number" ? row.progress : 0,
-  createdAt: row.created_at ?? new Date().toISOString(),
-});
-
-const STATUS_STYLES: Record<CampaignStatus, string> = {
-  draft: "bg-slate-100 text-slate-700 border border-slate-200",
-  scheduled: "bg-amber-100 text-amber-700 border border-amber-200",
-  live: "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  completed: "bg-indigo-100 text-indigo-700 border border-indigo-200",
-  inactive: "bg-rose-100 text-rose-700 border border-rose-200",
-};
-
 const Campaign = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [campaigns, setCampaigns] = useState<CampaignRecord[]>([]);
@@ -282,6 +135,9 @@ const Campaign = () => {
   const [campaignActionLoading, setCampaignActionLoading] = useState<Record<string, boolean>>({});
   const [campaignToDelete, setCampaignToDelete] = useState<CampaignRecord | null>(null);
   const [isDeletingCampaign, setIsDeletingCampaign] = useState<boolean>(false);
+  const handleNavigateToCampaign = (campaign: CampaignRecord) => {
+    navigate(`/campaign/${encodeURIComponent(campaign.id)}`, { state: { campaign } });
+  };
 
   const formatDateForDisplay = (value: string | null | undefined): string | null => {
     if (!value) return null;
@@ -843,13 +699,14 @@ const Campaign = () => {
   const applyInfluencerSelection = async () => {
     const selected = influencers
       .filter((influencer) => influencerPickerSelection.has(influencer.id))
-      .map(({ id, pid, name, email, handles, country }) => ({
+      .map(({ id, pid, name, email, handles, country, status }) => ({
         id,
         pid: pid ?? null,
         name,
         email: email ?? null,
         handles,
         country: country ?? null,
+        status: status ?? null,
       }));
 
     if (editingCampaignIdForInfluencers) {
@@ -1320,10 +1177,19 @@ const Campaign = () => {
                   return (
                   <div
                     key={campaign.id}
-                    className="group rounded-2xl border border-border/50 bg-background/80 backdrop-blur-sm shadow-sm hover:shadow-xl transition-all duration-300 p-5 flex flex-col gap-4"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleNavigateToCampaign(campaign)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        handleNavigateToCampaign(campaign);
+                      }
+                    }}
+                    className="group rounded-2xl border border-border/50 bg-background/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-200 p-4 flex flex-col gap-3 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
                             {campaign.brand}
@@ -1332,8 +1198,8 @@ const Campaign = () => {
                             {campaign.status}
                           </Badge>
                         </div>
-                        <h3 className="text-lg font-semibold text-foreground">{campaign.name}</h3>
-                        <p className="text-sm text-muted-foreground">{campaign.objective}</p>
+                        <h3 className="text-base font-semibold text-foreground">{campaign.name}</h3>
+                        <p className="text-xs text-muted-foreground">{campaign.objective}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-xs uppercase text-muted-foreground">Campaign ID</p>
@@ -1341,91 +1207,91 @@ const Campaign = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 text-sm">
-                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-4 flex items-start gap-3">
+                    <div className="grid grid-cols-1 gap-3 text-xs sm:text-sm">
+                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-3 flex items-start gap-3">
                         <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                           <CalendarRange className="h-5 w-5" />
                         </span>
-                        <div className="flex-1 space-y-1.5">
+                        <div className="flex-1 space-y-1">
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             Timeline
                           </p>
                           {campaign.isLongTerm ? (
                             <div className="space-y-1">
-                              <p className="text-sm font-semibold text-foreground">
+                              <p className="text-sm font-semibold text-foreground leading-tight">
                                 Long-term engagement
                               </p>
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-[11px] text-muted-foreground">
                                 {startDisplay ? `Starts ${startDisplay}` : "Start date not set"}
                               </p>
-                              <p className="text-[11px] text-muted-foreground/80">
+                              <p className="text-[10px] text-muted-foreground/80">
                                 Running without a scheduled end date.
                               </p>
                             </div>
                           ) : (
-                            <div className="space-y-1">
-                              <p className="text-sm font-semibold text-foreground">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-semibold text-foreground leading-tight">
                                 {startDisplay ?? "Start date not set"}
                               </p>
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-[11px] text-muted-foreground">
                                 {endDisplay ? `Ends ${endDisplay}` : "End date not set"}
                               </p>
-                              <p className="text-[11px] text-muted-foreground/80">
+                              <p className="text-[10px] text-muted-foreground/80">
                                 Scheduled activation window for this brief.
                               </p>
                             </div>
                           )}
                         </div>
                       </div>
-                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-4 flex items-start gap-3">
+                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-3 flex items-start gap-3">
                         <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                           <Users className="h-5 w-5" />
                         </span>
-                        <div className="flex-1 space-y-1.5">
+                        <div className="flex-1 space-y-1">
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             Users
                           </p>
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-3xl font-semibold text-foreground">
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-2xl font-semibold text-foreground">
                               {campaign.users.length}
                             </span>
-                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                               {campaign.users.length === 1 ? "User" : "Users"}
                             </span>
                           </div>
-                          <p className="text-[11px] text-muted-foreground/80">
+                          <p className="text-[10px] text-muted-foreground/80">
                             Assigned collaborators in this campaign.
                           </p>
                         </div>
                       </div>
-                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-4 flex items-start gap-3">
+                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-3 flex items-start gap-3">
                         <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
                           <Megaphone className="h-5 w-5" />
                         </span>
-                        <div className="flex-1 space-y-1.5">
+                        <div className="flex-1 space-y-1">
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             Influencers
                           </p>
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-3xl font-semibold text-foreground">
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-2xl font-semibold text-foreground">
                               {campaign.influencers.length}
                             </span>
-                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                               {campaign.influencers.length === 1 ? "Influencer" : "Influencers"}
                             </span>
                           </div>
-                          <p className="text-[11px] text-muted-foreground/80">
+                          <p className="text-[10px] text-muted-foreground/80">
                             Creators attached to campaign deliverables.
                           </p>
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 text-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-xs sm:text-sm">
                       <div className="space-y-1">
                         <p className="text-xs uppercase text-muted-foreground">Contract</p>
-                        <div className="flex flex-col gap-1">
-                          <p className="text-sm font-semibold text-foreground">
+                        <div className="flex flex-col gap-0.5">
+                          <p className="text-sm font-semibold text-foreground leading-tight">
                             {campaign.contract?.name ?? "Not selected"}
                           </p>
                           {campaign.contract?.status && (
@@ -1434,7 +1300,7 @@ const Campaign = () => {
                             </span>
                           )}
                           {campaign.contract?.description && (
-                            <p className="text-xs text-muted-foreground leading-snug">
+                            <p className="text-[11px] text-muted-foreground leading-snug">
                               {campaign.contract.description}
                             </p>
                           )}
@@ -1442,14 +1308,14 @@ const Campaign = () => {
                       </div>
                       <div className="space-y-1">
                         <p className="text-xs uppercase text-muted-foreground">Created</p>
-                        <p className="text-sm font-semibold text-foreground">
+                        <p className="text-sm font-semibold text-foreground leading-tight">
                           {new Date(campaign.createdAt).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
                         <span>Progress</span>
                         <span>{campaign.progress}%</span>
                       </div>
@@ -1461,25 +1327,32 @@ const Campaign = () => {
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-3 pt-2">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    <div className="flex flex-col gap-2 pt-1">
+                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
                         {campaign.status === "completed"
                           ? "Report ready for download"
                           : campaign.status === "live"
                           ? "Content approvals on-track"
                           : "Draft insights auto-saved"}
                       </div>
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <Button variant="outline" size="sm" className="h-9 px-3">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-3 text-xs"
+                          onClick={(event) => event.stopPropagation()}
+                        >
                           View Brief
                         </Button>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
                               size="sm"
-                              className="h-9 px-3 bg-primary text-white hover:bg-primary/90 focus-visible:ring-primary"
+                              className="h-8 px-3 text-xs bg-primary text-white hover:bg-primary/90 focus-visible:ring-primary"
                               disabled={isCampaignBusy}
+                              onClick={(event) => event.stopPropagation()}
                             >
                               Manage
                             </Button>
