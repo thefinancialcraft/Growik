@@ -19,7 +19,7 @@ const AuthCallback = () => {
 
         if (session) {
           // Check if user has a profile
-          const { data: profile, error: profileError } = await supabase
+          const { data: profileData, error: profileError } = await supabase
             .from('user_profiles')
             .select('*')
             .eq('user_id', session.user.id)
@@ -30,6 +30,13 @@ const AuthCallback = () => {
           }
 
           // Redirect based on user profile status
+          type UserProfile = {
+            approval_status?: 'approved' | 'pending' | 'rejected' | string | null;
+            status?: 'active' | 'hold' | 'suspend' | string | null;
+          };
+
+          const profile = profileData as UserProfile | null;
+
           if (!profile) {
             navigate('/profile-completion');
           } else if (profile.approval_status === 'approved' && profile.status === 'active') {

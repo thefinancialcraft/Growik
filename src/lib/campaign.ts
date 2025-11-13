@@ -27,6 +27,7 @@ export interface CampaignContractRef {
   name: string;
   description?: string | null;
   status?: string | null;
+  variables?: Record<string, string> | null;
 }
 
 export interface CampaignRecord {
@@ -131,6 +132,62 @@ export const extractCampaignNumber = (code: string): number => {
   return match ? Number.parseInt(match[1], 10) : -1;
 };
 
+const parseContractSnapshot = (row: any): CampaignContractRef | null => {
+  const snapshot = row.contract_snapshot;
+
+  const normalize = (source: any): CampaignContractRef | null => {
+    if (!source || typeof source !== "object") {
+      return null;
+    }
+
+    const id = source.id ?? row.contract_id ?? null;
+    const name = source.name ?? source.contract_name ?? row.contract_name ?? null;
+
+    if (!id || !name) {
+      return null;
+    }
+
+    return {
+      id,
+      name,
+      description: source.description ?? source.contract_description ?? row.contract_description ?? null,
+      status: source.status ?? source.contract_status ?? row.contract_status ?? null,
+      variables: source.variables ?? row.contract_variables ?? null,
+    };
+  };
+
+  if (snapshot) {
+    if (typeof snapshot === "string") {
+      try {
+        const parsed = JSON.parse(snapshot);
+        const normalized = normalize(parsed);
+        if (normalized) {
+          return normalized;
+        }
+      } catch {
+        // ignore parse errors and fall back to direct mapping
+      }
+    } else {
+      const normalized = normalize(snapshot);
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  if (row.contract_id && row.contract_name) {
+    return normalize({
+      id: row.contract_id,
+      name: row.contract_name,
+      description: row.contract_description,
+      status: row.contract_status,
+      variables: row.contract_variables,
+    });
+  }
+
+  return null;
+};
+
 export const mapCampaignRow = (row: any): CampaignRecord => ({
   id: row.id,
   name: row.name ?? "",
@@ -138,16 +195,7 @@ export const mapCampaignRow = (row: any): CampaignRecord => ({
   objective: row.objective ?? "",
   users: Array.isArray(row.users) ? row.users : [],
   influencers: Array.isArray(row.influencers) ? row.influencers : [],
-  contract:
-    row.contract_snapshot ??
-    (row.contract_id && row.contract_name
-      ? {
-          id: row.contract_id as string,
-          name: row.contract_name as string,
-          description: (row.contract_description as string | null) ?? null,
-          status: (row.contract_status as string | null) ?? null,
-        }
-      : null),
+  contract: parseContractSnapshot(row),
   startDate: (row.start_date as string | null) ?? null,
   endDate: (row.end_date as string | null) ?? null,
   isLongTerm: Boolean(row.is_long_term),

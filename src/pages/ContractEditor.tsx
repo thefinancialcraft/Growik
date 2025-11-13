@@ -72,6 +72,7 @@ const VARIABLE_KEY_DEFAULT = 'plain_text';
 const VARIABLE_KEY_OPTIONS = [
   { label: 'Plain Text', value: 'plain_text' },
   { label: 'User Id', value: 'user_id' },
+  { label: 'User Name', value: 'user_name' },
   { label: 'Influencer Name', value: 'influencer_name' },
   { label: 'address', value: 'address' },
   { label: 'Phone No', value: 'phone_no' },
@@ -83,6 +84,97 @@ const VARIABLE_KEY_OPTIONS = [
 ] as const;
 
 type VariableKeyOptionValue = (typeof VARIABLE_KEY_OPTIONS)[number]['value'];
+
+const VARIABLE_DEFAULT_SOURCES: Partial<
+  Record<
+    VariableKeyOptionValue,
+    {
+      table: string;
+      column: string;
+      schema?: string;
+    }
+  >
+> = {
+  user_id: { table: "user_profiles", column: "user_id", schema: "public" },
+  user_name: { table: "user_profiles", column: "user_name", schema: "public" },
+};
+
+const DEFAULT_TABLE_SUGGESTIONS: Array<{ name: string; schema?: string }> = [
+  { name: "user_profiles", schema: "public" },
+  { name: "campaigns", schema: "public" },
+  { name: "companies", schema: "public" },
+  { name: "influencers", schema: "public" },
+];
+
+const DEFAULT_COLUMN_SUGGESTIONS: Record<
+  string,
+  Array<{ name: string; dataType?: string | null }>
+> = {
+  user_profiles: [
+    { name: "user_id", dataType: "uuid" },
+    { name: "user_name", dataType: "text" },
+    { name: "email", dataType: "text" },
+  ],
+  campaigns: [
+    { name: "id", dataType: "uuid" },
+    { name: "name", dataType: "text" },
+    { name: "brand", dataType: "text" },
+  ],
+  companies: [
+    { name: "id", dataType: "uuid" },
+    { name: "name", dataType: "text" },
+  ],
+  influencers: [
+    { name: "id", dataType: "uuid" },
+    { name: "name", dataType: "text" },
+    { name: "email", dataType: "text" },
+  ],
+};
+
+type VariableEntry = {
+  descriptors: string[];
+};
+
+const normalizeVariablesFromServer = (
+  raw: Record<string, any> | null | undefined,
+): Record<string, VariableEntry> => {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+
+  const normalized: Record<string, VariableEntry> = {};
+
+  Object.entries(raw).forEach(([key, value]) => {
+    if (!key) {
+      return;
+    }
+    if (value && typeof value === "object" && value !== null) {
+      const entry = value as { descriptors?: unknown; descriptor?: unknown; occurrences?: unknown };
+      if (Array.isArray(entry.descriptors)) {
+        const descriptors = entry.descriptors
+          .map((item) => (typeof item === "string" ? item : ""))
+          .map((item) => item.trim());
+        normalized[key] = { descriptors };
+        return;
+      }
+      if (typeof entry.descriptor === "string") {
+        const descriptor = entry.descriptor.trim();
+        const occurrenceCount =
+          typeof entry.occurrences === "number" && Number.isFinite(entry.occurrences) && entry.occurrences > 1
+            ? Math.floor(entry.occurrences)
+            : 1;
+        const descriptors = Array.from({ length: occurrenceCount }, () => descriptor);
+        normalized[key] = { descriptors };
+        return;
+      }
+    }
+    // legacy string format fallback
+    const descriptor = typeof value === "string" ? value.trim() : "";
+    normalized[key] = { descriptors: descriptor ? [descriptor] : [] };
+  });
+
+  return normalized;
+};
 
 const TIPTAP_STORAGE_STYLE = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -292,6 +384,26 @@ body {
 const wrapContentForStorage = (html: string): string => {
   const safeHtml = html || '<p></p>';
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><style>${TIPTAP_STORAGE_STYLE}</style></head><body><div class="tiptap-rendered">${safeHtml}</div></body></html>`;
+};
+
+const extractVariableKeysFromContent = (content: string): Map<string, number> => {
+  const counts = new Map<string, number>();
+  if (!content) {
+    return counts;
+  }
+
+  const regex = /var\[\s*\{\{\s*([^}\s]+(?:[^}]*)?)\s*\}\}\s*\]/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(content)) !== null) {
+    const rawKey = match[1]?.trim();
+    if (rawKey) {
+      const current = counts.get(rawKey) ?? 0;
+      counts.set(rawKey, current + 1);
+    }
+  }
+
+  return counts;
 };
 
 const unwrapContentFromStorage = (html?: string | null): string => {
@@ -718,8 +830,16 @@ const ContractEditor = () => {
   const [isVariableDialogOpen, setIsVariableDialogOpen] = useState<boolean>(false);
   const [variableKeyOption, setVariableKeyOption] = useState<VariableKeyOptionValue>(VARIABLE_KEY_DEFAULT);
   const [variableKey, setVariableKey] = useState<string>(VARIABLE_KEY_DEFAULT);
-  const [variableValue, setVariableValue] = useState<string>("");
-  const [variables, setVariables] = useState<Record<string, string>>({});
+  const [variableSourceTable, setVariableSourceTable] = useState<string>("");
+  const [variableSourceColumn, setVariableSourceColumn] = useState<string>("");
+  const [variableSourceSchema, setVariableSourceSchema] = useState<string>("");
+  const [variableTables, setVariableTables] = useState<SupabaseTableMetadata[]>([]);
+  const [variableTablesLoading, setVariableTablesLoading] = useState<boolean>(false);
+  const [variableTablesError, setVariableTablesError] = useState<string | null>(null);
+  const [variableColumns, setVariableColumns] = useState<SupabaseColumnMetadata[]>([]);
+  const [variableColumnsLoading, setVariableColumnsLoading] = useState<boolean>(false);
+  const [variableColumnsError, setVariableColumnsError] = useState<string | null>(null);
+  const [variables, setVariables] = useState<Record<string, VariableEntry>>({});
   const [contractId, setContractId] = useState<string | null>(null);
   const [isLoadingContract, setIsLoadingContract] = useState<boolean>(false);
   const { toast } = useToast();
@@ -772,7 +892,9 @@ const ContractEditor = () => {
   const handleOpenVariableDialog = useCallback(() => {
     setVariableKeyOption(VARIABLE_KEY_DEFAULT);
     setVariableKey(VARIABLE_KEY_DEFAULT);
-    setVariableValue('');
+    setVariableSourceTable('');
+    setVariableSourceColumn('');
+    setVariableSourceSchema('');
     setIsVariableDialogOpen(true);
   }, []);
 
@@ -782,7 +904,13 @@ const ContractEditor = () => {
       if (!open) {
         setVariableKeyOption(VARIABLE_KEY_DEFAULT);
         setVariableKey(VARIABLE_KEY_DEFAULT);
-        setVariableValue('');
+        setVariableSourceTable('');
+        setVariableSourceColumn('');
+        setVariableSourceSchema('');
+        setVariableTables([]);
+        setVariableTablesError(null);
+        setVariableColumns([]);
+        setVariableColumnsError(null);
       }
     },
     []
@@ -795,7 +923,126 @@ const ContractEditor = () => {
     } else {
       setVariableKey(value);
     }
+    const defaults = VARIABLE_DEFAULT_SOURCES[value];
+    if (defaults) {
+      setVariableSourceTable(defaults.table);
+      setVariableSourceColumn(defaults.column);
+      setVariableSourceSchema(defaults.schema ?? '');
+    } else {
+      setVariableSourceTable('');
+      setVariableSourceColumn('');
+      setVariableSourceSchema('');
+    }
   }, []);
+  const loadVariableTables = useCallback(async () => {
+    setVariableTablesLoading(true);
+    setVariableTablesError(null);
+    try {
+      const { data, error } = await supabase
+        .from('available_tables')
+        .select('tablename')
+        .order('tablename', { ascending: true })
+        .limit(200);
+
+      if (error) {
+        throw error;
+      }
+
+      const typedData = (data ?? []) as Array<{ tablename: string }>;
+      const filtered = typedData
+        .map((item) => ({
+          name: item.tablename,
+          schema: 'public',
+        }))
+        .filter((item) => !SUPABASE_TABLE_EXCLUDE.has(item.name));
+
+      if (filtered.length) {
+        setVariableTables(filtered);
+      } else {
+        setVariableTables(DEFAULT_TABLE_SUGGESTIONS);
+      }
+    } catch (error: any) {
+      console.error('Variable dialog: failed to load tables', error);
+      setVariableTables(DEFAULT_TABLE_SUGGESTIONS);
+      setVariableTablesError(
+        error?.message
+          ? `${error.message}. Using fallback table list.`
+          : 'Unable to load tables. Using fallback table list.'
+      );
+    } finally {
+      setVariableTablesLoading(false);
+    }
+  }, [supabase]);
+
+  const loadVariableColumns = useCallback(
+    async (tableName: string) => {
+      if (!tableName) {
+        setVariableColumns([]);
+        setVariableColumnsError(null);
+        return;
+      }
+
+      setVariableColumnsLoading(true);
+      setVariableColumnsError(null);
+      try {
+        const { data, error } = await supabase
+          .from('available_columns')
+          .select('column_name, data_type, ordinal_position')
+          .eq('tablename', tableName)
+          .order('ordinal_position', { ascending: true })
+          .limit(200);
+
+        if (error) {
+          throw error;
+        }
+
+        const typedData = (data ?? []) as Array<{ column_name: string; data_type: string | null; ordinal_position?: number }>;
+        const mapped = typedData.map((item) => ({
+          table: tableName,
+          name: item.column_name,
+          dataType: item.data_type,
+          position: item.ordinal_position,
+        }));
+
+        if (mapped.length) {
+          setVariableColumns(mapped);
+        } else if (DEFAULT_COLUMN_SUGGESTIONS[tableName]?.length) {
+          setVariableColumns(
+            DEFAULT_COLUMN_SUGGESTIONS[tableName].map((item) => ({
+              table: tableName,
+              name: item.name,
+              dataType: item.dataType ?? null,
+            }))
+          );
+        } else {
+          setVariableColumns([]);
+        }
+      } catch (error: any) {
+        console.error(`Variable dialog: failed to load columns for ${tableName}`, error);
+        if (DEFAULT_COLUMN_SUGGESTIONS[tableName]?.length) {
+          setVariableColumns(
+            DEFAULT_COLUMN_SUGGESTIONS[tableName].map((item) => ({
+              table: tableName,
+              name: item.name,
+              dataType: item.dataType ?? null,
+            }))
+          );
+          setVariableColumnsError(
+            error?.message
+              ? `${error.message}. Showing fallback columns.`
+              : 'Unable to load columns. Showing fallback columns.'
+          );
+        } else {
+          setVariableColumns([]);
+          setVariableColumnsError(error?.message ?? 'Unable to load columns.');
+        }
+      } finally {
+        setVariableColumnsLoading(false);
+      }
+    },
+    [supabase],
+  );
+
   const closeSupabaseRowDialog = useCallback(() => {
     setSupabaseRowDialog({ open: false, entries: [] });
   }, []);
@@ -1358,6 +1605,90 @@ const ContractEditor = () => {
     };
   }, [contractContent, contractName, contractDescription, variables, contractId, autoSaveContract]);
 
+  useEffect(() => {
+    setVariables((prev) => {
+      const keyCounts = extractVariableKeysFromContent(contractContent);
+
+      if (keyCounts.size === 0) {
+        if (Object.keys(prev).length === 0) {
+          return prev;
+        }
+        return {};
+      }
+
+      let changed = false;
+      const next: Record<string, VariableEntry> = { ...prev };
+
+      keyCounts.forEach((count, key) => {
+        const existing = prev[key];
+        const defaults = VARIABLE_DEFAULT_SOURCES[key as VariableKeyOptionValue];
+
+        const nextEntry: VariableEntry = {
+          descriptors: existing ? [...existing.descriptors] : [],
+        };
+
+        if (nextEntry.descriptors.length > count) {
+          nextEntry.descriptors.length = count;
+          changed = true;
+        }
+
+        while (nextEntry.descriptors.length < count) {
+          nextEntry.descriptors.push("");
+          changed = true;
+        }
+
+        if (defaults) {
+          const tablePath = defaults.schema ? `${defaults.schema}.${defaults.table}` : defaults.table;
+          const defaultDescriptor = `source:${tablePath}.${defaults.column}`;
+          nextEntry.descriptors = nextEntry.descriptors.map((descriptor) => {
+            if (descriptor && descriptor.trim().length > 0) {
+              return descriptor;
+            }
+            changed = true;
+            return defaultDescriptor;
+          });
+        }
+
+        if (
+          !existing ||
+          existing.descriptors.length !== nextEntry.descriptors.length ||
+          existing.descriptors.some((value, index) => value !== nextEntry.descriptors[index])
+        ) {
+          next[key] = nextEntry;
+          changed = true;
+        }
+      });
+
+      Object.keys(prev).forEach((key) => {
+        if (!keyCounts.has(key)) {
+          delete next[key];
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [contractContent]);
+
+  useEffect(() => {
+    if (isVariableDialogOpen) {
+      void loadVariableTables();
+    }
+  }, [isVariableDialogOpen, loadVariableTables]);
+
+  useEffect(() => {
+    if (!isVariableDialogOpen) {
+      return;
+    }
+
+    if (variableSourceTable) {
+      void loadVariableColumns(variableSourceTable);
+    } else {
+      setVariableColumns([]);
+      setVariableColumnsError(null);
+    }
+  }, [isVariableDialogOpen, variableSourceTable, loadVariableColumns]);
+
   // Update "time since" display every 10 seconds
   useEffect(() => {
     if (!lastSaved) return;
@@ -1662,7 +1993,7 @@ const ContractEditor = () => {
           setContractName(contractData.contract_name || '');
           setContractDescription((contractData as ContractData).description || '');
           setContractContent(unwrapContentFromStorage(contractData.content));
-          setVariables(contractData.variables || {});
+          setVariables(normalizeVariablesFromServer(contractData.variables as Record<string, any> | null));
           setLastSaved(new Date(contractData.updated_at));
         } else {
           toast({
@@ -1890,6 +2221,15 @@ const ContractEditor = () => {
       return;
     }
 
+    if ((variableSourceTable && !variableSourceColumn) || (!variableSourceTable && variableSourceColumn)) {
+      toast({
+        title: "Incomplete source selection",
+        description: "Select both table and column to link data, or leave both blank.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Insert variable placeholder in format {{variable_key}}
     const trimmedKey = variableKey.trim();
     const variablePlaceholder = `<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">var[{{${trimmedKey}}}]</span>`;
@@ -1906,14 +2246,53 @@ const ContractEditor = () => {
     }
     
     // Store variable in state
-    setVariables(prev => ({
-      ...prev,
-      [trimmedKey]: variableValue.trim() || ''
-    }));
+    const descriptorParts: string[] = [];
+    if (variableSourceTable && variableSourceColumn) {
+      const tablePath = variableSourceSchema
+        ? `${variableSourceSchema}.${variableSourceTable}`
+        : variableSourceTable;
+      descriptorParts.push(`source:${tablePath}.${variableSourceColumn}`);
+    }
+    setVariables((prev) => {
+      const descriptor = descriptorParts.join(" | ");
+      const existing = prev[trimmedKey];
+
+      if (existing) {
+        const descriptors = [...existing.descriptors];
+        const emptyIndex = descriptors.findIndex((value) => !value || !value.trim());
+
+        if (descriptor) {
+          if (descriptors.includes(descriptor)) {
+            return prev;
+          }
+          if (emptyIndex !== -1) {
+            descriptors[emptyIndex] = descriptor;
+          } else {
+            descriptors.push(descriptor);
+          }
+        } else if (emptyIndex === -1) {
+          descriptors.push("");
+        }
+
+        return {
+          ...prev,
+          [trimmedKey]: { descriptors },
+        };
+      }
+
+      return {
+        ...prev,
+        [trimmedKey]: {
+          descriptors: descriptor ? [descriptor] : [""],
+        },
+      };
+    });
 
     toast({
       title: "Variable Added",
-      description: `Variable "${trimmedKey}" has been added to the document.`,
+      description: variableSourceTable && variableSourceColumn
+        ? `Variable "${trimmedKey}" linked to ${variableSourceTable}.${variableSourceColumn}.`
+        : `Variable "${trimmedKey}" has been added to the document.`,
     });
 
     // Reset form and close dialog
@@ -2379,17 +2758,98 @@ Use the toolbar above to format text, add headings, lists, and more."
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="variableValue">Variable Value (Optional)</Label>
-              <Input
-                id="variableValue"
-                type="text"
-                value={variableValue}
-                onChange={(e) => setVariableValue(e.target.value)}
-                placeholder="Value will be updated later"
-              />
+              <Label>Source Table (Optional)</Label>
+              <Select
+                value={variableSourceTable || undefined}
+                onValueChange={(value) => {
+                  setVariableSourceTable(value);
+                  setVariableSourceColumn('');
+                  const selected = variableTables.find((table) => table.name === value);
+                  setVariableSourceSchema(selected?.schema ?? '');
+                }}
+                disabled={variableTablesLoading}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue
+                    placeholder={
+                      variableTablesLoading ? "Loading tables..." : "Select a table"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {variableTablesLoading ? (
+                    <SelectItem value="__loading" disabled>
+                      Loading tables...
+                    </SelectItem>
+                  ) : variableTables.length ? (
+                    variableTables.map((table) => (
+                      <SelectItem key={table.name} value={table.name}>
+                        {table.schema ? `${table.schema}.${table.name}` : table.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="__no_tables" disabled>
+                      {variableTablesError ?? "No tables available"}
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">
-                You can set the value now or update it later.
+                Choose the table that provides this dynamic value.
               </p>
+              {!variableTablesLoading && variableTablesError && (
+                <p className="text-xs text-red-500">{variableTablesError}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>Source Column (Optional)</Label>
+              <Select
+                value={variableSourceColumn || undefined}
+                onValueChange={setVariableSourceColumn}
+                disabled={!variableSourceTable || variableColumnsLoading}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue
+                    placeholder={
+                      variableSourceTable
+                        ? variableColumnsLoading
+                          ? "Loading columns..."
+                          : "Select a column"
+                        : "Select a table first"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {variableSourceTable ? (
+                    variableColumnsLoading ? (
+                      <SelectItem value="__loading" disabled>
+                        Loading columns...
+                      </SelectItem>
+                    ) : variableColumns.length ? (
+                      variableColumns.map((column) => (
+                        <SelectItem key={column.name} value={column.name}>
+                          {column.name}
+                          {column.dataType ? ` (${column.dataType})` : ""}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="__no_columns" disabled>
+                        {variableColumnsError ?? "No columns found"}
+                      </SelectItem>
+                    )
+                  ) : (
+                    <SelectItem value="__no_table" disabled>
+                      Select a table first
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Pick the column to map this variable to. Leave blank to manage the value manually.
+              </p>
+              {!variableColumnsLoading && variableColumnsError && (
+                <p className="text-xs text-red-500">{variableColumnsError}</p>
+              )}
             </div>
           </div>
           <DialogFooter>

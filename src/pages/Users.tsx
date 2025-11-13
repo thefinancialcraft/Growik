@@ -92,7 +92,7 @@ const Users = () => {
   const [holdDurationType, setHoldDurationType] = useState<'1day' | '2days' | '3days' | 'custom'>('1day');
   const [customHoldDate, setCustomHoldDate] = useState("");
   const [customHoldTime, setCustomHoldTime] = useState("");
-  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  const [onlineUsers, _setOnlineUsers] = useState<Set<string>>(new Set());
 
   // Format last seen time
   const formatLastSeen = (lastSeen?: string) => {
@@ -249,87 +249,6 @@ const Users = () => {
     };
   }, [user?.id]);
 
-  // Set up Realtime Presence to track online users
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channel = supabase.channel('online-users', {
-      config: {
-        presence: {
-          key: user.id,
-        },
-      },
-    });
-
-    // Track current user as online
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const onlineUserIds = new Set<string>();
-        
-        // Extract user_ids from presence state
-        Object.keys(state).forEach((key) => {
-          const presences = state[key] as any[];
-          presences.forEach((presence: any) => {
-            if (presence.user_id) {
-              onlineUserIds.add(presence.user_id);
-            }
-          });
-        });
-
-        console.log('Presence sync - Online users:', Array.from(onlineUserIds));
-        setOnlineUsers(onlineUserIds);
-      })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        const state = channel.presenceState();
-        const onlineUserIds = new Set<string>();
-        
-        Object.keys(state).forEach((key) => {
-          const presences = state[key] as any[];
-          presences.forEach((presence: any) => {
-            if (presence.user_id) {
-              onlineUserIds.add(presence.user_id);
-            }
-          });
-        });
-
-        console.log('User joined - Online users:', Array.from(onlineUserIds));
-        setOnlineUsers(onlineUserIds);
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        const state = channel.presenceState();
-        const onlineUserIds = new Set<string>();
-        
-        Object.keys(state).forEach((key) => {
-          const presences = state[key] as any[];
-          presences.forEach((presence: any) => {
-            if (presence.user_id) {
-              onlineUserIds.add(presence.user_id);
-            }
-          });
-        });
-
-        console.log('User left - Online users:', Array.from(onlineUserIds));
-        setOnlineUsers(onlineUserIds);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('Presence channel subscribed, tracking user:', user.id);
-          // Track current user as online
-          await channel.track({
-            user_id: user.id,
-            online_at: new Date().toISOString(),
-          });
-          console.log('User tracked as online');
-        }
-      });
-
-    return () => {
-      console.log('Unsubscribing from presence channel');
-      channel.unsubscribe();
-    };
-  }, [user?.id]);
-
   useEffect(() => {
     const fetchUsers = async () => {
       if (!user?.id) return;
@@ -422,39 +341,6 @@ const Users = () => {
       return updated;
     });
   }, [onlineUsers]);
-
-  // Set up real-time subscription for last_seen updates
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channel = supabase
-      .channel('user_profiles_updates')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'user_profiles',
-        },
-        (payload) => {
-          const updatedUser = payload.new as User;
-          setUsers(prevUsers =>
-            prevUsers.map(u => {
-              // Only update last_seen, preserve is_online status from presence
-              const isOnline = onlineUsers.has(u.user_id);
-              return u.user_id === updatedUser.user_id
-                ? { ...u, last_seen: updatedUser.last_seen, is_online: isOnline }
-                : { ...u, is_online: onlineUsers.has(u.user_id) }; // Also update is_online for all users
-            })
-          );
-        }
-      )
-      .subscribe();
-
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [user?.id, onlineUsers]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;

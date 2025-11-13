@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
@@ -31,11 +31,24 @@ const Dashboard = () => {
   const [displayName, setDisplayName] = useState<string>("User");
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
+  const signOutRef = useRef(signOut);
+  useEffect(() => {
+    signOutRef.current = signOut;
+  }, [signOut]);
+
+  const navigateRef = useRef(navigate);
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
+
   useEffect(() => {
     if (authLoading) return;
 
+    const signOutFn = signOutRef.current;
+    const navigateFn = navigateRef.current;
+
     if (!user) {
-      navigate("/");
+      navigateFn("/");
       return;
     }
 
@@ -158,7 +171,7 @@ const Dashboard = () => {
             console.log('Dashboard: User profile not found (error), redirecting to login');
             // Sign out the user
             try {
-              await signOut();
+              await signOutFn();
             } catch (signOutError) {
               console.error('Dashboard: Error signing out:', signOutError);
             }
@@ -272,25 +285,25 @@ const Dashboard = () => {
             
             if (userProfile.approval_status === 'rejected' && currentPath !== '/rejected') {
               console.log('Dashboard: User rejected, redirecting to rejected page');
-              navigate('/rejected');
+              navigateFn('/rejected');
               return;
             }
             
             if (userProfile.status === 'suspend' && currentPath !== '/suspended') {
               console.log('Dashboard: User suspended, redirecting to suspended page');
-              navigate('/suspended');
+              navigateFn('/suspended');
               return;
             }
             
             if (userProfile.status === 'hold' && currentPath !== '/hold') {
               console.log('Dashboard: User on hold, redirecting to hold page');
-              navigate('/hold');
+              navigateFn('/hold');
               return;
             }
             
             if (userProfile.approval_status !== 'approved' && currentPath !== '/approval-pending') {
               console.log('Dashboard: User not approved, redirecting to approval pending page');
-              navigate('/approval-pending');
+              navigateFn('/approval-pending');
               return;
             }
           }
@@ -299,7 +312,7 @@ const Dashboard = () => {
           console.log('Dashboard: User profile not found (data is null), redirecting to login');
           // Sign out the user
           try {
-            await signOut();
+            await signOutFn();
           } catch (signOutError) {
             console.error('Dashboard: Error signing out:', signOutError);
           }
@@ -324,7 +337,7 @@ const Dashboard = () => {
           console.log('Dashboard: User profile not found (exception), redirecting to login');
           // Sign out the user
           try {
-            await signOut();
+            await signOutFn();
           } catch (signOutError) {
             console.error('Dashboard: Error signing out:', signOutError);
           }
@@ -348,125 +361,7 @@ const Dashboard = () => {
 
     fetchProfile();
 
-    // Set up real-time subscription for profile updates and deletions
-    const channel = supabase
-      .channel(`dashboard_profile_updates_${user.id}`)
-      .on('postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'user_profiles',
-          filter: `user_id=eq.${user.id}`
-        },
-        (payload) => {
-          console.log('=== DASHBOARD REALTIME UPDATE RECEIVED ===');
-          console.log('Profile updated:', payload.new);
-          console.log('Old values:', payload.old);
-          const updatedProfile = payload.new as UserProfile;
-          setProfile(updatedProfile);
-          setDisplayName(updatedProfile.user_name || updatedProfile.email?.split('@')[0] || 'User');
-
-          // Update cache
-          try {
-            localStorage.setItem(`profile_sidebar_${user.id}`, JSON.stringify({
-              employee_id: updatedProfile.employee_id,
-              updated_at: updatedProfile.updated_at,
-              user_name: updatedProfile.user_name,
-              email: updatedProfile.email,
-              role: updatedProfile.role,
-              super_admin: updatedProfile.super_admin,
-            }));
-            localStorage.setItem(`profile_${user.id}`, JSON.stringify(updatedProfile));
-            if (updatedProfile.role) localStorage.setItem('currentUserRole', updatedProfile.role);
-            if (typeof updatedProfile.super_admin === 'boolean') localStorage.setItem('isSuperAdmin', String(updatedProfile.super_admin));
-          } catch (e) {
-            console.error('Error updating cache:', e);
-          }
-
-          // Check if user should be redirected (only for non-admin users)
-          const isAdminOrSuperAdmin = updatedProfile.role === 'admin' || updatedProfile.role === 'super_admin' || updatedProfile.super_admin === true;
-          
-          if (!isAdminOrSuperAdmin) {
-            const currentPath = window.location.pathname;
-            
-            if (updatedProfile.approval_status === 'rejected' && currentPath !== '/rejected') {
-              console.log('Dashboard: Status changed to rejected, redirecting to rejected page');
-              navigate('/rejected');
-              return;
-            }
-            
-            if (updatedProfile.status === 'suspend' && currentPath !== '/suspended') {
-              console.log('Dashboard: Status changed to suspend, redirecting to suspended page');
-              navigate('/suspended');
-              return;
-            }
-            
-            if (updatedProfile.status === 'hold' && currentPath !== '/hold') {
-              console.log('Dashboard: Status changed to hold, redirecting to hold page');
-              navigate('/hold');
-              return;
-            }
-            
-            if (updatedProfile.approval_status !== 'approved' && currentPath !== '/approval-pending') {
-              console.log('Dashboard: Approval status changed, redirecting to approval pending page');
-              navigate('/approval-pending');
-              return;
-            }
-          }
-        }
-      )
-      .on('postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'user_profiles',
-          filter: `user_id=eq.${user.id}`
-        },
-        (payload) => {
-          console.log('=== DASHBOARD REALTIME DELETE RECEIVED ===');
-          console.log('Profile deleted:', payload.old);
-          console.log('User ID:', user.id);
-          
-          // Profile was deleted - redirect to login immediately
-          console.log('Dashboard: Profile deleted in real-time, redirecting to login');
-          
-          // Sign out the user
-          const handleDelete = async () => {
-            try {
-              await signOut();
-            } catch (signOutError) {
-              console.error('Dashboard: Error signing out:', signOutError);
-            }
-            
-            // Clear all caches
-            try {
-              localStorage.removeItem(`profile_sidebar_${user.id}`);
-              localStorage.removeItem(`profile_${user.id}`);
-              localStorage.removeItem('currentUserRole');
-              localStorage.removeItem('isSuperAdmin');
-              localStorage.removeItem('isAuthenticated');
-            } catch (e) {
-              console.error('Error clearing cache:', e);
-            }
-            
-            // Redirect to login with error message
-            window.location.href = '/login?error=account_deleted';
-          };
-          
-          handleDelete();
-        }
-      )
-      .subscribe((status) => {
-        console.log('Dashboard realtime subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('Dashboard: Successfully subscribed to profile updates and deletions');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('Dashboard: Error subscribing to profile updates');
-        }
-      });
-
     return () => {
-      supabase.removeChannel(channel);
       if (interval) clearInterval(interval);
       if (activityTimeout) {
         clearTimeout(activityTimeout);
@@ -477,7 +372,7 @@ const Dashboard = () => {
       document.removeEventListener('click', handleClick);
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [user?.id, authLoading, navigate]);
+  }, [user?.id, authLoading]);
 
   const lastUpdated = profile?.updated_at ? new Date(profile.updated_at) : null;
   const approvalStatus = profile?.approval_status ?? "pending";
@@ -706,8 +601,9 @@ const Dashboard = () => {
                       className="w-full"
                       onClick={async () => {
                         try {
-                          await signOut();
-                          navigate("/login");
+                          const signOutFn = signOutRef.current;
+                          await signOutFn();
+                          navigateRef.current?.("/login");
                         } catch (error) {
                           console.error("Error signing out:", error);
                         }

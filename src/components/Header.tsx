@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
@@ -38,6 +38,11 @@ const Header = () => {
   };
   
   const initials = getInitials(profile);
+
+  const signOutRef = useRef(signOut);
+  useEffect(() => {
+    signOutRef.current = signOut;
+  }, [signOut]);
 
   // Check Supabase server status
   useEffect(() => {
@@ -160,6 +165,8 @@ const Header = () => {
   }, [user?.id]);
 
   useEffect(() => {
+    const signOutFn = signOutRef.current;
+
     const fetchProfile = async () => {
       if (user?.id) {
         const cacheKey = `profile_${user.id}`;
@@ -204,8 +211,8 @@ const Header = () => {
             if (error.code === 'PGRST116' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('does not exist')) {
               console.log('Header: User profile not found (error), redirecting to login');
               // Sign out the user
-              try {
-                await signOut();
+            try {
+              await signOutFn();
               } catch (signOutError) {
                 console.error('Header: Error signing out:', signOutError);
               }
@@ -274,7 +281,7 @@ const Header = () => {
             console.log('Header: User profile not found (data is null), redirecting to login');
             // Sign out the user
             try {
-              await signOut();
+              await signOutFn();
             } catch (signOutError) {
               console.error('Header: Error signing out:', signOutError);
             }
@@ -300,7 +307,7 @@ const Header = () => {
             console.log('Header: User profile not found (exception), redirecting to login');
             // Sign out the user
             try {
-              await signOut();
+              await signOutFn();
             } catch (signOutError) {
               console.error('Header: Error signing out:', signOutError);
             }
@@ -325,111 +332,7 @@ const Header = () => {
 
     fetchProfile();
 
-    // Set up real-time subscription for profile updates and deletions
-    if (user?.id) {
-      const channel = supabase
-        .channel(`header_profile_updates_${user.id}`)
-        .on('postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'user_profiles',
-            filter: `user_id=eq.${user.id}`
-          },
-          (payload) => {
-            const updatedProfile = payload.new as UserProfile;
-            const oldProfile = payload.old as UserProfile;
-            
-            // Check if this is a meaningful update (not just last_seen)
-            const meaningfulFields = ['role', 'super_admin', 'approval_status', 'status', 'hold_end_time', 'user_name', 'email', 'employee_id'];
-            const hasMeaningfulChange = meaningfulFields.some(field => {
-              const newValue = (updatedProfile as any)[field];
-              const oldValue = (oldProfile as any)?.[field];
-              return newValue !== oldValue;
-            });
-            
-            // Only log and update if there's a meaningful change
-            if (hasMeaningfulChange) {
-              setProfile(updatedProfile);
-
-              // Update cache
-              try {
-                const cacheKey = `profile_${user.id}`;
-                const sidebarCacheKey = `profile_sidebar_${user.id}`;
-                localStorage.setItem(cacheKey, JSON.stringify(updatedProfile));
-                const sidebarCache = localStorage.getItem(sidebarCacheKey);
-                if (sidebarCache) {
-                  try {
-                    const sidebarData = JSON.parse(sidebarCache);
-                    sidebarData.employee_id = updatedProfile.employee_id;
-                    sidebarData.user_name = updatedProfile.user_name;
-                    localStorage.setItem(sidebarCacheKey, JSON.stringify(sidebarData));
-                  } catch (e) {
-                    // Ignore cache update errors
-                  }
-                }
-              } catch (e) {
-                console.error('Error updating cache:', e);
-              }
-            }
-          }
-        )
-        .on('postgres_changes',
-          {
-            event: 'DELETE',
-            schema: 'public',
-            table: 'user_profiles',
-            filter: `user_id=eq.${user.id}`
-          },
-          (payload) => {
-            console.log('=== HEADER REALTIME DELETE RECEIVED ===');
-            console.log('Profile deleted:', payload.old);
-            console.log('User ID:', user.id);
-            
-            // Profile was deleted - redirect to login immediately
-            console.log('Header: Profile deleted in real-time, redirecting to login');
-            
-            // Sign out the user
-            const handleDelete = async () => {
-              try {
-                await signOut();
-              } catch (signOutError) {
-                console.error('Header: Error signing out:', signOutError);
-              }
-              
-              // Clear all caches
-              try {
-                localStorage.removeItem(`profile_${user.id}`);
-                localStorage.removeItem(`profile_sidebar_${user.id}`);
-                localStorage.removeItem(`profile_mobile_${user.id}`);
-                localStorage.removeItem('currentUserRole');
-                localStorage.removeItem('isSuperAdmin');
-                localStorage.removeItem('isAuthenticated');
-              } catch (e) {
-                console.error('Error clearing cache:', e);
-              }
-              
-              // Redirect to login with error message
-              window.location.href = '/login?error=account_deleted';
-            };
-            
-            handleDelete();
-          }
-        )
-        .subscribe((status) => {
-          console.log('Header realtime subscription status:', status);
-          if (status === 'SUBSCRIBED') {
-            console.log('Header: Successfully subscribed to profile updates and deletions');
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('Header: Error subscribing to profile updates');
-          }
-        });
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
-  }, [user?.id, signOut]);
+  }, [user?.id]);
 
   const handleLogout = async () => {
     try {

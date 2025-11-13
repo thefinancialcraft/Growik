@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +42,17 @@ const Sidebar = () => {
   };
   
   const initials = getInitials(profile);
+
+  const signOutRef = useRef(signOut);
+  useEffect(() => {
+    signOutRef.current = signOut;
+  }, [signOut]);
+
+  const navigateRef = useRef(navigate);
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
+
 
   useEffect(() => {
     // Update last_seen timestamp for current user (only when tab is visible and user is active)
@@ -125,6 +136,9 @@ const Sidebar = () => {
   }, [user?.id]);
 
   useEffect(() => {
+    const signOutFn = signOutRef.current;
+    const navigateFn = navigateRef.current;
+
     const fetchProfile = async () => {
       if (user?.id) {
         // Check cache first
@@ -179,7 +193,7 @@ const Sidebar = () => {
                 console.log('Sidebar: User profile not found (error), redirecting to login');
                 // Sign out the user
                 try {
-                  await signOut();
+                  await signOutFn();
                 } catch (signOutError) {
                   console.error('Sidebar: Error signing out:', signOutError);
                 }
@@ -273,28 +287,28 @@ const Sidebar = () => {
                 // If rejected, redirect to rejected page
                 if (profileRow.approval_status === 'rejected' && currentPath !== '/rejected') {
                   console.log('Sidebar: User rejected, redirecting to rejected page');
-                  navigate('/rejected');
+                  navigateFn('/rejected');
                   return;
                 }
                 
                 // If suspended, redirect to suspended page
                 if (profileRow.status === 'suspend' && currentPath !== '/suspended') {
                   console.log('Sidebar: User suspended, redirecting to suspended page');
-                  navigate('/suspended');
+                  navigateFn('/suspended');
                   return;
                 }
                 
                 // If on hold, redirect to hold page
                 if (profileRow.status === 'hold' && currentPath !== '/hold') {
                   console.log('Sidebar: User on hold, redirecting to hold page');
-                  navigate('/hold');
+                  navigateFn('/hold');
                   return;
                 }
                 
                 // If not approved, redirect to approval pending page
                 if (profileRow.approval_status !== 'approved' && currentPath !== '/approval-pending') {
                   console.log('Sidebar: User not approved, redirecting to approval pending page');
-                  navigate('/approval-pending');
+                  navigateFn('/approval-pending');
                   return;
                 }
               }
@@ -303,8 +317,8 @@ const Sidebar = () => {
               // Profile not found - user may have been deleted
               console.log('Sidebar: User profile not found (data is null), redirecting to login');
               // Sign out the user
-              try {
-                await signOut();
+            try {
+              await signOutFn();
               } catch (signOutError) {
                 console.error('Sidebar: Error signing out:', signOutError);
               }
@@ -329,8 +343,8 @@ const Sidebar = () => {
             if (error?.code === 'PGRST116' || error?.message?.toLowerCase().includes('not found') || error?.message?.toLowerCase().includes('does not exist')) {
               console.log('Sidebar: User profile not found (exception), redirecting to login');
               // Sign out the user
-              try {
-                await signOut();
+            try {
+              await signOutFn();
               } catch (signOutError) {
                 console.error('Sidebar: Error signing out:', signOutError);
               }
@@ -356,130 +370,7 @@ const Sidebar = () => {
 
     fetchProfile();
 
-    // Set up real-time subscription for profile updates and deletions
-    if (user?.id) {
-      const channel = supabase
-        .channel(`sidebar_profile_updates_${user.id}`)
-        .on('postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'user_profiles',
-            filter: `user_id=eq.${user.id}`
-          },
-          (payload) => {
-            const updatedProfile = payload.new as UserProfile;
-            const oldProfile = payload.old as UserProfile;
-            
-            // Check if this is a meaningful update (not just last_seen)
-            const meaningfulFields = ['role', 'super_admin', 'approval_status', 'status', 'hold_end_time', 'user_name', 'email', 'employee_id'];
-            const hasMeaningfulChange = meaningfulFields.some(field => {
-              const newValue = (updatedProfile as any)[field];
-              const oldValue = (oldProfile as any)?.[field];
-              return newValue !== oldValue;
-            });
-            
-            // Only log and update if there's a meaningful change
-            if (hasMeaningfulChange) {
-              setProfile(updatedProfile);
-
-              // Update cache
-              try {
-                const cacheKey = `profile_sidebar_${user.id}`;
-                localStorage.setItem(cacheKey, JSON.stringify(updatedProfile));
-              } catch (e) {
-                console.error('Error updating cache:', e);
-              }
-
-              // Check if user should be redirected (only for non-admin users)
-              const isAdminOrSuperAdmin = updatedProfile.role === 'admin' || updatedProfile.role === 'super_admin' || updatedProfile.super_admin === true;
-              
-              if (!isAdminOrSuperAdmin) {
-                const currentPath = location.pathname;
-                
-                if (updatedProfile.approval_status === 'rejected' && currentPath !== '/rejected') {
-                  console.log('Sidebar: Status changed to rejected, redirecting to rejected page');
-                  navigate('/rejected');
-                  return;
-                }
-                
-                if (updatedProfile.status === 'suspend' && currentPath !== '/suspended') {
-                  console.log('Sidebar: Status changed to suspend, redirecting to suspended page');
-                  navigate('/suspended');
-                  return;
-                }
-                
-                if (updatedProfile.status === 'hold' && currentPath !== '/hold') {
-                  console.log('Sidebar: Status changed to hold, redirecting to hold page');
-                  navigate('/hold');
-                  return;
-                }
-                
-                if (updatedProfile.approval_status !== 'approved' && currentPath !== '/approval-pending') {
-                  console.log('Sidebar: Approval status changed, redirecting to approval pending page');
-                  navigate('/approval-pending');
-                  return;
-                }
-              }
-            }
-          }
-        )
-        .on('postgres_changes',
-          {
-            event: 'DELETE',
-            schema: 'public',
-            table: 'user_profiles',
-            filter: `user_id=eq.${user.id}`
-          },
-          (payload) => {
-            console.log('=== SIDEBAR REALTIME DELETE RECEIVED ===');
-            console.log('Profile deleted:', payload.old);
-            console.log('User ID:', user.id);
-            
-            // Profile was deleted - redirect to login immediately
-            console.log('Sidebar: Profile deleted in real-time, redirecting to login');
-            
-            // Sign out the user
-            const handleDelete = async () => {
-              try {
-                await signOut();
-              } catch (signOutError) {
-                console.error('Sidebar: Error signing out:', signOutError);
-              }
-              
-              // Clear all caches
-              try {
-                localStorage.removeItem(`profile_${user.id}`);
-                localStorage.removeItem(`profile_sidebar_${user.id}`);
-                localStorage.removeItem(`profile_mobile_${user.id}`);
-                localStorage.removeItem('currentUserRole');
-                localStorage.removeItem('isSuperAdmin');
-                localStorage.removeItem('isAuthenticated');
-              } catch (e) {
-                console.error('Error clearing cache:', e);
-              }
-              
-              // Redirect to login with error message
-              window.location.href = '/login?error=account_deleted';
-            };
-            
-            handleDelete();
-          }
-        )
-        .subscribe((status) => {
-          console.log('Sidebar realtime subscription status:', status);
-          if (status === 'SUBSCRIBED') {
-            console.log('Sidebar: Successfully subscribed to profile updates and deletions');
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error('Sidebar: Error subscribing to profile updates');
-          }
-        });
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
-  }, [user?.id, location.pathname, navigate, signOut]);
+  }, [user?.id, location.pathname]);
 
   // Fetch pending message counts and set up real-time notifications
   useEffect(() => {
@@ -535,94 +426,10 @@ const Sidebar = () => {
     };
     window.addEventListener('storage', storageHandler);
 
-    // Real-time subscription for new messages
-    const channel = supabase
-      .channel(`sidebar_messages_${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `receiver_id=eq.${user.id}`,
-        },
-        async (payload) => {
-          const newMessage = payload.new as any;
-          
-          // Only show notification if message is unread and not from current user
-          // Also don't show if user is currently on messaging page (they'll see it there)
-          if (newMessage.sender_id !== user.id && !newMessage.is_read && location.pathname !== "/messaging") {
-            // Check if chat widget is open for this conversation
-            let widgetOpenForSender = false;
-            try {
-              const widgetDataRaw = localStorage.getItem(`chat_widget_${user.id}`);
-              if (widgetDataRaw) {
-                const widgetData = JSON.parse(widgetDataRaw);
-                if (widgetData?.selectedUser?.user_id === newMessage.sender_id) {
-                  // Treat widget as open when it is not minimized
-                  widgetOpenForSender = widgetData.isMinimized === false;
-                }
-              }
-            } catch (err) {
-              console.error("Error checking chat widget state:", err);
-            }
-
-            if (widgetOpenForSender) {
-              // Widget already showing this conversation; skip toast but refresh counts
-              fetchPendingCounts();
-              return;
-            }
-
-            // Fetch sender's name for notification
-            try {
-              const { data: senderData } = await supabase
-                .from("user_profiles")
-                .select("user_name, employee_id")
-                .eq("user_id", newMessage.sender_id)
-                .maybeSingle();
-
-              const senderName = (senderData as any)?.user_name || "Unknown";
-              
-              // Show toast notification
-              toast({
-                title: "New Message",
-                description: `${senderName}: ${newMessage.message?.substring(0, 50)}${newMessage.message?.length > 50 ? '...' : ''}`,
-                variant: "default",
-              });
-
-              // Update pending count
-              fetchPendingCounts();
-            } catch (err) {
-              console.error("Error fetching sender info:", err);
-              // Still update count even if sender fetch fails
-              fetchPendingCounts();
-            }
-          } else {
-            // Still update count even if notification not shown
-            fetchPendingCounts();
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "messages",
-          filter: `receiver_id=eq.${user.id}`,
-        },
-        () => {
-          // Refetch counts on any message change (INSERT, UPDATE, DELETE)
-          fetchPendingCounts();
-        }
-      )
-      .subscribe();
-
     return () => {
-      supabase.removeChannel(channel);
       window.removeEventListener('storage', storageHandler);
     };
-  }, [user?.id, toast, location.pathname]);
+  }, [user?.id, location.pathname]);
 
   const handleLogout = async () => {
     try {

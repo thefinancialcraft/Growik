@@ -231,7 +231,8 @@ const Messaging = () => {
 
     fetchUsers();
 
-    // Set up real-time subscription for user profiles (for online status)
+    if (!user?.id) return;
+
     const channel = supabase
       .channel(`messaging_users_${user.id}`)
       .on(
@@ -244,14 +245,13 @@ const Messaging = () => {
         (payload) => {
           const updatedUser = payload.new as any;
           if (updatedUser.user_id !== user.id) {
-            // Update cache
             setUserProfileCache((prev) => {
-              const newCache = new Map(prev);
-              newCache.set(updatedUser.user_id, {
+              const next = new Map(prev);
+              next.set(updatedUser.user_id, {
                 user_name: updatedUser.user_name || "Unknown",
                 employee_id: updatedUser.employee_id || undefined,
               });
-              return newCache;
+              return next;
             });
 
             setUsers((prev) =>
@@ -303,7 +303,8 @@ const Messaging = () => {
 
     fetchPendingCounts();
 
-    // Real-time subscription for pending counts
+    if (!user?.id) return;
+
     const channel = supabase
       .channel(`messaging_counts_${user.id}`)
       .on(
@@ -315,7 +316,6 @@ const Messaging = () => {
           filter: `receiver_id=eq.${user.id}`,
         },
         () => {
-          // Refetch counts on any message change
           fetchPendingCounts();
         }
       )
@@ -398,7 +398,6 @@ const Messaging = () => {
 
     fetchMessages();
 
-    // Set up real-time subscription for messages - OPTIMIZED
     const channel = supabase
       .channel(`messaging_${user.id}_${selectedUser.user_id}`)
       .on(
@@ -410,43 +409,34 @@ const Messaging = () => {
         },
         (payload) => {
           const newMsg = payload.new as Message;
-          
-          // Only process if message is for this conversation
+
           if (
             (newMsg.sender_id === selectedUser.user_id && newMsg.receiver_id === user.id) ||
             (newMsg.sender_id === user.id && newMsg.receiver_id === selectedUser.user_id)
           ) {
-            // Enrich using cache (instant)
             const senderProfile = userProfileCache.get(newMsg.sender_id);
             newMsg.sender_name = senderProfile?.user_name || "Unknown";
             newMsg.sender_employee_id = senderProfile?.employee_id || null;
 
             setMessages((prev) => {
-              // Check if message already exists
               const exists = prev.some((m) => m.id === newMsg.id);
               if (exists) return prev;
               return [...prev, newMsg];
             });
 
-            // Mark as read ONLY if user is viewing this conversation
             if (newMsg.receiver_id === user.id && !newMsg.is_read && selectedUser?.user_id === newMsg.sender_id) {
-              // User is viewing this conversation, mark as read
               (async () => {
                 try {
                   await supabase
                     .from("messages")
-                    // @ts-ignore - Supabase type inference issue
-                    .update({ is_read: true, status: 'read' })
+                    // @ts-ignore
+                    .update({ is_read: true, status: "read" })
                     .eq("id", newMsg.id);
-                  
-                  // Update message status in UI
+
                   setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === newMsg.id ? { ...m, is_read: true, status: 'read' as const } : m
-                    )
+                    prev.map((m) => (m.id === newMsg.id ? { ...m, is_read: true, status: "read" as const } : m))
                   );
-                  
-                  // Update pending counts
+
                   setPendingCounts((prev) => {
                     const updated = { ...prev };
                     if (updated[newMsg.sender_id]) {
@@ -461,22 +451,23 @@ const Messaging = () => {
                   console.error("Error marking message as read:", err);
                 }
               })();
-            } else if (newMsg.receiver_id === user.id && newMsg.sender_id !== user.id && newMsg.status !== 'delivered' && newMsg.status !== 'read') {
-              // Message received but user not viewing conversation - mark as delivered only
+            } else if (
+              newMsg.receiver_id === user.id &&
+              newMsg.sender_id !== user.id &&
+              newMsg.status !== "delivered" &&
+              newMsg.status !== "read"
+            ) {
               (async () => {
                 try {
                   await supabase
                     .from("messages")
-                    // @ts-ignore - Supabase type inference issue
-                    .update({ status: 'delivered' })
+                    // @ts-ignore
+                    .update({ status: "delivered" })
                     .eq("id", newMsg.id);
-                  
-                  // Update status in sender's view if they have this conversation open
+
                   setMessages((prev) =>
                     prev.map((m) =>
-                      m.id === newMsg.id && m.status !== 'read'
-                        ? { ...m, status: 'delivered' as const }
-                        : m
+                      m.id === newMsg.id && m.status !== "read" ? { ...m, status: "delivered" as const } : m
                     )
                   );
                 } catch (err) {
@@ -485,24 +476,23 @@ const Messaging = () => {
               })();
             }
 
-            // If message is sent to current user, update status to 'delivered' for sender (real-time)
-            // This handles the case when user is viewing conversation
-            if (newMsg.receiver_id === user.id && newMsg.sender_id !== user.id && selectedUser?.user_id === newMsg.sender_id && newMsg.status === 'sent') {
-              // Update status to delivered (message reached receiver)
+            if (
+              newMsg.receiver_id === user.id &&
+              newMsg.sender_id !== user.id &&
+              selectedUser?.user_id === newMsg.sender_id &&
+              newMsg.status === "sent"
+            ) {
               (async () => {
                 try {
                   await supabase
                     .from("messages")
-                    // @ts-ignore - Supabase type inference issue
-                    .update({ status: 'delivered' })
+                    // @ts-ignore
+                    .update({ status: "delivered" })
                     .eq("id", newMsg.id);
-                  
-                  // Update status in sender's view if they have this conversation open
+
                   setMessages((prev) =>
                     prev.map((m) =>
-                      m.id === newMsg.id && m.status !== 'read'
-                        ? { ...m, status: 'delivered' as const }
-                        : m
+                      m.id === newMsg.id && m.status !== "read" ? { ...m, status: "delivered" as const } : m
                     )
                   );
                 } catch (err) {
@@ -511,8 +501,11 @@ const Messaging = () => {
               })();
             }
 
-            // Show popup notification if not viewing this conversation and it's a new message for current user
-            if (newMsg.receiver_id === user.id && newMsg.sender_id !== user.id && selectedUser?.user_id !== newMsg.sender_id) {
+            if (
+              newMsg.receiver_id === user.id &&
+              newMsg.sender_id !== user.id &&
+              selectedUser?.user_id !== newMsg.sender_id
+            ) {
               const sender = users.find((u) => u.user_id === newMsg.sender_id);
               if (sender) {
                 setNewMessageDialog({
@@ -521,13 +514,12 @@ const Messaging = () => {
                   message: newMsg.message,
                 });
 
-                // Show toast notification
                 toast({
                   title: `New message from ${sender.user_name}`,
-                  description: newMsg.message.length > 50 ? newMsg.message.substring(0, 50) + '...' : newMsg.message,
+                  description:
+                    newMsg.message.length > 50 ? newMsg.message.substring(0, 50) + "..." : newMsg.message,
                 });
 
-                // Update pending counts
                 setPendingCounts((prev) => ({
                   ...prev,
                   [newMsg.sender_id]: (prev[newMsg.sender_id] || 0) + 1,
@@ -546,23 +538,20 @@ const Messaging = () => {
         },
         (payload) => {
           const updatedMsg = payload.new as Message;
-          // Only update if message belongs to current conversation
           if (
             (updatedMsg.sender_id === user.id && updatedMsg.receiver_id === selectedUser.user_id) ||
             (updatedMsg.sender_id === selectedUser.user_id && updatedMsg.receiver_id === user.id)
           ) {
             setMessages((prev) =>
-              prev.map((msg) => {
-                if (msg.id === updatedMsg.id) {
-                  // Update status - prioritize the status field from database
-                  return {
-                    ...msg,
-                    ...updatedMsg,
-                    status: updatedMsg.status || msg.status || 'sent',
-                  };
-                }
-                return msg;
-              })
+              prev.map((msg) =>
+                msg.id === updatedMsg.id
+                  ? {
+                      ...msg,
+                      ...updatedMsg,
+                      status: updatedMsg.status || msg.status || "sent",
+                    }
+                  : msg
+              )
             );
           }
         }

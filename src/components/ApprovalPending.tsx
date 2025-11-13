@@ -89,7 +89,6 @@ const ApprovalPending = () => {
         // Wait for auth to be loaded
         if (authLoading) {
             console.log("Auth still loading, waiting...");
-            return;
         }
 
         // Only redirect if auth is loaded and no user exists
@@ -103,59 +102,7 @@ const ApprovalPending = () => {
             console.log("User found, fetching profile");
             fetchUserProfile();
 
-            // Set up real-time subscription for profile updates
-            const channel = supabase
-                .channel(`profile_updates_${user.id}`)
-                .on('postgres_changes',
-                    {
-                        event: 'UPDATE',
-                        schema: 'public',
-                        table: 'user_profiles',
-                        filter: `user_id=eq.${user.id}`
-                    },
-                    (payload) => {
-                        const updatedProfile = payload.new as UserProfile;
-                        setProfile(updatedProfile);
-
-                        // Update cache
-                        try {
-                            localStorage.setItem(`profile_sidebar_${user.id}`, JSON.stringify({
-                                employee_id: updatedProfile.employee_id,
-                                updated_at: updatedProfile.updated_at,
-                                user_name: updatedProfile.user_name,
-                                email: updatedProfile.email,
-                                role: updatedProfile.role,
-                                super_admin: updatedProfile.super_admin,
-                            }));
-                        } catch (e) {
-                            console.error('Error updating cache:', e);
-                        }
-
-                        // Redirect based on new status
-                        if (updatedProfile.status === 'active' && updatedProfile.approval_status === 'approved') {
-                            localStorage.setItem("isAuthenticated", "true");
-                            navigate("/dashboard");
-                        } else if (updatedProfile.status === 'hold') {
-                            navigate("/hold");
-                        } else if (updatedProfile.status === 'suspend') {
-                            navigate("/suspended");
-                        } else if (updatedProfile.approval_status === 'rejected') {
-                            navigate("/rejected");
-                        }
-                    }
-                )
-                .subscribe((status) => {
-                    console.log('Realtime subscription status:', status);
-                    if (status === 'SUBSCRIBED') {
-                        console.log('Successfully subscribed to profile updates');
-                    } else if (status === 'CHANNEL_ERROR') {
-                        console.error('Error subscribing to profile updates');
-                    }
-                });
-
-            return () => {
-                supabase.removeChannel(channel);
-            };
+            return;
         }
     }, [user, authLoading, navigate]);
 

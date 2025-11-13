@@ -116,56 +116,6 @@ const ChatWidget = () => {
 
     fetchMessages();
 
-    // Set up real-time subscription
-    const channel = supabase
-      .channel(`chat_widget_${user.id}_${selectedUser.user_id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          const newMsg = payload.new as Message;
-          if (
-            (newMsg.sender_id === selectedUser.user_id && newMsg.receiver_id === user.id) ||
-            (newMsg.sender_id === user.id && newMsg.receiver_id === selectedUser.user_id)
-          ) {
-            if (isMinimizedRef.current && !isMobileRef.current) {
-              isMinimizedRef.current = false;
-              setIsMinimized(false);
-              if (user?.id) {
-                const stored = localStorage.getItem(`chat_widget_${user.id}`);
-                const data = stored ? (() => {
-                  try {
-                    return JSON.parse(stored);
-                  } catch (err) {
-                    console.error('Error parsing widget state:', err);
-                    return {};
-                  }
-                })() : {};
-                localStorage.setItem(`chat_widget_${user.id}`, JSON.stringify({
-                  ...data,
-                  selectedUser: data.selectedUser ?? selectedUser,
-                  isMinimized: false,
-                }));
-              }
-            }
-
-            setMessages((prev) => {
-              const exists = prev.some((m) => m.id === newMsg.id);
-              if (exists) return prev;
-              return [...prev, newMsg].slice(-5);
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [user?.id, selectedUser, isMobile]);
 
   useEffect(() => {
