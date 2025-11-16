@@ -44,11 +44,12 @@ const Header = () => {
     signOutRef.current = signOut;
   }, [signOut]);
 
-  // Check Supabase server status
+  // Check Supabase server status (using a lightweight endpoint)
   useEffect(() => {
     const checkServerStatus = async () => {
       try {
-        const { error } = await supabase.from('user_profiles').select('user_id').limit(1);
+        // Use a lightweight check - just try to get session
+        const { error } = await supabase.auth.getSession();
         const newStatus = error ? 'offline' : 'online';
         
         // Only show full status if status changed
@@ -95,15 +96,9 @@ const Header = () => {
       }
 
       if (!user?.id) return;
-      try {
-        await supabase
-          .from('user_profiles')
-          // @ts-ignore - last_seen column may not be in types
-          .update({ last_seen: new Date().toISOString() })
-          .eq('user_id', user.id);
-      } catch (error) {
-        console.error('Header: Error updating last_seen:', error);
-      }
+      // Use centralized utility function
+      const { updateLastSeen: updateLastSeenUtil } = await import('@/lib/userProfile');
+      await updateLastSeenUtil(user.id);
     };
 
     // Reset activity flag and update timestamp (only on click)
@@ -185,65 +180,13 @@ const Header = () => {
           }
         }
 
-        // Always fetch fresh data from database
+        // Always fetch fresh data from database using utility
         try {
-          console.log('Header: Fetching profile for user:', user.id);
-          console.log('Header: Query: SELECT user_name, employee_id FROM user_profiles WHERE user_id =', user.id);
+          // Use centralized utility function
+          const { getUserProfile } = await import('@/lib/userProfile');
+          let profileRow = await getUserProfile(user.id);
           
-          const { data, error } = await supabase
-            .from('user_profiles')
-            .select('user_name, employee_id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-          
-          console.log('Header: Query response - data:', data, 'error:', error);
-          
-          if (error) {
-            console.error('Header: Error fetching profile:', error);
-            console.error('Header: Error details:', {
-              message: error.message,
-              details: error.details,
-              hint: error.hint,
-              code: error.code
-            });
-            
-            // If error indicates user not found or account deleted, redirect to login
-            if (error.code === 'PGRST116' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('does not exist')) {
-              console.log('Header: User profile not found (error), redirecting to login');
-              // Sign out the user
-            try {
-              await signOutFn();
-              } catch (signOutError) {
-                console.error('Header: Error signing out:', signOutError);
-              }
-              // Clear all caches
-              try {
-                localStorage.removeItem(`profile_${user.id}`);
-                localStorage.removeItem(`profile_sidebar_${user.id}`);
-                localStorage.removeItem(`profile_mobile_${user.id}`);
-                localStorage.removeItem('currentUserRole');
-                localStorage.removeItem('isSuperAdmin');
-                localStorage.removeItem('isAuthenticated');
-              } catch (e) {
-                console.error('Error clearing cache:', e);
-              }
-              // Redirect to login with error message
-              window.location.href = '/login?error=account_deleted';
-              return;
-            }
-            
-            // Try alternative query to debug
-            console.log('Header: Trying alternative query with all fields...');
-            const { data: altData, error: altError } = await supabase
-              .from('user_profiles')
-              .select('*')
-              .eq('user_id', user.id)
-              .maybeSingle();
-            console.log('Header: Alternative query result:', altData, altError);
-            return;
-          }
-          // If no data by user_id, try fallback by email
-          let profileRow = data as any;
+          // Fallback by email if user_id lookup returns null
           if (!profileRow && user.email) {
             console.log('Header: Trying fallback by email:', user.email);
             const { data: byEmail, error: byEmailErr } = await supabase
@@ -252,17 +195,17 @@ const Header = () => {
               .eq('email', user.email)
               .maybeSingle();
             console.log('Header: Fallback by email result:', byEmail, byEmailErr);
-            if (!byEmailErr) {
-              profileRow = byEmail;
+            if (!byEmailErr && byEmail) {
+              profileRow = byEmail as any;
             }
           }
 
           if (profileRow) {
-            console.log('Header: Profile data received:', data);
+            console.log('Header: Profile data received:', profileRow);
             console.log('Header: Employee ID:', profileRow.employee_id);
-            setProfile(profileRow);
+            setProfile({ user_name: profileRow.user_name, employee_id: profileRow.employee_id });
             // Update both cache keys
-            localStorage.setItem(cacheKey, JSON.stringify(profileRow));
+            localStorage.setItem(cacheKey, JSON.stringify({ user_name: profileRow.user_name, employee_id: profileRow.employee_id }));
             // Also check sidebar cache and update if exists
             const sidebarCache = localStorage.getItem(sidebarCacheKey);
             if (sidebarCache) {

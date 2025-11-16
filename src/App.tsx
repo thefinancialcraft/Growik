@@ -22,12 +22,14 @@ import Product from "./pages/Product";
 import Campaign from "./pages/Campaign";
 import CampaignDetail from "./pages/CampaignDetail";
 import Collaboration from "./pages/Collaboration";
+import CollaborationAssignment from "./pages/CollaborationAssignment";
 import Companies from "./pages/Companies";
 import Settings from "./pages/Settings";
 import ApprovalPending from "./components/ApprovalPending";
 import Hold from "./pages/Hold";
 import Suspended from "./pages/Suspended";
 import Rejected from "./pages/Rejected";
+import ProfileCompletion from "./pages/ProfileCompletion";
 import ChatWidget from "./components/ChatWidget";
 // Intermediate pages removed for direct-to-dashboard flow
 import NotFound from "./pages/NotFound";
@@ -92,6 +94,14 @@ const App = () => (
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route
+              path="/profile-completion"
+              element={
+                <ProtectedRoute>
+                  <ProfileCompletion />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/dashboard"
               element={
@@ -185,6 +195,22 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Collaboration />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/collaborationAssignment"
+              element={
+                <ProtectedRoute>
+                  <CollaborationAssignment />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/collaborationAssignment/:id"
+              element={
+                <ProtectedRoute>
+                  <CollaborationAssignment />
                 </ProtectedRoute>
               }
             />

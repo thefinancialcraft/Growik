@@ -47,6 +47,7 @@ interface UserProfile {
 
 interface Contract {
   id: string;
+  pid?: string | null;
   contract_name: string;
   description?: string;
   content?: string;
@@ -811,7 +812,8 @@ const Contract = () => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
     return contract.contract_name.toLowerCase().includes(query) ||
-           (contract.description && contract.description.toLowerCase().includes(query));
+           (contract.description && contract.description.toLowerCase().includes(query)) ||
+           ((contract.pid ?? "").toLowerCase().includes(query));
   });
 
   // Handle delete contract
@@ -906,6 +908,7 @@ const Contract = () => {
       header.innerHTML = `
         <h1 style="margin: 0; font-size: 24px; font-weight: bold;">${contract.contract_name}</h1>
         <p style="margin: 5px 0 0 0; color: #666; font-size: 12px;">
+          PID: ${contract.pid ?? "N/A"} | 
           Status: ${contract.status.charAt(0).toUpperCase() + contract.status.slice(1)} | 
           Created: ${formatDate(contract.created_at)} | 
           ${contract.updated_at !== contract.created_at ? `Updated: ${formatDate(contract.updated_at)}` : ''}
@@ -1024,7 +1027,8 @@ const Contract = () => {
         heightLeft -= pdfHeight;
       }
 
-      pdf.save(`${contract.contract_name.replace(/[^a-z0-9]/gi, '_')}_${new Date().getTime()}.pdf`);
+      const safePid = contract.pid ? `${contract.pid.replace(/[^a-z0-9]/gi, '_')}_` : '';
+      pdf.save(`${safePid}${contract.contract_name.replace(/[^a-z0-9]/gi, '_')}_${new Date().getTime()}.pdf`);
 
       toast({
         title: "PDF Generated",
@@ -1273,6 +1277,9 @@ const Contract = () => {
                           </Badge>
                         )}
                       </div>
+                      <p className="text-[11px] text-muted-foreground mb-1">
+                        PID: {contract.pid ?? "Pending assignment"}
+                      </p>
                       {contract.description && (
                         <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
                           {truncateWords(contract.description, 50)}

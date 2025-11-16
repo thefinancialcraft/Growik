@@ -267,7 +267,7 @@ const CampaignDetail = () => {
         const { data, error: fetchError } = await supabase
           .from("campaigns")
           .select(
-            "id, name, brand, objective, users, influencers, contract_id, contract_name, contract_description, contract_status, contract_snapshot, start_date, end_date, is_long_term, status, progress, created_at"
+            "id, name, brand, objective, users, influencers, contract_id, contract_pid, contract_name, contract_description, contract_status, contract_snapshot, start_date, end_date, is_long_term, status, progress, created_at"
           )
           .eq("id", id)
           .maybeSingle();
@@ -585,7 +585,12 @@ const CampaignDetail = () => {
                           type="button"
                           className="mt-auto w-full justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-sky-500 to-purple-500 text-white shadow-sm hover:opacity-90"
                           onClick={() =>
-                            navigate(`/collaboration/${encodeURIComponent(campaign.id)}`, { state: { campaign } })
+                            navigate(`/collaborationAssignment`, {
+                              state: {
+                                campaign,
+                                campaignId: campaign.id,
+                              },
+                            })
                           }
                         >
                           Start Collaboration
@@ -601,6 +606,11 @@ const CampaignDetail = () => {
                           <p className="font-semibold text-slate-900 leading-tight">
                             {campaign.contract?.name ?? "No contract linked"}
                           </p>
+                          {campaign.contract?.pid && (
+                            <p className="text-xs text-slate-500">
+                              Contract PID: {campaign.contract?.pid}
+                            </p>
+                          )}
                           <p className="text-xs text-slate-500 leading-snug">
                             {campaign.contract?.description ??
                               "Attach a contract to keep legal expectations aligned with this campaign."}

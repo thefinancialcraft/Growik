@@ -347,22 +347,17 @@ const LoginPage = () => {
           let profile: any = null;
           let profileError: any = null;
           try {
-            // Use Promise.race with timeout directly
-            const profileQuery = supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('user_id', authData.user.id)
-              .maybeSingle();
-            
-            const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((_, reject) => {
+            // Use centralized utility function with timeout
+            const { getUserProfile } = await import('@/lib/userProfile');
+            const timeoutPromise = new Promise<null>((_, reject) => {
               setTimeout(() => {
                 reject(new Error('Profile fetch timeout after 5000ms'));
               }, 5000);
             });
             
-            const result = await Promise.race([profileQuery, timeoutPromise]) as { data: any; error: any };
-            profile = result.data;
-            profileError = result.error;
+            const result = await Promise.race([getUserProfile(authData.user.id), timeoutPromise]);
+            profile = result as any;
+            profileError = null;
           } catch (e: any) {
             console.warn('Profile fetch timed out or failed, proceeding to dashboard.', e?.message || e);
             localStorage.setItem("isAuthenticated", "true");
@@ -549,19 +544,11 @@ const LoginPage = () => {
   const checkAllUsers = async () => {
     try {
       console.log("=== CHECKING ALL USERS IN DATABASE ===");
-      const { data: users, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { getAllUserProfiles } = await import('@/lib/userProfile');
+      const users = await getAllUserProfiles();
 
-      if (error) {
-        console.error("Error fetching users:", error);
-        console.error("Error details:", {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint
-        });
+      if (!users || users.length === 0) {
+        console.warn("No users found in database");
       } else {
         console.log("=== DATABASE USERS ===");
         console.log("Total users found:", users?.length || 0);

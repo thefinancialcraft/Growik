@@ -101,33 +101,63 @@ const SignupPage: React.FC = () => {
       }
 
       if (data.user) {
-        // Update user profile with name and contact number
-        // The profile should be created by the trigger, but we'll try to update it
-        // If it doesn't exist yet, we'll wait a moment and try again
-        const updateProfile = async (retries = 3) => {
+        // Create user profile with all details from signup form
+        const createProfile = async (retries = 3) => {
           for (let i = 0; i < retries; i++) {
             try {
-              const { error: profileError } = await supabase
+              // First check if profile already exists
+              const { data: existingProfile } = await supabase
                 .from('user_profiles')
+                .select('id')
+                .eq('user_id', data.user.id)
+                .maybeSingle();
+
+              if (existingProfile) {
+                // Profile exists, update it
+                const { error: updateError } = await supabase
+                  .from('user_profiles')
+                  // @ts-ignore - Supabase type inference issue
                 .update({
                   user_name: fullName,
-                  contact_no: formData.contactNo.trim()
+                    contact_no: formData.contactNo.trim(),
+                    email: formData.email
                 })
                 .eq('user_id', data.user.id);
 
-              if (!profileError) {
+              if (!updateError) {
+                console.log('SignupPage: Profile updated successfully');
+                return; // Success
+              }
+              } else {
+                // Profile doesn't exist, create it
+                const { error: insertError } = await supabase
+                  .from('user_profiles')
+                  // @ts-ignore - Supabase type inference issue
+                  .insert({
+                    user_id: data.user.id,
+                    user_name: fullName,
+                    email: formData.email,
+                    contact_no: formData.contactNo.trim(),
+                    role: 'user',
+                    status: 'active',
+                    approval_status: 'pending'
+                  });
+
+                if (!insertError) {
+                  console.log('SignupPage: Profile created successfully');
                 return; // Success
               }
 
-              // If profile doesn't exist yet, wait and retry
-              if (profileError.code === 'PGRST116' && i < retries - 1) {
+                // If insert failed, wait and retry
+                if (i < retries - 1) {
                 await new Promise(resolve => setTimeout(resolve, 500));
                 continue;
               }
 
-              console.error('Error updating profile:', profileError);
-            } catch (profileUpdateError) {
-              console.error('Profile update error:', profileUpdateError);
+                console.error('Error creating profile:', insertError);
+              }
+            } catch (profileError) {
+              console.error('Profile creation error:', profileError);
               if (i < retries - 1) {
                 await new Promise(resolve => setTimeout(resolve, 500));
               }
@@ -135,8 +165,8 @@ const SignupPage: React.FC = () => {
           }
         };
 
-        // Update profile (non-blocking - don't wait for it)
-        updateProfile().catch(console.error);
+        // Create/update profile (non-blocking - don't wait for it)
+        createProfile().catch(console.error);
 
         setSuccess(true);
         // Store email for display

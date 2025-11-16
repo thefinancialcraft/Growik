@@ -161,15 +161,10 @@ const Users = () => {
         return;
       }
 
-      try {
-        await supabase
-          .from('user_profiles')
-          // @ts-ignore - last_seen column may not be in types
-          .update({ last_seen: new Date().toISOString() })
-          .eq('user_id', user.id);
-      } catch (error) {
-        console.error('Error updating last_seen:', error);
-      }
+      if (!user?.id) return;
+      // Use centralized utility function
+      const { updateLastSeen: updateLastSeenUtil } = await import('@/lib/userProfile');
+      await updateLastSeenUtil(user.id);
     };
 
     // Reset activity flag and update timestamp
@@ -255,11 +250,8 @@ const Users = () => {
 
       try {
         // Check if user is admin or super admin
-        const { data: currentUser } = await supabase
-          .from('user_profiles')
-          .select('role, super_admin')
-          .eq('user_id', user.id)
-          .maybeSingle() as { data: { role: string; super_admin: boolean } | null };
+        const { getUserProfile } = await import('@/lib/userProfile');
+        const currentUser = await getUserProfile(user.id);
 
         if (!currentUser || (currentUser.role !== 'admin' && !currentUser.super_admin)) {
           toast({
@@ -273,24 +265,11 @@ const Users = () => {
 
         // Fetch all users (admin can see all)
         console.log("=== FETCHING ALL USERS ===");
-        const { data, error } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const { getAllUserProfiles } = await import('@/lib/userProfile');
+        const data = await getAllUserProfiles();
 
-        console.log("Users fetch result:", { data, error });
+        console.log("Users fetch result:", { data });
         console.log("Number of users fetched:", data?.length || 0);
-
-        if (error) {
-          console.error("Error fetching users:", error);
-          console.error("Error details:", {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-            hint: error.hint
-          });
-          throw error;
-        }
 
         if (data) {
           console.log("Setting users:", data.length);
@@ -305,6 +284,41 @@ const Users = () => {
             };
           });
           setUsers(usersWithOnlineStatus);
+
+          // Auto-generate employee_id for approved users without one
+          const approvedWithoutId = usersWithOnlineStatus.filter(
+            u => u.approval_status === 'approved' && (!u.employee_id || u.employee_id.trim() === '')
+          );
+          if (approvedWithoutId.length > 0) {
+            console.log(`Auto-generating employee IDs for ${approvedWithoutId.length} approved user(s) without ID`);
+            // Generate IDs asynchronously (don't block UI)
+            setTimeout(async () => {
+              for (const userData of approvedWithoutId) {
+                try {
+                  const newEmployeeId = await generateNextUserId();
+                  console.log(`Generating employee_id ${newEmployeeId} for user ${userData.user_name}`);
+
+                  const { error: updateError } = await supabase
+                    .from('user_profiles')
+                    // @ts-ignore - Supabase type inference issue
+                    .update({ employee_id: newEmployeeId })
+                    .eq('id', userData.id);
+
+                  if (!updateError) {
+                    console.log(`Successfully assigned ${newEmployeeId} to ${userData.user_name}`);
+                  }
+                } catch (err) {
+                  console.error(`Error processing user ${userData.user_name}:`, err);
+                }
+              }
+              // Refresh users list
+              const { getAllUserProfiles } = await import('@/lib/userProfile');
+              const updatedUsers = await getAllUserProfiles();
+              if (updatedUsers) {
+                setUsers(updatedUsers as User[]);
+              }
+            }, 1000);
+          }
         } else {
           console.warn("No data returned from users query");
           setUsers([]);
@@ -458,12 +472,10 @@ const Users = () => {
         await updateProfile();
 
         // Refresh users list
-        const { data: updatedUsers, error: fetchError } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const { getAllUserProfiles } = await import('@/lib/userProfile');
+        const updatedUsers = await getAllUserProfiles();
 
-        if (!fetchError && updatedUsers) {
+        if (updatedUsers) {
           setUsers(updatedUsers as User[]);
         }
 
@@ -792,11 +804,8 @@ const Users = () => {
         throw new Error('You must be logged in to update user status');
       }
 
-      const { data: currentUserProfile } = await supabase
-        .from('user_profiles')
-        .select('role, super_admin')
-        .eq('user_id', user.id)
-        .maybeSingle() as { data: { role: string; super_admin: boolean } | null };
+      const { getUserProfile } = await import('@/lib/userProfile');
+      const currentUserProfile = await getUserProfile(user.id);
 
       if (!currentUserProfile) {
         throw new Error('User profile not found');
@@ -938,12 +947,10 @@ const Users = () => {
       }
 
       // Refresh users list to get updated data from database
-      const { data: updatedUsers, error: fetchError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { getAllUserProfiles } = await import('@/lib/userProfile');
+      const updatedUsers = await getAllUserProfiles();
 
-      if (!fetchError && updatedUsers) {
+      if (updatedUsers) {
         console.log('Refreshed users list:', updatedUsers.length);
         setUsers(updatedUsers as User[]);
       } else {
@@ -977,6 +984,55 @@ const Users = () => {
         description: error.message || "Failed to update user status.",
         variant: "destructive",
       });
+    }
+  };
+
+  // Function to generate employee_id for approved users who don't have one
+  const generateEmployeeIdsForApprovedUsers = async () => {
+    try {
+      const approvedUsersWithoutId = users.filter(
+        u => u.approval_status === 'approved' && (!u.employee_id || u.employee_id.trim() === '')
+      );
+
+      if (approvedUsersWithoutId.length === 0) {
+        return;
+      }
+
+      console.log(`Found ${approvedUsersWithoutId.length} approved users without employee_id`);
+
+      for (const userData of approvedUsersWithoutId) {
+        try {
+          const newEmployeeId = await generateNextUserId();
+          console.log(`Generating employee_id ${newEmployeeId} for user ${userData.user_name}`);
+
+          const { error: updateError } = await supabase
+            .from('user_profiles')
+            // @ts-ignore - Supabase type inference issue
+            .update({ employee_id: newEmployeeId })
+            .eq('id', userData.id);
+
+          if (updateError) {
+            console.error(`Error updating employee_id for ${userData.user_name}:`, updateError);
+          } else {
+            console.log(`Successfully assigned ${newEmployeeId} to ${userData.user_name}`);
+          }
+        } catch (err) {
+          console.error(`Error processing user ${userData.user_name}:`, err);
+        }
+      }
+
+      // Refresh users list after generating IDs
+      const { getAllUserProfiles } = await import('@/lib/userProfile');
+      const updatedUsers = await getAllUserProfiles();
+      if (updatedUsers) {
+        setUsers(updatedUsers as User[]);
+        toast({
+          title: "Employee IDs Generated",
+          description: `Generated employee IDs for ${approvedUsersWithoutId.length} approved user(s).`,
+        });
+      }
+    } catch (error) {
+      console.error('Error generating employee IDs:', error);
     }
   };
 
@@ -1069,11 +1125,16 @@ const Users = () => {
       // If approving user and they don't have employee_id yet, assign one
       let updateData: any = { approval_status: newApproval };
       
-      if (newApproval === 'approved' && targetUser && !targetUser.employee_id) {
-        console.log('Generating employee ID...');
-        const newEmployeeId = await generateNextUserId();
-        updateData.employee_id = newEmployeeId;
-        console.log('Generated Employee ID:', newEmployeeId);
+      if (newApproval === 'approved' && targetUser) {
+        // Always generate employee_id if user doesn't have one (even if already approved)
+        if (!targetUser.employee_id || targetUser.employee_id.trim() === '') {
+          console.log('Generating employee ID...');
+          const newEmployeeId = await generateNextUserId();
+          updateData.employee_id = newEmployeeId;
+          console.log('Generated Employee ID:', newEmployeeId);
+        } else {
+          console.log('User already has employee_id:', targetUser.employee_id);
+        }
       }
 
       console.log('Update data:', updateData);
@@ -1123,17 +1184,14 @@ const Users = () => {
 
       // Refresh users list to get updated data
       console.log('Refreshing users list...');
-      const { data: updatedUsers, error: fetchError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const { getAllUserProfiles } = await import('@/lib/userProfile');
+      const updatedUsers = await getAllUserProfiles();
 
-      if (!fetchError && updatedUsers) {
+      if (updatedUsers) {
         console.log('Refreshed users list:', updatedUsers.length);
         setUsers(updatedUsers as User[]);
       } else {
         console.warn('Failed to refresh users list, updating local state');
-        console.error('Fetch error:', fetchError);
         // Fallback: update local state
         setUsers(users.map(u => 
           u.user_id === userId ? { ...u, approval_status: newApproval, ...(updateData.employee_id ? { employee_id: updateData.employee_id } : {}) } : u

@@ -452,6 +452,55 @@
   cursor: pointer;
 }
 
+/* Preserve whitespace in TipTap editor */
+.tiptap-editor,
+.ProseMirror {
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow-x: auto !important;
+}
+
+.tiptap-editor .signature-box,
+.tiptap-editor [data-signature="true"],
+.ProseMirror .signature-box,
+.ProseMirror [data-signature="true"] {
+  display: inline-block !important;
+  width: 200px !important;
+  height: 140px !important;
+  border: 1px solid #9ca3af !important;
+  background-color: transparent !important;
+  border-radius: 3px !important;
+  padding: 2px !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  line-height: 136px !important;
+  font-size: 10px !important;
+  color: #6b7280 !important;
+  box-sizing: border-box !important;
+  margin-top: 20px !important;
+  margin-bottom: 20px !important;
+  margin-left: 25px !important;
+  margin-right: 25px !important;
+  /* Force spacing between signature boxes on same line */
+  min-width: 200px !important;
+  white-space: nowrap !important;
+}
+
+/* Ensure spacing between adjacent signature boxes */
+.tiptap-editor .signature-box + .signature-box,
+.tiptap-editor [data-signature="true"] + [data-signature="true"],
+.ProseMirror .signature-box + .signature-box,
+.ProseMirror [data-signature="true"] + [data-signature="true"] {
+  margin-left: 50px !important; /* Double spacing when boxes are adjacent */
+}
+
+/* Prevent parent span from wrapping signature boxes */
+.tiptap-editor span[style*="font-size: 10px"],
+.ProseMirror span[style*="font-size: 10px"] {
+  white-space: nowrap !important;
+  display: inline-block !important;
+}
+
 /* Google Docs Toolbar Styles */
 .toolbar-btn {
   min-width: 32px;

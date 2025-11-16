@@ -24,6 +24,7 @@ export interface CampaignInfluencerRef {
 
 export interface CampaignContractRef {
   id: string;
+  pid?: string | null;
   name: string;
   description?: string | null;
   status?: string | null;
@@ -141,6 +142,7 @@ const parseContractSnapshot = (row: any): CampaignContractRef | null => {
     }
 
     const id = source.id ?? row.contract_id ?? null;
+    const pid = source.pid ?? row.contract_pid ?? null;
     const name = source.name ?? source.contract_name ?? row.contract_name ?? null;
 
     if (!id || !name) {
@@ -149,6 +151,7 @@ const parseContractSnapshot = (row: any): CampaignContractRef | null => {
 
     return {
       id,
+      pid,
       name,
       description: source.description ?? source.contract_description ?? row.contract_description ?? null,
       status: source.status ?? source.contract_status ?? row.contract_status ?? null,
@@ -178,6 +181,7 @@ const parseContractSnapshot = (row: any): CampaignContractRef | null => {
   if (row.contract_id && row.contract_name) {
     return normalize({
       id: row.contract_id,
+      pid: row.contract_pid,
       name: row.contract_name,
       description: row.contract_description,
       status: row.contract_status,

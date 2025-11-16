@@ -63,15 +63,9 @@ const Dashboard = () => {
       }
 
       if (!user?.id) return;
-      try {
-        await supabase
-          .from('user_profiles')
-          // @ts-ignore - last_seen column may not be in types
-          .update({ last_seen: new Date().toISOString() })
-          .eq('user_id', user.id);
-      } catch (error) {
-        console.error('Dashboard: Error updating last_seen:', error);
-      }
+      // Use centralized utility function
+      const { updateLastSeen: updateLastSeenUtil } = await import('@/lib/userProfile');
+      await updateLastSeenUtil(user.id);
     };
 
     // Reset activity flag and update timestamp
@@ -158,20 +152,14 @@ const Dashboard = () => {
 
       try {
         console.log('Dashboard: Fetching profile for user:', user.id);
-        const { data, error } = await supabase
-          .from('user_profiles')
-          .select('user_name, email, role, super_admin, approval_status, status, employee_id, updated_at, hold_end_time')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        const { getUserProfile, updateUserProfile } = await import('@/lib/userProfile');
+        let userProfile = await getUserProfile(user.id);
 
-        if (error) {
-          console.error('Dashboard: Error fetching profile:', error);
-          // If error indicates user not found or account deleted, redirect to login
-          if (error.code === 'PGRST116' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('does not exist')) {
-            console.log('Dashboard: User profile not found (error), redirecting to login');
+        if (!userProfile) {
+          console.log('Dashboard: User profile not found, redirecting to login');
             // Sign out the user
             try {
-              await signOutFn();
+            await signOutFn();
             } catch (signOutError) {
               console.error('Dashboard: Error signing out:', signOutError);
             }
@@ -189,70 +177,23 @@ const Dashboard = () => {
             window.location.href = '/login?error=account_deleted';
             return;
           }
-          return;
-        }
-
-        if (data) {
-          const userProfile = data as UserProfile;
           
+        if (userProfile) {
           // Check if hold period expired and auto-update status (only for role='user')
           if (userProfile.status === 'hold' && userProfile.role === 'user' && userProfile.hold_end_time) {
             const now = new Date().getTime();
             const endTime = new Date(userProfile.hold_end_time).getTime();
             if (endTime <= now) {
               console.log('Dashboard: Hold period expired, auto-updating status to active');
-              try {
-                const { error: updateError } = await supabase
-                  .from('user_profiles')
-                  // @ts-ignore - Supabase type inference issue
-                  .update({
+              const updated = await updateUserProfile(user.id, {
                     status: 'active',
                     status_reason: 'hold expired account active by system',
                     hold_end_time: null,
                     hold_duration_days: null
-                  })
-                  .eq('user_id', user.id);
-
-                if (!updateError) {
-                  // Refresh profile after update
-                  const { data: updatedData } = await supabase
-                    .from('user_profiles')
-                    .select('user_name, email, role, super_admin, approval_status, status, employee_id, updated_at, hold_end_time')
-                    .eq('user_id', user.id)
-                    .maybeSingle();
+              } as any);
                   
-                  if (updatedData) {
-                    const updatedProfile = updatedData as UserProfile;
-                    setProfile(updatedProfile);
-                    setDisplayName(updatedProfile.user_name || metaName || updatedProfile.email?.split('@')[0] || 'User');
-                    
-                    // Update cache
-                    try {
-                      localStorage.setItem(`profile_sidebar_${user.id}`, JSON.stringify({
-                        employee_id: updatedProfile.employee_id,
-                        updated_at: updatedProfile.updated_at,
-                        user_name: updatedProfile.user_name,
-                        email: updatedProfile.email,
-                        role: updatedProfile.role,
-                        super_admin: updatedProfile.super_admin,
-                      }));
-                      localStorage.setItem(`profile_${user.id}`, JSON.stringify(updatedProfile));
-                      if (updatedProfile.role) localStorage.setItem('currentUserRole', updatedProfile.role);
-                      if (typeof updatedProfile.super_admin === 'boolean') localStorage.setItem('isSuperAdmin', String(updatedProfile.super_admin));
-                    } catch (e) {
-                      console.error('Error updating cache:', e);
-                    }
-                    
-                    // Redirect if needed
-                    if (updatedProfile.status === 'active' && updatedProfile.approval_status === 'approved') {
-                      // Already on dashboard, no redirect needed
-                      return;
-                    }
-                  }
-                  return;
-                }
-              } catch (updateErr) {
-                console.error('Dashboard: Error auto-updating expired hold status:', updateErr);
+              if (updated) {
+                userProfile = updated;
               }
             }
           }
@@ -275,6 +216,12 @@ const Dashboard = () => {
             if (typeof userProfile.super_admin === 'boolean') localStorage.setItem('isSuperAdmin', String(userProfile.super_admin));
           } catch (e) {
             console.error('Error updating cache:', e);
+          }
+          
+          // Redirect if needed
+          if (userProfile.status === 'active' && userProfile.approval_status === 'approved') {
+            // Already on dashboard, no redirect needed
+            return;
           }
 
           // Check if user should be redirected (only for non-admin users)

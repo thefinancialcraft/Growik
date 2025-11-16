@@ -22,10 +22,21 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Printer } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Loader2, Printer, ChevronLeft, ChevronRight, FileText, UserCog, Trash2, CheckCircle2, FileCheck } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -60,6 +71,7 @@ const TIMELINE_ITEMS = [
 
 type LocationState = {
   campaign?: CampaignRecord;
+  influencerId?: string;
 };
 
 type ActionOption = "interested" | "not_interested" | "callback" | "done";
@@ -370,6 +382,31 @@ const Collaboration = () => {
     user_id: string | null;
   }>>([]);
   const [timelineLoading, setTimelineLoading] = useState<boolean>(false);
+  const [collaborationActions, setCollaborationActions] = useState<Array<{
+    id: string;
+    campaign_id: string | null;
+    influencer_id: string | null;
+    user_id: string | null;
+    action: string | null;
+    remark: string | null;
+    occurred_at: string;
+    collaboration_id: string;
+    campaign_name?: string | null;
+    contract_name?: string | null;
+    contract_id?: string | null;
+    user_name?: string | null;
+    influencer_name?: string | null;
+    is_signed?: boolean | null;
+    has_contract_html?: boolean;
+  }>>([]);
+  const [collaborationActionsLoading, setCollaborationActionsLoading] = useState<boolean>(false);
+  const [viewingContractFromTable, setViewingContractFromTable] = useState<string | null>(null);
+  const [contractHtmlFromTable, setContractHtmlFromTable] = useState<string | null>(null);
+  const [isLoadingContractFromTable, setIsLoadingContractFromTable] = useState<boolean>(false);
+  const [changingUserId, setChangingUserId] = useState<{ id: string; currentUserId: string | null; collaborationId: string } | null>(null);
+  const [deletingAction, setDeletingAction] = useState<string | null>(null);
+  const [usersForPicker, setUsersForPicker] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [loadingCampaignUsers, setLoadingCampaignUsers] = useState<boolean>(false);
   const injectedStyleLinksRef = useRef<HTMLLinkElement[]>([]);
 
   // Inject stylesheet links into document head when viewing saved contract
@@ -462,8 +499,30 @@ const Collaboration = () => {
     if (!campaign || !campaign.influencers.length) {
       return null;
     }
+    // If influencerId is provided in state, find that influencer, otherwise use first one
+    if (state.influencerId) {
+      const found = campaign.influencers.find(
+        (inf) => inf.id === state.influencerId || inf.pid === state.influencerId
+      );
+      if (found) return found;
+    }
     return campaign.influencers[0];
-  }, [campaign]);
+  }, [campaign, state.influencerId]);
+  
+  // Get current influencer index and navigation info
+  const influencerNavigation = useMemo(() => {
+    if (!campaign || !campaign.influencers.length || !influencer) {
+      return { currentIndex: -1, hasPrevious: false, hasNext: false, previousInfluencer: null, nextInfluencer: null };
+    }
+    const currentIndex = campaign.influencers.findIndex(
+      (inf) => inf.id === influencer.id || inf.pid === influencer.pid
+    );
+    const hasPrevious = currentIndex > 0;
+    const hasNext = currentIndex < campaign.influencers.length - 1;
+    const previousInfluencer = hasPrevious ? campaign.influencers[currentIndex - 1] : null;
+    const nextInfluencer = hasNext ? campaign.influencers[currentIndex + 1] : null;
+    return { currentIndex, hasPrevious, hasNext, previousInfluencer, nextInfluencer };
+  }, [campaign, influencer]);
 
   const resolvedInfluencerId = useMemo(() => {
     if (isUuid(influencer?.id)) {
@@ -471,6 +530,31 @@ const Collaboration = () => {
     }
     return null;
   }, [influencer?.id]);
+  
+  // Navigation functions for previous/next influencer
+  const handlePreviousInfluencer = useCallback(() => {
+    if (!influencerNavigation.hasPrevious || !influencerNavigation.previousInfluencer || !campaign) {
+      return;
+    }
+    navigate('/collaboration', {
+      state: {
+        campaign,
+        influencerId: influencerNavigation.previousInfluencer.id || influencerNavigation.previousInfluencer.pid,
+      },
+    });
+  }, [influencerNavigation, campaign, navigate]);
+  
+  const handleNextInfluencer = useCallback(() => {
+    if (!influencerNavigation.hasNext || !influencerNavigation.nextInfluencer || !campaign) {
+      return;
+    }
+    navigate('/collaboration', {
+      state: {
+        campaign,
+        influencerId: influencerNavigation.nextInfluencer.id || influencerNavigation.nextInfluencer.pid,
+      },
+    });
+  }, [influencerNavigation, campaign, navigate]);
 
   useEffect(() => {
     if (campaign || !id) {
@@ -484,7 +568,7 @@ const Collaboration = () => {
         const { data, error: fetchError } = await supabase
           .from("campaigns")
           .select(
-            "id, name, brand, objective, users, influencers, contract_id, contract_pid, contract_name, contract_description, contract_status, contract_snapshot, start_date, end_date, is_long_term, status, progress, created_at"
+            "id, name, brand, objective, users, influencers, contract_id, contract_snapshot, start_date, end_date, is_long_term, status, progress, created_at"
           )
           .eq("id", id)
           .maybeSingle();
@@ -657,12 +741,435 @@ const Collaboration = () => {
     }
   }, [collaborationId, currentUserId, fetchTimelineEntries]);
 
+  // Fetch collaboration actions
+  const fetchCollaborationActions = useCallback(async () => {
+    setCollaborationActionsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("collaboration_actions")
+        .select("id, campaign_id, influencer_id, user_id, action, remark, occurred_at, collaboration_id, contract_id, is_signed")
+        .order("occurred_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      // Enrich actions with campaign, contract names, user names, and influencer names
+      const enrichedActions = await Promise.all(
+        (data || []).map(async (action) => {
+          let campaignName: string | null = null;
+          let contractName: string | null = null;
+          let userName: string | null = null;
+          let influencerName: string | null = null;
+
+          // Extract campaign key from collaboration_id (format: "CAM001-0001-CON0001")
+          const campaignKey = action.collaboration_id?.split("-")[0];
+          
+          // Check if contract HTML exists (contract is filled)
+          let hasContractHtml = false;
+          if (action.collaboration_id) {
+            try {
+              const { data: overrideData } = await supabase
+                .from("collaboration_variable_overrides")
+                .select("contract_html")
+                .eq("collaboration_id", action.collaboration_id)
+                .maybeSingle();
+
+              if (overrideData?.contract_html) {
+                hasContractHtml = true;
+              }
+            } catch (overrideErr) {
+              // Ignore error, contract not filled
+            }
+          }
+          
+          // Fetch user name if user_id exists
+          if (action.user_id) {
+            try {
+              const { data: userData } = await supabase
+                .from("user_profiles")
+                .select("user_name")
+                .eq("user_id", action.user_id)
+                .maybeSingle();
+
+              if (userData) {
+                userName = userData.user_name || null;
+              }
+            } catch (userErr) {
+              console.error("Collaboration: Error fetching user name", userErr);
+            }
+          }
+          
+          // Fetch influencer name if influencer_id exists
+          if (action.influencer_id) {
+            try {
+              const { data: influencerData } = await supabase
+                .from("influencers")
+                .select("name")
+                .eq("id", action.influencer_id)
+                .maybeSingle();
+
+              if (influencerData) {
+                influencerName = influencerData.name || null;
+              }
+            } catch (influencerErr) {
+              console.error("Collaboration: Error fetching influencer name", influencerErr);
+            }
+          }
+          
+          if (campaignKey) {
+            try {
+              // Fetch campaign name
+              const { data: campaignData } = await supabase
+                .from("campaigns")
+                .select("name, contract_id")
+                .eq("id", campaignKey)
+                .maybeSingle();
+
+              if (campaignData) {
+                campaignName = campaignData.name || null;
+                
+                // Fetch contract name if contract_id exists
+                if (campaignData.contract_id || action.contract_id) {
+                  const contractId = campaignData.contract_id || action.contract_id;
+                  const { data: contractData } = await supabase
+                    .from("contracts")
+                    .select("contract_name")
+                    .eq("id", contractId)
+                    .maybeSingle();
+
+                  if (contractData) {
+                    contractName = contractData.contract_name || null;
+                  }
+                }
+              }
+            } catch (fetchErr) {
+              console.error("Collaboration: Error fetching campaign/contract names", fetchErr);
+            }
+          }
+
+          return {
+            ...action,
+            campaign_name: campaignName,
+            contract_name: contractName,
+            user_name: userName,
+            influencer_name: influencerName,
+            has_contract_html: hasContractHtml,
+          };
+        })
+      );
+
+      setCollaborationActions(enrichedActions);
+    } catch (err) {
+      console.error("Collaboration: Failed to fetch collaboration actions", err);
+      setCollaborationActions([]);
+    } finally {
+      setCollaborationActionsLoading(false);
+    }
+  }, []);
+
   // Fetch timeline entries when collaborationId is available
   useEffect(() => {
     if (collaborationId) {
       void fetchTimelineEntries();
     }
   }, [collaborationId, fetchTimelineEntries]);
+
+  // Fetch all collaboration actions on component mount
+  useEffect(() => {
+    void fetchCollaborationActions();
+  }, [fetchCollaborationActions]);
+
+  // Handle viewing contract from table row
+  const handleViewContractFromTable = useCallback(async (collaborationId: string) => {
+    setIsLoadingContractFromTable(true);
+    setViewingContractFromTable(collaborationId);
+    try {
+      const { data, error } = await supabase
+        .from("collaboration_variable_overrides")
+        .select("contract_html")
+        .eq("collaboration_id", collaborationId)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.contract_html) {
+        setContractHtmlFromTable(data.contract_html);
+      } else {
+        toast({
+          title: "No contract found",
+          description: "Contract has not been filled yet.",
+          variant: "destructive",
+        });
+        setContractHtmlFromTable(null);
+      }
+    } catch (err: any) {
+      console.error("Collaboration: Error loading contract from table", err);
+      toast({
+        title: "Unable to load contract",
+        description: err?.message || "Failed to fetch the contract.",
+        variant: "destructive",
+      });
+      setContractHtmlFromTable(null);
+    } finally {
+      setIsLoadingContractFromTable(false);
+    }
+  }, [toast]);
+
+  // Handle changing user ID
+  const handleChangeUserId = useCallback(async (actionId: string, newUserId: string) => {
+    try {
+      const { error } = await supabase
+        .from("collaboration_actions")
+        .update({ user_id: newUserId || null })
+        .eq("id", actionId);
+
+      if (error) {
+        throw error;
+      }
+
+      toast({
+        title: "User ID updated",
+        description: "The user ID has been successfully updated.",
+      });
+
+      setChangingUserId(null);
+      void fetchCollaborationActions();
+    } catch (err: any) {
+      console.error("Collaboration: Error updating user ID", err);
+      toast({
+        title: "Unable to update user ID",
+        description: err?.message || "Failed to update the user ID.",
+        variant: "destructive",
+      });
+    }
+  }, [toast, fetchCollaborationActions]);
+
+  // Handle deleting action
+  const handleDeleteAction = useCallback(async (actionId: string) => {
+    try {
+      const { error } = await supabase
+        .from("collaboration_actions")
+        .delete()
+        .eq("id", actionId);
+
+      if (error) {
+        throw error;
+      }
+
+      toast({
+        title: "Action deleted",
+        description: "The collaboration action has been successfully deleted.",
+      });
+
+      setDeletingAction(null);
+      void fetchCollaborationActions();
+    } catch (err: any) {
+      console.error("Collaboration: Error deleting action", err);
+      toast({
+        title: "Unable to delete action",
+        description: err?.message || "Failed to delete the action.",
+        variant: "destructive",
+      });
+    }
+  }, [toast, fetchCollaborationActions]);
+
+  // Handle toggling signed status
+  const handleToggleSigned = useCallback(async (actionId: string, currentStatus: boolean | null) => {
+    try {
+      const { error } = await supabase
+        .from("collaboration_actions")
+        .update({ is_signed: !currentStatus })
+        .eq("id", actionId);
+
+      if (error) {
+        throw error;
+      }
+
+      toast({
+        title: currentStatus ? "Contract unsigned" : "Contract signed",
+        description: `The contract has been marked as ${!currentStatus ? 'signed' : 'unsigned'}.`,
+      });
+
+      void fetchCollaborationActions();
+    } catch (err: any) {
+      console.error("Collaboration: Error toggling signed status", err);
+      toast({
+        title: "Unable to update signed status",
+        description: err?.message || "Failed to update the signed status.",
+        variant: "destructive",
+      });
+    }
+  }, [toast, fetchCollaborationActions]);
+
+  // Fetch campaign users for picker
+  useEffect(() => {
+    const fetchCampaignUsers = async () => {
+      if (!changingUserId || !changingUserId.collaborationId) {
+        return;
+      }
+
+      setLoadingCampaignUsers(true);
+      setUsersForPicker([]); // Reset users list
+      
+      try {
+        // Extract campaign key from collaboration_id (format: "CAM001-0001-CON0001")
+        const campaignKey = changingUserId.collaborationId.split("-")[0];
+        
+        if (!campaignKey) {
+          console.warn("Collaboration: Invalid collaboration ID format", changingUserId.collaborationId);
+          setUsersForPicker([]);
+          setLoadingCampaignUsers(false);
+          return;
+        }
+
+        // Fetch campaign data to get assigned users
+        const { data: campaignData, error: campaignError } = await supabase
+          .from("campaigns")
+          .select("users")
+          .eq("id", campaignKey)
+          .maybeSingle();
+
+        if (campaignError) {
+          console.error("Collaboration: Error fetching campaign", campaignError);
+          setUsersForPicker([]);
+          setLoadingCampaignUsers(false);
+          return;
+        }
+
+        if (!campaignData || !campaignData.users || !Array.isArray(campaignData.users)) {
+          console.log("Collaboration: No users found in campaign", campaignKey);
+          setUsersForPicker([]);
+          setLoadingCampaignUsers(false);
+          return;
+        }
+
+        // Extract user IDs from campaign.users array
+        const userIds = campaignData.users
+          .map((user: any) => user.id || user.user_id)
+          .filter(Boolean);
+
+        if (userIds.length === 0) {
+          console.log("Collaboration: No valid user IDs found in campaign users");
+          setUsersForPicker([]);
+          setLoadingCampaignUsers(false);
+          return;
+        }
+
+        // Fetch user profiles for these user IDs
+        const { data: userProfiles, error: usersError } = await supabase
+          .from("user_profiles")
+          .select("user_id, user_name, email")
+          .in("user_id", userIds)
+          .order("user_name", { ascending: true });
+
+        if (usersError) {
+          console.error("Collaboration: Error fetching user profiles", usersError);
+          setUsersForPicker([]);
+          setLoadingCampaignUsers(false);
+          return;
+        }
+
+        setUsersForPicker(
+          (userProfiles || []).map((user: any) => ({
+            id: user.user_id,
+            name: user.user_name || user.email || "Unknown",
+            email: user.email || "",
+          }))
+        );
+      } catch (err: any) {
+        console.error("Collaboration: Exception fetching campaign users", err);
+        setUsersForPicker([]);
+      } finally {
+        setLoadingCampaignUsers(false);
+      }
+    };
+
+    if (changingUserId) {
+      void fetchCampaignUsers();
+    } else {
+      setUsersForPicker([]);
+      setLoadingCampaignUsers(false);
+    }
+  }, [changingUserId]);
+
+  // Handle row click to navigate to collaboration assignment
+  const handleRowClick = useCallback(async (action: {
+    campaign_id: string | null;
+    influencer_id: string | null;
+    collaboration_id: string;
+    user_id: string | null;
+  }) => {
+    if (!action.collaboration_id || !action.influencer_id) {
+      toast({
+        title: "Missing information",
+        description: "Collaboration ID or Influencer ID is missing from collaboration_actions table.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Extract campaign key from collaboration_id (format: "CAM001-0001-CON0001")
+      // The campaign key is the first part before the first "-"
+      const campaignKey = action.collaboration_id.split("-")[0];
+      
+      if (!campaignKey) {
+        toast({
+          title: "Invalid collaboration ID",
+          description: "Could not extract campaign ID from collaboration_id.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Fetch campaign data from campaigns table using the extracted campaign key
+      // campaigns.id is text (like "CAM001"), not UUID
+      const { data: campaignData, error: campaignError } = await supabase
+        .from("campaigns")
+        .select(
+          "id, name, brand, objective, users, influencers, contract_id, contract_snapshot, start_date, end_date, is_long_term, status, progress, created_at"
+        )
+        .eq("id", campaignKey)
+        .maybeSingle();
+
+      if (campaignError) {
+        throw campaignError;
+      }
+
+      if (!campaignData) {
+        toast({
+          title: "Campaign not found",
+          description: `Campaign with ID "${campaignKey}" (extracted from collaboration_id "${action.collaboration_id}") could not be found in campaigns table.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const mappedCampaign = mapCampaignRow(campaignData);
+
+      // Navigate to collaboration assignment with:
+      // - influencer_id from collaboration_actions table
+      // - campaign_id extracted from collaboration_id
+      // - campaign data (which includes contract_id from campaigns table)
+      navigate('/collaborationAssignment', {
+        state: {
+          campaign: mappedCampaign,
+          influencerId: action.influencer_id, // From collaboration_actions.influencer_id
+          campaignId: campaignKey, // Extracted from collaboration_id (e.g., "CAM001")
+        },
+      });
+    } catch (err: any) {
+      console.error("Collaboration: Error fetching campaign for navigation", err);
+      toast({
+        title: "Unable to navigate",
+        description: err?.message || "An error occurred while loading the campaign from campaigns table.",
+        variant: "destructive",
+      });
+    }
+  }, [navigate, toast]);
 
   useEffect(() => {
     if (hasLoadedInitialAction) {
@@ -1385,26 +1892,9 @@ const Collaboration = () => {
         throw new Error('No contract content found in saved HTML');
       }
       
-      // CRITICAL: Ensure tiptap-rendered elements have proper spacing
-      // Apply inline styles directly to preserve spacing in print
-      const tiptapElements = container.querySelectorAll('.tiptap-rendered, [class*="tiptap-rendered"]');
-      tiptapElements.forEach((el) => {
-        const htmlEl = el as HTMLElement;
-        const currentStyle = htmlEl.getAttribute('style') || '';
-        if (!currentStyle.includes('line-height')) {
-          htmlEl.setAttribute('style', `${currentStyle}; line-height: 1.7;`.trim());
-        }
-      });
-      
-      // Apply paragraph spacing directly
-      const paragraphs = container.querySelectorAll('.tiptap-rendered p, [class*="tiptap-rendered"] p');
-      paragraphs.forEach((p) => {
-        const htmlP = p as HTMLElement;
-        const currentStyle = htmlP.getAttribute('style') || '';
-        if (!currentStyle.includes('margin-bottom') && !currentStyle.includes('margin:')) {
-          htmlP.setAttribute('style', `${currentStyle}; margin: 0 0 14px;`.trim());
-        }
-      });
+      // CRITICAL: Don't add custom line-height or margins
+      // Preserve only what's already in the contract HTML
+      // The original styles from saved HTML will be applied via extracted styles
       
       // CRITICAL: Preserve image wrapper attributes (data-alignment) before processing images
       // This ensures alignment is maintained during print
@@ -1571,40 +2061,31 @@ const Collaboration = () => {
           #contract-print-container * {
             visibility: visible !important;
           }
-          /* CRITICAL: Preserve line spacing and paragraph margins - HIGHEST PRIORITY */
+          /* CRITICAL: Preserve original styles from contract - don't override line-height or margins */
+          /* Only ensure visibility and basic display properties */
           #contract-print-container .tiptap-rendered,
           #contract-print-container [class*="tiptap-rendered"],
           #contract-print-container div.tiptap-rendered,
           #contract-print-container div[class*="tiptap-rendered"] {
-            line-height: 1.7 !important;
-            font-size: 11pt !important;
-            color: #111827 !important;
+            /* Don't set line-height - preserve original from contract */
+            /* Don't set font-size - preserve original from contract */
+            /* Don't set color - preserve original from contract */
             word-break: break-word !important;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+            visibility: visible !important;
           }
-          /* CRITICAL: Preserve paragraph spacing - FORCE APPLY */
+          /* CRITICAL: Preserve paragraph spacing from original contract - don't force margins */
           #contract-print-container .tiptap-rendered p,
           #contract-print-container [class*="tiptap-rendered"] p,
           #contract-print-container div.tiptap-rendered p,
           #contract-print-container div[class*="tiptap-rendered"] p,
           #contract-print-container p {
-            margin: 0 0 14px !important;
-            margin-top: 0 !important;
-            margin-left: 0 !important;
-            margin-right: 0 !important;
-            margin-bottom: 14px !important;
+            /* Don't set margin - preserve original from contract */
+            /* Don't set line-height - preserve original from contract */
             padding: 0 !important;
             display: block !important;
             visibility: visible !important;
-            line-height: 1.7 !important;
           }
-          /* Ensure empty paragraphs also have spacing */
-          #contract-print-container .tiptap-rendered p:empty,
-          #contract-print-container [class*="tiptap-rendered"] p:empty {
-            margin: 0 0 14px !important;
-            min-height: 1.7em !important;
-          }
-          /* CRITICAL: Preserve heading spacing */
+          /* CRITICAL: Preserve heading styles from original contract - don't force values */
           #contract-print-container .tiptap-rendered h1,
           #contract-print-container .tiptap-rendered h2,
           #contract-print-container .tiptap-rendered h3,
@@ -1617,84 +2098,63 @@ const Collaboration = () => {
           #contract-print-container [class*="tiptap-rendered"] h4,
           #contract-print-container [class*="tiptap-rendered"] h5,
           #contract-print-container [class*="tiptap-rendered"] h6 {
-            margin: 26px 0 14px !important;
-            line-height: 1.3 !important;
-            font-weight: 600 !important;
+            /* Don't set margin - preserve original from contract */
+            /* Don't set line-height - preserve original from contract */
+            /* Don't set font-size - preserve original from contract */
             display: block !important;
             visibility: visible !important;
           }
-          #contract-print-container .tiptap-rendered h1,
-          #contract-print-container [class*="tiptap-rendered"] h1 {
-            font-size: 30px !important;
-          }
-          #contract-print-container .tiptap-rendered h2,
-          #contract-print-container [class*="tiptap-rendered"] h2 {
-            font-size: 24px !important;
-          }
-          #contract-print-container .tiptap-rendered h3,
-          #contract-print-container [class*="tiptap-rendered"] h3 {
-            font-size: 20px !important;
-          }
-          #contract-print-container .tiptap-rendered h4,
-          #contract-print-container [class*="tiptap-rendered"] h4 {
-            font-size: 18px !important;
-          }
-          #contract-print-container .tiptap-rendered h5,
-          #contract-print-container [class*="tiptap-rendered"] h5 {
-            font-size: 16px !important;
-          }
-          #contract-print-container .tiptap-rendered h6,
-          #contract-print-container [class*="tiptap-rendered"] h6 {
-            font-size: 14px !important;
-          }
-          /* CRITICAL: Preserve list spacing */
+          /* CRITICAL: Preserve list styles from original contract - don't force values */
           #contract-print-container .tiptap-rendered ul,
           #contract-print-container .tiptap-rendered ol,
           #contract-print-container [class*="tiptap-rendered"] ul,
           #contract-print-container [class*="tiptap-rendered"] ol {
-            margin: 0 0 14px 26px !important;
-            padding: 0 !important;
+            /* Don't set margin - preserve original from contract */
+            /* Don't set padding - preserve original from contract */
             display: block !important;
             visibility: visible !important;
           }
-          /* CRITICAL: Preserve table spacing */
+          /* CRITICAL: Preserve table styles from original contract - don't force values */
           #contract-print-container .tiptap-rendered table,
           #contract-print-container [class*="tiptap-rendered"] table {
-            width: 100% !important;
-            border-collapse: collapse !important;
-            margin: 18px 0 !important;
-            font-size: 10.5pt !important;
+            /* Don't set margin - preserve original from contract */
+            /* Don't set font-size - preserve original from contract */
             display: table !important;
             visibility: visible !important;
           }
-          /* CRITICAL: Preserve blockquote spacing */
+          /* CRITICAL: Preserve blockquote styles from original contract - don't force values */
           #contract-print-container .tiptap-rendered blockquote,
           #contract-print-container [class*="tiptap-rendered"] blockquote {
-            margin: 14px 0 !important;
-            padding: 0 0 0 20px !important;
-            border-left: 3px solid #d1d5db !important;
+            /* Don't set margin - preserve original from contract */
+            /* Don't set padding - preserve original from contract */
+            /* Don't set border - preserve original from contract */
             display: block !important;
             visibility: visible !important;
           }
-          /* CRITICAL: Preserve pre/code spacing */
+          /* CRITICAL: Preserve pre/code styles from original contract - don't force values */
           #contract-print-container .tiptap-rendered pre,
           #contract-print-container [class*="tiptap-rendered"] pre {
-            margin: 14px 0 !important;
-            padding: 14px !important;
+            /* Don't set margin - preserve original from contract */
+            /* Don't set padding - preserve original from contract */
             display: block !important;
             visibility: visible !important;
           }
-          /* CRITICAL: Preserve line breaks and spacing */
+          /* CRITICAL: Preserve line breaks */
           #contract-print-container .tiptap-rendered br,
           #contract-print-container [class*="tiptap-rendered"] br {
             display: inline !important;
             visibility: visible !important;
           }
-          /* CRITICAL: Ensure all spacing is preserved - don't reset margins/padding */
+          /* CRITICAL: Ensure box-sizing but don't override line-height or spacing */
           #contract-print-container .tiptap-rendered *,
           #contract-print-container [class*="tiptap-rendered"] * {
-            /* Preserve original margins and padding unless explicitly overridden above */
             box-sizing: border-box !important;
+            /* Don't set line-height - preserve original from contract */
+          }
+          /* Ensure proper spacing between all block elements */
+          #contract-print-container .tiptap-rendered > * + *,
+          #contract-print-container [class*="tiptap-rendered"] > * + * {
+            /* This ensures spacing between sibling elements */
           }
           /* Ensure all content elements are visible */
           /* CRITICAL: Only set display for elements without inline styles to preserve positioning */
@@ -2067,6 +2527,9 @@ const Collaboration = () => {
         selectedAction,
         { timestamp }
       );
+
+      // Refresh collaboration actions
+      await fetchCollaborationActions();
 
       toast({
         title: "Action saved",
@@ -2451,8 +2914,8 @@ const Collaboration = () => {
   <div class="contract-preview-container">
     <div class="tiptap-rendered">
       ${cleanedHtml}
-    </div>
-  </div>
+              </div>
+            </div>
 </body>
 </html>`;
 
@@ -2547,25 +3010,25 @@ const Collaboration = () => {
                     {contractVariableEntries.length === 1 ? "" : "s"}.
                   </p>
                 )}
-              </div>
+                </div>
             </SheetDescription>
           </SheetHeader>
           <div className="mt-6 flex-1 overflow-hidden">
             <div className="flex h-full flex-col space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 Insert these tokens into the contract to auto-fill details from the campaign and platform.
-              </div>
+                  </div>
               <ScrollArea className="flex-1 pr-4">
                 <div className="space-y-3">
                   {contractVariablesLoading ? (
                     <div className="flex items-center justify-center py-6 text-sm text-slate-500">
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Loading contract variables...
-                    </div>
+                          </div>
                   ) : contractVariablesError ? (
                     <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                       {contractVariablesError}
-                    </div>
+                        </div>
                   ) : contractVariableEntries.length ? (
                     contractVariableEntries.map((item) => (
                       <div key={item.key} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm space-y-1">
@@ -2592,17 +3055,17 @@ const Collaboration = () => {
                         ) : (
                           item.value && <p className="text-xs text-emerald-600">{item.value}</p>
                         )}
-                      </div>
+                    </div>
                     ))
                   ) : (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
                       No variables are configured yet. You can add placeholders from the contract editor.
                     </div>
-                  )}
-                </div>
+                    )}
+                  </div>
               </ScrollArea>
-            </div>
-          </div>
+                            </div>
+                          </div>
           <div className="mt-6 flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setIsVariableSheetOpen(false)}>
               Close
@@ -2616,12 +3079,12 @@ const Collaboration = () => {
                 <span className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Updating...
-                </span>
-              ) : (
+                              </span>
+                        ) : (
                 "Update Contract"
-              )}
+                        )}
             </Button>
-          </div>
+                      </div>
         </SheetContent>
       </Sheet>
 
@@ -2672,22 +3135,22 @@ const Collaboration = () => {
               </DialogDescription>
             </DialogHeader>
             {savedContractHtml && (
-              <Button
-                size="sm"
-                variant="outline"
+                              <Button
+                                size="sm"
+                                variant="outline"
                 onClick={handlePrintContract}
                 className="flex items-center gap-2"
               >
                 <Printer className="h-4 w-4" />
                 Print
-              </Button>
+                              </Button>
             )}
-          </div>
+                            </div>
           {isLoadingSavedContract ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
               <span className="ml-2 text-sm text-slate-500">Loading contract...</span>
-            </div>
+                          </div>
           ) : savedContractHtml ? (
             <>
               {(() => {
@@ -2713,8 +3176,8 @@ const Collaboration = () => {
                   }}
                 />
               </ScrollArea>
-            </>
-          ) : (
+                            </>
+                          ) : (
             <p className="text-sm text-slate-500 py-12 text-center">
               No saved contract found. Please update the contract first.
             </p>
@@ -2734,405 +3197,478 @@ const Collaboration = () => {
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
                 <span>Loading collaboration workspace...</span>
-              </div>
-            </div>
+                        </div>
+                      </div>
           ) : error ? (
             <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-6 text-sm text-destructive">
               {error}
-            </div>
-          ) : !campaign ? (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-              <Card className="border-none bg-gradient-to-br from-white/95 to-slate-100 shadow-xl backdrop-blur">
-                <div className="p-6 space-y-4">
-                  <h2 className="text-xl font-semibold text-slate-900">No campaign selected</h2>
-                  <p className="text-sm text-slate-500">
-                    Choose a campaign from the campaigns list to manage collaboration details.
-                  </p>
-                  <Button size="sm" className="bg-primary text-white hover:bg-primary/90" onClick={() => navigate("/campaign")}>Go to Campaigns</Button>
-                </div>
-              </Card>
-              <Card className="border-none bg-gradient-to-b from-white/95 to-slate-100 shadow-lg backdrop-blur">
-                <div className="p-6 space-y-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900">Timeline</h2>
-                    <p className="text-sm text-slate-500">Key steps in the collaboration workflow.</p>
-                  </div>
-                  {timelineLoading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
                     </div>
                   ) : (
-                    <div className="relative pl-4">
-                      <span className="absolute left-0 top-2 bottom-2 w-px bg-slate-200" />
-                      <div className="space-y-5">
-                        {timelineEntries.length > 0 ? (
-                          timelineEntries.map((entry) => {
-                            const timestamp = new Date(entry.occurred_at).toLocaleString();
-                            const getActionIcon = () => {
-                              switch (entry.action_type) {
-                                case 'action_taken':
-                                  return '✓';
-                                case 'contract_sent':
-                                  return '📄';
-                                case 'contract_viewed':
-                                  return '👁️';
-                                case 'contract_updated':
-                                  return '🔄';
-                                case 'remark_added':
-                                  return '💬';
-                                default:
-                                  return '•';
-                              }
-                            };
-                            return (
-                              <div key={entry.id} className="relative rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
-                                <span className="absolute -left-[9px] top-4 h-4 w-4 rounded-full border border-white bg-primary shadow flex items-center justify-center text-[10px] text-white">
-                                  {getActionIcon()}
-                                </span>
-                                <div className="ml-2 space-y-1">
-                                  <h3 className="text-sm font-semibold text-slate-900">{entry.description}</h3>
-                                  {entry.remark && (
-                                    <p className="text-xs text-slate-500 leading-snug">Remark: {entry.remark}</p>
-                                  )}
-                                  {entry.action && (
-                                    <p className="text-xs text-slate-500 leading-snug">Action: {entry.action.replace('_', ' ')}</p>
-                                  )}
-                                  <p className="text-xs text-slate-400">{timestamp}</p>
-                                </div>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-8 text-center text-xs text-slate-400">
-                            No timeline entries yet. Actions and updates will appear here.
+            <>
+              {/* Collaboration Actions Table */}
+              <Card className="border-none bg-gradient-to-br from-white/95 to-slate-100">
+                <div className="p-6 space-y-4">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900">Collaboration Actions</h2>
+                    <p className="text-sm text-slate-500">All actions recorded in collaboration_actions table.</p>
+                  </div>
+                    {collaborationActionsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
                           </div>
-                        )}
-                      </div>
+                    ) : collaborationActions.length > 0 ? (
+                      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-slate-50 border-b border-slate-200">
+                              <tr>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Campaign</th>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Contract</th>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Influencer</th>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Action</th>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Collaboration ID</th>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700">User Name</th>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Date & Time</th>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {collaborationActions.map((action) => (
+                                <tr 
+                                  key={action.id} 
+                                  className="hover:bg-slate-50 transition-colors"
+                                >
+                                  <td 
+                                    className="px-4 py-3 text-slate-700 font-medium cursor-pointer"
+                                    onClick={() => handleRowClick(action)}
+                                  >
+                                    {action.campaign_name || <span className="text-slate-400">—</span>}
+                                  </td>
+                                  <td 
+                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    onClick={() => handleRowClick(action)}
+                                  >
+                                    {action.contract_name || <span className="text-slate-400">—</span>}
+                                  </td>
+                                  <td 
+                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    onClick={() => handleRowClick(action)}
+                                  >
+                                    {action.influencer_name || <span className="text-slate-400">—</span>}
+                                  </td>
+                                  <td 
+                                    className="px-4 py-3 cursor-pointer"
+                                    onClick={() => handleRowClick(action)}
+                                  >
+                                    <Badge variant="outline" className="capitalize">
+                                      {action.action ? action.action.replace('_', ' ') : '—'}
+                                    </Badge>
+                                  </td>
+                                  <td 
+                                    className="px-4 py-3 text-slate-600 font-mono text-xs cursor-pointer"
+                                    onClick={() => handleRowClick(action)}
+                                  >
+                                    {action.collaboration_id}
+                                  </td>
+                                  <td 
+                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    onClick={() => handleRowClick(action)}
+                                  >
+                                    {action.user_name || <span className="text-slate-400">—</span>}
+                                  </td>
+                                  <td 
+                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    onClick={() => handleRowClick(action)}
+                                  >
+                                    {new Date(action.occurred_at).toLocaleString()}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                      {/* Contract Fill/View Button */}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
+                                          try {
+                                            if (action.has_contract_html) {
+                                              void handleViewContractFromTable(action.collaboration_id);
+                                            } else {
+                                              void handleRowClick(action);
+                                            }
+                                          } catch (err) {
+                                            console.error("Collaboration: Error in contract button click", err);
+                                          }
+                                        }}
+                                        title={action.has_contract_html ? "View Contract" : "Fill Contract"}
+                                      >
+                                        <FileText 
+                                          className={`h-4 w-4 ${action.has_contract_html ? 'text-blue-600' : 'text-slate-400'}`} 
+                                        />
+                                      </Button>
+
+                                      {/* Change User ID Button */}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
+                                          try {
+                                            setChangingUserId({ 
+                                              id: action.id, 
+                                              currentUserId: action.user_id,
+                                              collaborationId: action.collaboration_id
+                                            });
+                                          } catch (err) {
+                                            console.error("Collaboration: Error setting changingUserId", err);
+                                          }
+                                        }}
+                                        title="Change User ID"
+                                      >
+                                        <UserCog className="h-4 w-4 text-slate-600" />
+                                      </Button>
+
+                                      {/* Delete Button */}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
+                                          try {
+                                            setDeletingAction(action.id);
+                                          } catch (err) {
+                                            console.error("Collaboration: Error setting deletingAction", err);
+                                          }
+                                        }}
+                                        title="Delete Action"
+                                      >
+                                        <Trash2 className="h-4 w-4 text-red-500" />
+                                      </Button>
+
+                                      {/* Signed Status Button */}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          e.preventDefault();
+                                          try {
+                                            handleToggleSigned(action.id, action.is_signed || false);
+                                          } catch (err) {
+                                            console.error("Collaboration: Error toggling signed status", err);
+                                          }
+                                        }}
+                                        title={action.is_signed ? "Mark as Unsigned" : "Mark as Signed"}
+                                      >
+                                        {action.is_signed ? (
+                                          <FileCheck className="h-4 w-4 text-green-600" />
+                                        ) : (
+                                          <CheckCircle2 className="h-4 w-4 text-slate-400" />
+                                        )}
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                     </div>
-                  )}
+                  </div>
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-8 text-center text-xs text-slate-400">
+                        No collaboration actions recorded yet.
                 </div>
-              </Card>
+                    )}
+            </div>
+                </Card>
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+
+    {/* Contract View Dialog from Table */}
+    <Dialog open={viewingContractFromTable !== null} onOpenChange={(open) => {
+      if (!open) {
+        setViewingContractFromTable(null);
+        setContractHtmlFromTable(null);
+      }
+    }}>
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden p-0">
+        <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4">
+          <DialogHeader className="flex-1">
+            <DialogTitle>Contract View</DialogTitle>
+            <DialogDescription>
+              View the contract with all variables replaced from the database.
+            </DialogDescription>
+          </DialogHeader>
+          {contractHtmlFromTable && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                // Print functionality with font preservation
+                const printWindow = window.open('', '_blank');
+                if (printWindow && contractHtmlFromTable) {
+                  // Extract body content
+                  let bodyContent = contractHtmlFromTable;
+                  if (contractHtmlFromTable.includes('<body>')) {
+                    bodyContent = contractHtmlFromTable.split('<body>')[1]?.split('</body>')[0] || contractHtmlFromTable;
+                  }
+                  
+                  // Extract existing styles
+                  const styleMatches = contractHtmlFromTable.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) || [];
+                  const existingStyles = styleMatches.map(match => {
+                    const content = match.replace(/<\/?style[^>]*>/gi, '');
+                    return content;
+                  }).join('\n');
+                  
+                  // Create complete HTML document with Google Fonts
+                  const printHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contract Print</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&family=Open+Sans:wght@300;400;600;700&family=Lato:wght@300;400;700&family=Montserrat:wght@300;400;500;600;700&family=Raleway:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Merriweather:wght@300;400;700&family=Source+Sans+Pro:wght@300;400;600;700&family=Poppins:wght@300;400;500;600;700&family=Nunito:wght@300;400;600;700&family=Ubuntu:wght@300;400;500;700&family=Crimson+Text:wght@400;600;700&family=Lora:wght@400;500;600;700&family=PT+Serif:wght@400;700&family=Dancing+Script:wght@400;500;600;700&family=Great+Vibes&family=Allura&family=Pacifico&family=Satisfy&family=Kalam:wght@300;400;700&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&display=swap" rel="stylesheet">
+  <style>
+    ${existingStyles}
+    /* Ensure signature fonts are preserved in print */
+    span[style*="font-family"][style*="Dancing Script"],
+    span[style*="font-family"][style*="Great Vibes"],
+    span[style*="font-family"][style*="Allura"],
+    span[style*="font-family"][style*="Brush Script"],
+    span[style*="font-family"][style*="Lucida Handwriting"],
+    span[style*="font-family"][style*="Pacifico"],
+    span[style*="font-family"][style*="Satisfy"],
+    span[style*="font-family"][style*="Kalam"],
+    span[style*="font-family"][style*="Caveat"],
+    span[style*="font-family"][style*="Permanent Marker"] {
+      font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive !important;
+    }
+    @media print {
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+      span[style*="font-family"][style*="Dancing Script"],
+      span[style*="font-family"][style*="Great Vibes"],
+      span[style*="font-family"][style*="Allura"],
+      span[style*="font-family"][style*="Brush Script"],
+      span[style*="font-family"][style*="Lucida Handwriting"],
+      span[style*="font-family"][style*="Pacifico"],
+      span[style*="font-family"][style*="Satisfy"],
+      span[style*="font-family"][style*="Kalam"],
+      span[style*="font-family"][style*="Caveat"],
+      span[style*="font-family"][style*="Permanent Marker"] {
+        font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  ${bodyContent}
+</body>
+</html>`;
+                  
+                  printWindow.document.write(printHtml);
+                  printWindow.document.close();
+                  
+                  // Wait for fonts to load before printing
+                  printWindow.onload = () => {
+                    // Wait a bit for fonts to load
+                    setTimeout(() => {
+                      printWindow.print();
+                    }, 500);
+                  };
+                }
+              }}
+              className="flex items-center gap-2"
+            >
+              <Printer className="h-4 w-4" />
+              Print
+            </Button>
+          )}
+        </div>
+        <style>{`
+          .contract-preview-container .tiptap-rendered .signature-box,
+          .contract-preview-container .tiptap-rendered [data-signature="true"] {
+            display: inline-block !important;
+            width: 200px !important;
+            height: 140px !important;
+            border: 1px solid #9ca3af !important;
+            background-color: transparent !important;
+            border-radius: 3px !important;
+            padding: 2px !important;
+            text-align: center !important;
+            vertical-align: middle !important;
+            line-height: 136px !important;
+            font-size: 10px !important;
+            color: #6b7280 !important;
+            box-sizing: border-box !important;
+            margin-top: 20px !important;
+            margin-bottom: 20px !important;
+            margin-left: 25px !important;
+            margin-right: 25px !important;
+            min-width: 200px !important;
+            white-space: nowrap !important;
+            flex-shrink: 0 !important;
+          }
+          .contract-preview-container .tiptap-rendered .signature-box + .signature-box,
+          .contract-preview-container .tiptap-rendered [data-signature="true"] + [data-signature="true"] {
+            margin-left: 50px !important;
+          }
+          .contract-preview-container .tiptap-rendered span[style*="font-size: 10px"] {
+            white-space: nowrap !important;
+            display: inline-block !important;
+          }
+          .contract-preview-container .tiptap-rendered {
+            overflow-x: auto !important;
+          }
+        `}</style>
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0 px-6 pb-6">
+          {isLoadingContractFromTable ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <span className="ml-2 text-sm text-slate-500">Loading contract...</span>
+            </div>
+          ) : contractHtmlFromTable ? (
+            <>
+              {(() => {
+                const { css } = extractStylesFromHtml(contractHtmlFromTable);
+                return (
+                  css && (
+                    <style
+                      dangerouslySetInnerHTML={{
+                        __html: css,
+                      }}
+                    />
+                  )
+                );
+              })()}
+              <ScrollArea 
+                className="h-full contract-preview-container rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-inner"
+                style={{ height: 'calc(90vh - 200px)' }}
+              >
+                <div
+                  className="tiptap-rendered"
+                  dangerouslySetInnerHTML={{
+                    __html: extractBodyContent(contractHtmlFromTable),
+                  }}
+                />
+              </ScrollArea>
+            </>
+          ) : (
+            <p className="text-sm text-slate-500 py-12 text-center">
+              No contract found.
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Change User ID Dialog */}
+    <Dialog open={changingUserId !== null} onOpenChange={(open) => {
+      if (!open) {
+        setChangingUserId(null);
+        setUsersForPicker([]);
+      }
+    }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Change User ID</DialogTitle>
+          <DialogDescription>
+            Select a user assigned to this campaign for this collaboration action.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          {loadingCampaignUsers ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+              <span className="ml-2 text-sm text-slate-500">Loading campaign users...</span>
+            </div>
+          ) : usersForPicker.length === 0 ? (
+            <div className="text-sm text-slate-500 py-4 text-center">
+              No users assigned to this campaign.
             </div>
           ) : (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-              <Card className="border-none bg-gradient-to-br from-white/95 to-slate-100 shadow-xl backdrop-blur">
-                <div className="p-6 space-y-5">
-                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <h2 className="text-xl font-semibold text-slate-900">Assigned Influencer</h2>
-                      <p className="text-sm text-slate-500">
-                        Showing the first collaborator assigned to this campaign.
-                      </p>
-                      <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                          <p className="font-semibold text-slate-700">Campaign ID</p>
-                          <p className="text-[11px] text-slate-500 break-all">
-                            {campaignKey ?? resolvedCampaignId ?? "Unknown"}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                          <p className="font-semibold text-slate-700">Collaboration ID</p>
-                          <p className="text-[11px] text-slate-500 break-all">
-                            {collaborationId ?? "Not generated"}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                          <p className="font-semibold text-slate-700">Influencer PID</p>
-                          <p className="text-[11px] text-slate-500 break-all">
-                            {influencer?.pid ?? influencer?.id ?? "Not assigned"}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                          <p className="font-semibold text-slate-700">Contract PID</p>
-                          <p className="text-[11px] text-slate-500 break-all">
-                            {resolvedContractPid ?? (contractMeta?.id ? "Fetching..." : "No contract linked")}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                          <p className="font-semibold text-slate-700">Employee ID</p>
-                          <p className="text-[11px] text-slate-500 break-all">
-                            {campaign?.users?.[0]?.employeeId ?? "Not assigned"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    {influencer && (
-                      <Badge className="rounded-full bg-emerald-100 text-emerald-700 border-emerald-200 capitalize">
-                        Status: {influencer.status ?? "--"}
-                      </Badge>
-                    )}
-                  </div>
-
-                  {influencer ? (
-                    <div className="space-y-4 rounded-3xl border border-slate-200 bg-white/90 p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-3">
-                            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary shadow">
-                              {influencer.name.charAt(0).toUpperCase()}
-                            </span>
-                            <div>
-                              <p className="text-lg font-semibold text-slate-900">{influencer.name}</p>
-                              <p className="text-sm text-slate-500">
-                                Influencer PID: {influencer.pid ?? influencer.id ?? "Not provided"}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 shadow-sm">
-                            <p>Email: <span className="font-medium">{influencer.email ?? "Not provided"}</span></p>
-                            <p className="text-xs text-slate-500">
-                              Contact: {influencer.handles.length ? influencer.handles[0].url : "Not available"}
-                            </p>
-                          </div>
-                        </div>
-                        {influencer.country && (
-                          <Badge className="rounded-full bg-primary/10 text-primary border-primary/20 text-xs px-3 py-1">
-                            {influencer.country}
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                        <span className="uppercase tracking-wide text-slate-400">Platforms</span>
-                        {influencer.handles.length ? (
-                          influencer.handles.map((handle) => {
-                            const meta = getPlatformMeta(handle.platform);
-                            return meta.icon ? (
-                              <img
-                                key={`${influencer.id}-${handle.platform}`}
-                                src={meta.icon}
-                                alt={meta.label}
-                                title={meta.label}
-                                className="h-6 w-6 rounded-full border border-slate-200 bg-white p-[2px] shadow-sm"
-                              />
-                            ) : (
-                              <span
-                                key={`${influencer.id}-${handle.platform}`}
-                                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] capitalize shadow-sm"
-                              >
-                                {meta.label}
-                              </span>
-                            );
-                          })
-                        ) : (
-                          <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px]">
-                            No platforms
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <div className="rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 text-sm text-slate-700 shadow-sm">
-                          <p className="text-xs uppercase tracking-wide text-slate-400">Latest update</p>
-                          <p className="mt-2 leading-snug">
-                            {influencer.status === "pending"
-                              ? "Awaiting contract confirmation"
-                              : "No recent updates"}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 text-sm text-slate-700 shadow-sm">
-                          <p className="text-xs uppercase tracking-wide text-slate-400">Internal notes</p>
-                          <p className="mt-2 leading-snug">
-                            Capture outreach notes and next steps here once CRM sync is connected.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 text-sm text-slate-700 shadow-sm space-y-3">
-                        <p className="text-xs uppercase tracking-wide text-slate-400">Actions</p>
-                        <div className="space-y-4">
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-3">
-                            <Select value={selectedAction || undefined} onValueChange={(value) => setSelectedAction(value as ActionOption)}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select an action" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="interested">Interested</SelectItem>
-                                <SelectItem value="not_interested">Not Interested</SelectItem>
-                                <SelectItem value="callback">Callback</SelectItem>
-                                <SelectItem value="done">Done</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            {selectedAction === "callback" && (
-                              <div className="grid gap-2 md:grid-cols-2">
-                                <Input
-                                  type="date"
-                                  value={callbackDate}
-                                  onChange={(event) => setCallbackDate(event.target.value)}
-                                  className="w-full"
-                                  aria-label="Select callback date"
-                                />
-                                <Input
-                                  type="time"
-                                  value={callbackTime}
-                                  onChange={(event) => setCallbackTime(event.target.value)}
-                                  className="w-full"
-                                  aria-label="Select callback time"
-                                />
-                              </div>
-                            )}
-                            <Textarea
-                              rows={2}
-                              placeholder="Add remarks..."
-                              value={actionRemark}
-                              onChange={(event) => setActionRemark(event.target.value)}
-                            />
-                            <div className="flex justify-end">
-                              <Button
-                                size="sm"
-                                className="bg-primary text-white hover:bg-primary/90"
-                                onClick={handleActionSubmit}
-                                disabled={
-                                  !selectedAction ||
-                                  !isActionDirty ||
-                                  (selectedAction === "callback" && (!callbackDate || !callbackTime))
-                                }
-                              >
-                                Save Action
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-3">
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={handleFillContract}
-                              >
-                                Fill Contract
-                              </Button>
-                              <Button
-                                size="sm"
-                                className="bg-primary text-white hover:bg-primary/90"
-                                onClick={async () => {
-                                  const timestamp = new Date().toLocaleString();
-                                  setLastAction({
-                                    label: "Contract sent",
-                                    timestamp,
-                                  });
-                                  await logTimelineEntry(
-                                    'contract_sent',
-                                    'Contract sent to influencer',
-                                    null,
-                                    null,
-                                    { timestamp }
-                                  );
-                                  toast({
-                                    title: "Contract sent",
-                                    description: "Contract has been sent to the influencer.",
-                                  });
-                                }}
-                              >
-                                Send Contract
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={async () => {
-                                  await handleViewContract();
-                                  await logTimelineEntry(
-                                    'contract_viewed',
-                                    'Contract viewed',
-                                    null,
-                                    null
-                                  );
-                                }}
-                                disabled={!collaborationId}
-                              >
-                                View Contract
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                          {lastAction ? (
-                            <>
-                              <p className="font-semibold text-slate-700">{lastAction.label}</p>
-                              <p>{lastAction.timestamp}</p>
-                              {lastAction.remark && (
-                                <p className="mt-1 text-slate-500">Remark: {lastAction.remark}</p>
-                              )}
-                            </>
-                          ) : (
-                            <p>No recent actions recorded.</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-12 text-center text-sm text-slate-500">
-                      No influencers assigned to this campaign yet.
-                    </div>
-                  )}
-                </div>
-              </Card>
-
-              <Card className="border-none bg-gradient-to-b from-white/95 to-slate-100 shadow-lg backdrop-blur">
-                <div className="p-6 space-y-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900">Timeline</h2>
-                    <p className="text-sm text-slate-500">Key steps in the collaboration workflow.</p>
-                  </div>
-                  {timelineLoading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-                    </div>
-                  ) : (
-                    <div className="relative pl-4">
-                      <span className="absolute left-0 top-2 bottom-2 w-px bg-slate-200" />
-                      <div className="space-y-5">
-                        {timelineEntries.length > 0 ? (
-                          timelineEntries.map((entry) => {
-                            const timestamp = new Date(entry.occurred_at).toLocaleString();
-                            const getActionIcon = () => {
-                              switch (entry.action_type) {
-                                case 'action_taken':
-                                  return '✓';
-                                case 'contract_sent':
-                                  return '📄';
-                                case 'contract_viewed':
-                                  return '👁️';
-                                case 'contract_updated':
-                                  return '🔄';
-                                case 'remark_added':
-                                  return '💬';
-                                default:
-                                  return '•';
-                              }
-                            };
-                            return (
-                              <div key={entry.id} className="relative rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
-                                <span className="absolute -left-[9px] top-4 h-4 w-4 rounded-full border border-white bg-primary shadow flex items-center justify-center text-[10px] text-white">
-                                  {getActionIcon()}
-                                </span>
-                                <div className="ml-2 space-y-1">
-                                  <h3 className="text-sm font-semibold text-slate-900">{entry.description}</h3>
-                                  {entry.remark && (
-                                    <p className="text-xs text-slate-500 leading-snug">Remark: {entry.remark}</p>
-                                  )}
-                                  {entry.action && (
-                                    <p className="text-xs text-slate-500 leading-snug">Action: {entry.action.replace('_', ' ')}</p>
-                                  )}
-                                  <p className="text-xs text-slate-400">{timestamp}</p>
-                                </div>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-8 text-center text-xs text-slate-400">
-                            No timeline entries yet. Actions and updates will appear here.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            </div>
+            <Select
+              value={changingUserId?.currentUserId || undefined}
+              onValueChange={(value) => {
+                try {
+                  if (changingUserId) {
+                    // If value is "__CLEAR__", set it to null/empty
+                    const finalValue = value === "__CLEAR__" ? null : value;
+                    void handleChangeUserId(changingUserId.id, finalValue || "");
+                  }
+                } catch (err) {
+                  console.error("Collaboration: Error in onValueChange", err);
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a user from campaign" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__CLEAR__">No User (Clear)</SelectItem>
+                {usersForPicker.map((user) => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {user.name} {user.email ? `(${user.email})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
-          </main>
         </div>
-      </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => {
+            setChangingUserId(null);
+            setUsersForPicker([]);
+          }}>
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Delete Confirmation Dialog */}
+    <AlertDialog open={deletingAction !== null} onOpenChange={(open) => {
+      if (!open) {
+        setDeletingAction(null);
+      }
+    }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete Collaboration Action</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete this collaboration action? This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setDeletingAction(null)}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (deletingAction) {
+                void handleDeleteAction(deletingAction);
+              }
+            }}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </>
   );
 };

@@ -32,6 +32,7 @@ interface UserProfile {
 
 interface ContractData {
   id: string;
+  pid?: string | null;
   contract_name: string;
   description?: string;
   content?: string;
@@ -129,6 +130,14 @@ const DEFAULT_COLUMN_SUGGESTIONS: Record<
     { name: "name", dataType: "text" },
     { name: "email", dataType: "text" },
   ],
+};
+
+const CONTRACT_PID_PREFIX = "CON";
+
+const extractContractPidNumber = (pid?: string | null): number => {
+  if (!pid) return -1;
+  const match = `${pid}`.match(/(\d+)/);
+  return match ? Number.parseInt(match[1], 10) : -1;
 };
 
 type VariableEntry = {
@@ -298,7 +307,8 @@ body {
   margin: 14px 0;
   font-family: var(--font-mono);
   font-size: 10pt;
-  white-space: pre-wrap;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
 }
 
 .tiptap-rendered code {
@@ -378,6 +388,47 @@ body {
   height: auto;
   display: block;
   margin: 18px 0;
+}
+
+.tiptap-rendered .signature-box,
+.tiptap-rendered [data-signature="true"],
+.ProseMirror .signature-box,
+.ProseMirror [data-signature="true"] {
+  display: inline-block !important;
+  width: 200px !important;
+  height: 140px !important;
+  border: 1px solid #9ca3af !important;
+  background-color: transparent !important;
+  border-radius: 3px !important;
+  padding: 2px !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  line-height: 136px !important;
+  font-size: 10px !important;
+  color: #6b7280 !important;
+  box-sizing: border-box !important;
+  margin-top: 20px !important;
+  margin-bottom: 20px !important;
+  margin-left: 25px !important;
+  margin-right: 25px !important;
+  /* Force spacing between signature boxes on same line */
+  min-width: 200px !important;
+  white-space: nowrap !important;
+}
+
+/* Ensure spacing between adjacent signature boxes */
+.tiptap-rendered .signature-box + .signature-box,
+.tiptap-rendered [data-signature="true"] + [data-signature="true"],
+.ProseMirror .signature-box + .signature-box,
+.ProseMirror [data-signature="true"] + [data-signature="true"] {
+  margin-left: 50px !important; /* Double spacing when boxes are adjacent */
+}
+
+/* Prevent parent span from wrapping signature boxes */
+.tiptap-rendered span[style*="font-size: 10px"],
+.ProseMirror span[style*="font-size: 10px"] {
+  white-space: nowrap !important;
+  display: inline-block !important;
 }
 `;
 
@@ -841,6 +892,7 @@ const ContractEditor = () => {
   const [variableColumnsError, setVariableColumnsError] = useState<string | null>(null);
   const [variables, setVariables] = useState<Record<string, VariableEntry>>({});
   const [contractId, setContractId] = useState<string | null>(null);
+  const [contractPid, setContractPid] = useState<string | null>(null);
   const [isLoadingContract, setIsLoadingContract] = useState<boolean>(false);
   const { toast } = useToast();
   const [zoomLevel, setZoomLevel] = useState<number>(100);
@@ -888,6 +940,53 @@ const ContractEditor = () => {
     row?: Record<string, any>;
   }>({ open: false, entries: [] });
   const supabaseDragPreviewRef = useRef<HTMLElement | null>(null);
+
+  const fetchNextContractPid = useCallback(async (): Promise<string> => {
+    const { data, error } = await supabase
+      .from("contracts")
+      .select("pid")
+      .not("pid", "is", null);
+
+    if (error) {
+      console.error("ContractEditor: Failed to fetch contract pids", error);
+      throw error;
+    }
+
+    let maxNumber = 0;
+    ((data ?? []) as Array<{ pid: string | null }>).forEach((row) => {
+      const value = extractContractPidNumber(row.pid);
+      if (value > maxNumber) {
+        maxNumber = value;
+      }
+    });
+
+    const nextNumber = maxNumber + 1;
+    return `${CONTRACT_PID_PREFIX}${String(nextNumber).padStart(4, "0")}`;
+  }, []);
+
+  useEffect(() => {
+    if (contractId) {
+      return;
+    }
+
+    let isMounted = true;
+    fetchNextContractPid()
+      .then((pid) => {
+        if (isMounted) {
+          setContractPid(pid);
+        }
+      })
+      .catch((error) => {
+        console.warn("ContractEditor: unable to prefetch contract pid", error);
+        if (isMounted) {
+          setContractPid(null);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [contractId, fetchNextContractPid]);
 
   const handleOpenVariableDialog = useCallback(() => {
     setVariableKeyOption(VARIABLE_KEY_DEFAULT);
@@ -995,6 +1094,10 @@ const ContractEditor = () => {
         if (error) {
           throw error;
         }
+        
+        if (data) {
+          setContractPid((data as any).pid ?? contractPid ?? null);
+        }
 
         const typedData = (data ?? []) as Array<{ column_name: string; data_type: string | null; ordinal_position?: number }>;
         const mapped = typedData.map((item) => ({
@@ -1070,6 +1173,10 @@ const ContractEditor = () => {
 
         if (error) {
           throw error;
+        }
+        
+        if (data) {
+          setContractPid((data as any).pid ?? contractPid ?? null);
         }
 
         const typedData = data as Array<{ tablename: string }> | null;
@@ -1990,6 +2097,7 @@ const ContractEditor = () => {
             return;
           }
 
+          setContractPid(contractData.pid ?? null);
           setContractName(contractData.contract_name || '');
           setContractDescription((contractData as ContractData).description || '');
           setContractContent(unwrapContentFromStorage(contractData.content));
@@ -2084,10 +2192,22 @@ const ContractEditor = () => {
         });
       } else {
         // Create new contract
+        let pidToUse = contractPid;
+        if (!pidToUse) {
+          try {
+            pidToUse = await fetchNextContractPid();
+            setContractPid(pidToUse);
+          } catch (pidError) {
+            console.warn("ContractEditor: unable to generate contract pid", pidError);
+            pidToUse = null;
+          }
+        }
+
         const { data, error } = await supabase
           .from('contracts')
           // @ts-ignore - Supabase type inference issue
           .insert({
+            pid: pidToUse,
             contract_name: contractName.trim(),
             description: contractDescription.trim() || null,
             content: styledContent,
@@ -2100,6 +2220,11 @@ const ContractEditor = () => {
 
         if (error) {
           throw error;
+        }
+        
+        if (data) {
+          setContractId((data as any).id ?? null);
+          setContractPid((data as any).pid ?? pidToUse ?? null);
         }
         
         toast({
@@ -2172,10 +2297,22 @@ const ContractEditor = () => {
         });
       } else {
         // Create new draft
+        let pidToUse = contractPid;
+        if (!pidToUse) {
+          try {
+            pidToUse = await fetchNextContractPid();
+            setContractPid(pidToUse);
+          } catch (pidError) {
+            console.warn("ContractEditor: unable to generate contract pid for draft", pidError);
+            pidToUse = null;
+          }
+        }
+
         const { data, error } = await supabase
           .from('contracts')
           // @ts-ignore - Supabase type inference issue
           .insert({
+            pid: pidToUse,
             contract_name: contractName.trim(),
             description: contractDescription.trim() || null,
             content: styledContent || '',
@@ -2188,6 +2325,11 @@ const ContractEditor = () => {
 
         if (error) {
           throw error;
+        }
+        
+        if (data) {
+          setContractId((data as any).id ?? null);
+          setContractPid((data as any).pid ?? pidToUse ?? null);
         }
         
         toast({
@@ -2232,13 +2374,23 @@ const ContractEditor = () => {
 
     // Insert variable placeholder in format {{variable_key}}
     const trimmedKey = variableKey.trim();
-    const variablePlaceholder = `<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">var[{{${trimmedKey}}}]</span>`;
+    
+    // Special handling for signature variable - create a box
+    let variablePlaceholder: string;
+    if (trimmedKey === 'signature') {
+      variablePlaceholder = `<span class="signature-box" data-signature="true" style="display: inline-block !important; width: 200px !important; height: 140px !important; border: 1px solid #9ca3af !important; background-color: transparent !important; border-radius: 3px !important; padding: 2px !important; text-align: center !important; vertical-align: middle !important; line-height: 136px !important; font-size: 10px !important; color: #6b7280 !important; box-sizing: border-box !important; margin-top: 20px !important; margin-bottom: 20px !important; margin-left: 25px !important; margin-right: 25px !important;">var[{{${trimmedKey}}}]</span>`;
+    } else {
+      variablePlaceholder = `<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">var[{{${trimmedKey}}}]</span>`;
+    }
 
     if (editor) {
+      // Insert as HTML - TipTap will parse it using the SignatureBox node extension
+      // Add a space after to ensure spacing between boxes on the same line
       editor
         .chain()
         .focus()
-        .insertContent(`${variablePlaceholder} `)
+        .insertContent(variablePlaceholder)
+        .insertContent(' ') // Add space after signature box for same-line spacing
         .run();
     } else {
       // Fallback in case editor isn't ready yet
@@ -2521,6 +2673,14 @@ const ContractEditor = () => {
                     required
                     className="text-2xl font-bold border-0 border-b border-transparent hover:border-gray-300 focus:border-[#8b5cf6] rounded-none px-0 h-auto py-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">
+                    Contract PID:{" "}
+                    <span className="font-medium text-gray-700">
+                      {contractPid ?? "Will be assigned on save"}
+                    </span>
+                  </p>
                 </div>
                 <div>
                   <textarea

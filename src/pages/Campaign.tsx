@@ -194,7 +194,7 @@ const Campaign = () => {
       try {
         const { data, error } = await supabase
           .from("contracts")
-          .select("id, contract_name, description, status")
+          .select("id, pid, contract_name, description, status")
           .order("contract_name", { ascending: true });
 
         if (error) {
@@ -205,6 +205,7 @@ const Campaign = () => {
           ((data as any[]) ?? [])
             .map((item: any) => ({
               id: item.id as string,
+              pid: (item.pid as string | null) ?? null,
               name: (item.contract_name as string | null) ?? "Untitled Contract",
               description: (item.description as string | null) ?? null,
               status: (item.status as string | null) ?? null,
@@ -481,13 +482,15 @@ const Campaign = () => {
   ): Promise<boolean> => {
     setCampaignLoadingState(campaign.id, true);
     try {
+      // Update the campaign with new users array
       const { data, error } = await (supabase as any)
         .from("campaigns")
         .update({ users: updatedUsers })
         .eq("id", campaign.id)
-        .select("id");
+        .select("id, users");
 
       if (error) {
+        console.error("Campaign: Supabase error updating users", error);
         throw error;
       }
 
@@ -495,9 +498,31 @@ const Campaign = () => {
         throw new Error("Campaign not found or could not be updated.");
       }
 
+      // Refetch the updated campaign to get the latest data
+      const { data: updatedCampaign, error: fetchError } = await supabase
+        .from("campaigns")
+        .select("id, name, brand, objective, users, influencers, contract_id, contract_snapshot, start_date, end_date, is_long_term, status, progress, created_at")
+        .eq("id", campaign.id)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error("Campaign: Error fetching updated campaign", fetchError);
+        // Still update local state even if refetch fails
       setCampaigns((prev) =>
         prev.map((item) => (item.id === campaign.id ? { ...item, users: updatedUsers } : item))
       );
+      } else if (updatedCampaign) {
+        // Update with the fetched data
+        const mapped = mapCampaignRow(updatedCampaign);
+        setCampaigns((prev) =>
+          prev.map((item) => (item.id === campaign.id ? mapped : item))
+        );
+      } else {
+        // Fallback to local state update
+        setCampaigns((prev) =>
+          prev.map((item) => (item.id === campaign.id ? { ...item, users: updatedUsers } : item))
+        );
+      }
 
       toast({
         title: "Users updated",
@@ -525,13 +550,15 @@ const Campaign = () => {
   ): Promise<boolean> => {
     setCampaignLoadingState(campaign.id, true);
     try {
+      // Update the campaign with new influencers array
       const { data, error } = await (supabase as any)
         .from("campaigns")
         .update({ influencers: updatedInfluencers })
         .eq("id", campaign.id)
-        .select("id");
+        .select("id, influencers");
 
       if (error) {
+        console.error("Campaign: Supabase error updating influencers", error);
         throw error;
       }
 
@@ -539,11 +566,35 @@ const Campaign = () => {
         throw new Error("Campaign not found or could not be updated.");
       }
 
+      // Refetch the updated campaign to get the latest data
+      const { data: updatedCampaign, error: fetchError } = await supabase
+        .from("campaigns")
+        .select("id, name, brand, objective, users, influencers, contract_id, contract_snapshot, start_date, end_date, is_long_term, status, progress, created_at")
+        .eq("id", campaign.id)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error("Campaign: Error fetching updated campaign", fetchError);
+        // Still update local state even if refetch fails
       setCampaigns((prev) =>
         prev.map((item) =>
           item.id === campaign.id ? { ...item, influencers: updatedInfluencers } : item
         )
       );
+      } else if (updatedCampaign) {
+        // Update with the fetched data
+        const mapped = mapCampaignRow(updatedCampaign);
+        setCampaigns((prev) =>
+          prev.map((item) => (item.id === campaign.id ? mapped : item))
+        );
+      } else {
+        // Fallback to local state update
+        setCampaigns((prev) =>
+          prev.map((item) =>
+            item.id === campaign.id ? { ...item, influencers: updatedInfluencers } : item
+          )
+        );
+      }
 
       toast({
         title: "Influencers updated",
@@ -812,9 +863,64 @@ const Campaign = () => {
       const inserted = mapCampaignRow(data);
       setCampaigns((prev) => [inserted, ...prev.filter((campaign) => campaign.id !== inserted.id)]);
 
+      // Create collaboration_action entries for all influencers
+      if (selectedInfluencers.length > 0) {
+        try {
+          const isUuid = (value: string | undefined | null): value is string =>
+            Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
+
+          const toDeterministicUuid = (input: string): string => {
+            const hash = input.split("").reduce((acc, char) => {
+              const hash = ((acc << 5) - acc) + char.charCodeAt(0);
+              return hash & hash;
+            }, 0);
+            const hex = Math.abs(hash).toString(16).padStart(32, "0");
+            return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((Math.abs(hash) % 4) + 8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+          };
+
+          const campaignKey = inserted.id;
+          const resolvedCampaignId = isUuid(campaignKey) 
+            ? campaignKey 
+            : toDeterministicUuid(`campaign:${campaignKey}`);
+          
+          const contractPid = selectedContract?.pid ?? "none";
+          
+          // Create collaboration_action entries for each influencer
+          const collaborationActions = selectedInfluencers.map((influencer) => {
+            const influencerKey = influencer.pid ?? influencer.id ?? "none";
+            const collaborationId = `${campaignKey}-${influencerKey}-${contractPid}`;
+            
+            return {
+              campaign_id: resolvedCampaignId,
+              influencer_id: influencer.id, // This should be a UUID
+              collaboration_id: collaborationId,
+              user_id: null, // Blank as requested
+              action: "", // Empty string since action is required (NOT NULL)
+              remark: null,
+              contract_id: selectedContract?.id ?? null,
+            };
+          });
+
+          // Insert all collaboration actions
+          const { error: actionsError } = await supabase
+            .from("collaboration_actions")
+            .insert(collaborationActions as any);
+
+          if (actionsError) {
+            console.error("Campaign: Error creating collaboration actions", actionsError);
+            // Don't fail the campaign creation if actions fail
+          } else {
+            console.log(`Campaign: Created ${collaborationActions.length} collaboration action entries`);
+          }
+        } catch (actionsErr: any) {
+          console.error("Campaign: Exception creating collaboration actions", actionsErr);
+          // Don't fail the campaign creation if actions fail
+        }
+      }
+
       toast({
         title: "Campaign Created",
-        description: `"${inserted.name}" has been saved.`,
+        description: `"${inserted.name}" has been saved${selectedInfluencers.length > 0 ? ` with ${selectedInfluencers.length} collaboration action${selectedInfluencers.length !== 1 ? 's' : ''} created.` : '.'}`,
       });
 
       resetCreateForm();
@@ -841,6 +947,7 @@ const Campaign = () => {
         campaign.objective.toLowerCase().includes(query) ||
         campaign.id.toLowerCase().includes(query) ||
         (campaign.contract?.name ?? "").toLowerCase().includes(query) ||
+        (campaign.contract?.pid ?? "").toLowerCase().includes(query) ||
         (campaign.contract?.status ?? "").toLowerCase().includes(query) ||
         (campaign.contract?.description ?? "").toLowerCase().includes(query)
       ) {
@@ -1179,7 +1286,19 @@ const Campaign = () => {
                     key={campaign.id}
                     role="button"
                     tabIndex={0}
-                    onClick={() => handleNavigateToCampaign(campaign)}
+                    onClick={(e) => {
+                      // Don't navigate if clicking on buttons, dropdowns, or their children
+                      const target = e.target as HTMLElement;
+                      if (
+                        target.closest('button') ||
+                        target.closest('[role="menuitem"]') ||
+                        target.closest('[data-radix-popper-content-wrapper]') ||
+                        target.closest('[data-radix-dropdown-menu-content]')
+                      ) {
+                        return;
+                      }
+                      handleNavigateToCampaign(campaign);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
@@ -1294,6 +1413,11 @@ const Campaign = () => {
                           <p className="text-sm font-semibold text-foreground leading-tight">
                             {campaign.contract?.name ?? "Not selected"}
                           </p>
+                      {campaign.contract?.pid && (
+                        <p className="text-[11px] text-muted-foreground leading-snug">
+                          PID: {campaign.contract.pid}
+                        </p>
+                      )}
                           {campaign.contract?.status && (
                             <span className="w-fit rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 capitalize">
                               {campaign.contract.status}
@@ -1357,18 +1481,41 @@ const Campaign = () => {
                               Manage
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuContent 
+                            align="end" 
+                            className="w-56"
+                            onClick={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                          >
                             <DropdownMenuLabel>Campaign Actions</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              onSelect={() => handleOpenUserPicker(campaign)}
+                              onSelect={() => {
+                                handleOpenUserPicker(campaign);
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                              }}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                              }}
                               disabled={isCampaignBusy || (usersLoading && !users.length)}
                             >
                               <UserPlus className="mr-2 h-4 w-4" />
                               Add Users
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onSelect={() => handleOpenInfluencerPicker(campaign)}
+                              onSelect={() => {
+                                handleOpenInfluencerPicker(campaign);
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                              }}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                              }}
                               disabled={isCampaignBusy || (influencersLoading && !influencers.length)}
                             >
                               <Megaphone className="mr-2 h-4 w-4" />
@@ -1761,6 +1908,7 @@ const Campaign = () => {
                       contracts.map((contract) => (
                         <SelectItem key={contract.id} value={contract.id}>
                           {contract.name}
+                          {contract.pid ? ` • ${contract.pid}` : ""}
                           {contract.status ? ` • ${contract.status}` : ""}
                         </SelectItem>
                       ))
@@ -1795,6 +1943,9 @@ const Campaign = () => {
                       </span>
                     )}
                   </div>
+                  <p className="mt-1 text-[11px] leading-snug text-indigo-900/80">
+                    PID: {selectedContract.pid ?? "Pending assignment"}
+                  </p>
                   {selectedContract.description && (
                     <p className="mt-1 text-[11px] leading-snug text-indigo-900/80">
                       {selectedContract.description}

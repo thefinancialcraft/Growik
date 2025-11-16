@@ -66,15 +66,9 @@ const Sidebar = () => {
       }
 
       if (!user?.id) return;
-      try {
-        await supabase
-          .from('user_profiles')
-          // @ts-ignore - last_seen column may not be in types
-          .update({ last_seen: new Date().toISOString() })
-          .eq('user_id', user.id);
-      } catch (error) {
-        console.error('Sidebar: Error updating last_seen:', error);
-      }
+      // Use centralized utility function
+      const { updateLastSeen: updateLastSeenUtil } = await import('@/lib/userProfile');
+      await updateLastSeenUtil(user.id);
     };
 
     // Reset activity flag and update timestamp (only on click)
@@ -168,56 +162,11 @@ const Sidebar = () => {
 
         if (shouldFetch) {
           try {
-            console.log('Sidebar: Fetching profile for user:', user.id);
-            console.log('Sidebar: Query: SELECT employee_id, updated_at, user_name, email, role, super_admin FROM user_profiles WHERE user_id =', user.id);
-            
-            const { data, error } = await supabase
-              .from('user_profiles')
-              .select('employee_id, updated_at, user_name, email, role, super_admin, approval_status, status, hold_end_time')
-              .eq('user_id', user.id)
-              .maybeSingle();
-            
-            console.log('Sidebar: Query response - data:', data, 'error:', error);
-            
-            if (error) {
-              console.error('Sidebar: Error fetching profile:', error);
-              console.error('Sidebar: Error details:', {
-                message: error.message,
-                details: error.details,
-                hint: error.hint,
-                code: error.code
-              });
-              
-              // If error indicates user not found or account deleted, redirect to login
-              if (error.code === 'PGRST116' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('does not exist')) {
-                console.log('Sidebar: User profile not found (error), redirecting to login');
-                // Sign out the user
-                try {
-                  await signOutFn();
-                } catch (signOutError) {
-                  console.error('Sidebar: Error signing out:', signOutError);
-                }
-                // Clear all caches
-                try {
-                  localStorage.removeItem(`profile_${user.id}`);
-                  localStorage.removeItem(`profile_sidebar_${user.id}`);
-                  localStorage.removeItem(`profile_mobile_${user.id}`);
-                  localStorage.removeItem('currentUserRole');
-                  localStorage.removeItem('isSuperAdmin');
-                  localStorage.removeItem('isAuthenticated');
-                } catch (e) {
-                  console.error('Error clearing cache:', e);
-                }
-                // Redirect to login with error message
-                window.location.href = '/login?error=account_deleted';
-                return;
-              }
-              
-              return;
-            }
+            // Use centralized utility function
+            const { getUserProfile, updateUserProfile } = await import('@/lib/userProfile');
+            let profileRow = await getUserProfile(user.id);
             
             // Fallback by email if user_id lookup returns null
-            let profileRow = data as any;
             if (!profileRow && user.email) {
               console.log('Sidebar: Trying fallback by email:', user.email);
               const { data: byEmail, error: byEmailErr } = await supabase
@@ -226,8 +175,8 @@ const Sidebar = () => {
                 .eq('email', user.email)
                 .maybeSingle();
               console.log('Sidebar: Fallback by email result:', byEmail, byEmailErr);
-              if (!byEmailErr) {
-                profileRow = byEmail;
+              if (!byEmailErr && byEmail) {
+                profileRow = byEmail as any;
               }
             }
 
@@ -244,32 +193,15 @@ const Sidebar = () => {
                 const endTime = new Date(profileRow.hold_end_time).getTime();
                 if (endTime <= now) {
                   console.log('Sidebar: Hold period expired, auto-updating status to active');
-                  try {
-                    const { error: updateError } = await supabase
-                      .from('user_profiles')
-                      // @ts-ignore - Supabase type inference issue
-                      .update({
-                        status: 'active',
-                        status_reason: 'hold expired account active by system',
-                        hold_end_time: null,
-                        hold_duration_days: null
-                      })
-                      .eq('user_id', user.id);
-
-                    if (!updateError) {
-                      // Refresh profile after update
-                      const { data: updatedData } = await supabase
-                        .from('user_profiles')
-                        .select('employee_id, updated_at, user_name, email, role, super_admin, approval_status, status, hold_end_time')
-                        .eq('user_id', user.id)
-                        .maybeSingle();
-                      
-                      if (updatedData) {
-                        profileRow = updatedData;
-                      }
-                    }
-                  } catch (updateErr) {
-                    console.error('Sidebar: Error auto-updating expired hold status:', updateErr);
+                  const updated = await updateUserProfile(user.id, {
+                    status: 'active',
+                    status_reason: 'hold expired account active by system',
+                    hold_end_time: null,
+                    hold_duration_days: null
+                  } as any);
+                  
+                  if (updated) {
+                    profileRow = updated;
                   }
                 }
               }
@@ -372,7 +304,7 @@ const Sidebar = () => {
 
   }, [user?.id, location.pathname]);
 
-  // Fetch pending message counts and set up real-time notifications
+  // Fetch pending message counts
   useEffect(() => {
     if (!user?.id) return;
 

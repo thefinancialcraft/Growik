@@ -46,15 +46,12 @@ const Settings = () => {
     const fetchProfile = async () => {
       if (user?.id) {
         try {
-          const { data } = await supabase
-            .from('user_profiles')
-            .select('user_name, email, contact_no, employee_id')
-            .eq('user_id', user.id)
-            .single();
+          const { getUserProfile } = await import('@/lib/userProfile');
+          const data = await getUserProfile(user.id);
 
           if (data) {
             setProfile(data);
-            const { first, last } = parseName(data.user_name);
+            const { first, last } = parseName(data.user_name || '');
             setFormData({
               firstName: first || user.user_metadata?.first_name || "",
               lastName: last || user.user_metadata?.last_name || "",
@@ -95,16 +92,19 @@ const Settings = () => {
     try {
       if (user?.id && profile) {
         const fullName = `${formData.firstName.trim()} ${formData.lastName.trim()}`.trim();
-        const { error } = await supabase
-          .from('user_profiles')
-          .update({
+        const { updateUserProfile } = await import('@/lib/userProfile');
+        const updated = await updateUserProfile(user.id, {
             user_name: fullName || profile.user_name,
             contact_no: formData.phone || profile.contact_no,
             email: formData.email || profile.email,
-          })
-          .eq('user_id', user.id);
+        } as any);
 
-        if (error) throw error;
+        if (!updated) {
+          throw new Error('Failed to update profile');
+        }
+
+        // Update local profile state
+        setProfile(updated);
 
         toast({
           title: "Settings saved",

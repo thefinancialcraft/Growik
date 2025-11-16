@@ -11,7 +11,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import { FontFamily } from '@tiptap/extension-font-family';
-import { Extension } from '@tiptap/core';
+import { Extension, Node } from '@tiptap/core';
 import Highlight from '@tiptap/extension-highlight';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
@@ -57,6 +57,130 @@ declare module '@tiptap/core' {
     };
   }
 }
+
+// Custom inline node to preserve signature-box spans
+const SignatureBox = Node.create({
+  name: 'signatureBox',
+  group: 'inline',
+  inline: true,
+  atom: true, // Make it atomic to preserve spacing
+  content: 'text*',
+
+  addAttributes() {
+    return {
+      class: {
+        default: 'signature-box',
+      },
+      'data-signature': {
+        default: 'true',
+      },
+      style: {
+        default: 'display: inline-block !important; width: 200px !important; height: 140px !important; border: 1px solid #9ca3af !important; background-color: transparent !important; border-radius: 3px !important; padding: 2px !important; text-align: center !important; vertical-align: middle !important; line-height: 136px !important; font-size: 10px !important; color: #6b7280 !important; box-sizing: border-box !important; margin-top: 20px !important; margin-bottom: 20px !important; margin-left: 25px !important; margin-right: 25px !important;',
+        parseHTML: (element) => {
+          return element.getAttribute('style') || '';
+        },
+        renderHTML: (attributes) => {
+          if (!attributes.style) {
+            return {};
+          }
+          return {
+            style: attributes.style,
+          };
+        },
+      },
+    };
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: 'span[class="signature-box"]',
+        getAttrs: (node) => {
+          if (typeof node === 'string') return false;
+          const el = node as HTMLElement;
+          // Preserve inline styles, especially margins
+          const existingStyle = el.getAttribute('style') || '';
+          // Ensure margins are always present
+          const defaultMargins = 'margin-left: 25px !important; margin-right: 25px !important;';
+          let finalStyle = existingStyle;
+          if (!existingStyle.includes('margin-left') || !existingStyle.includes('margin-right')) {
+            finalStyle = existingStyle ? `${existingStyle}; ${defaultMargins}` : defaultMargins;
+          }
+          return {
+            class: 'signature-box',
+            'data-signature': 'true',
+            style: finalStyle,
+          };
+        },
+        preserveWhitespace: 'full',
+      },
+      {
+        tag: 'span[data-signature="true"]',
+        getAttrs: (node) => {
+          if (typeof node === 'string') return false;
+          const el = node as HTMLElement;
+          const existingStyle = el.getAttribute('style') || '';
+          const defaultMargins = 'margin-left: 25px !important; margin-right: 25px !important;';
+          let finalStyle = existingStyle;
+          if (!existingStyle.includes('margin-left') || !existingStyle.includes('margin-right')) {
+            finalStyle = existingStyle ? `${existingStyle}; ${defaultMargins}` : defaultMargins;
+          }
+          return {
+            class: 'signature-box',
+            'data-signature': 'true',
+            style: finalStyle,
+          };
+        },
+        preserveWhitespace: 'full',
+      },
+      {
+        tag: 'span.signature-box',
+        getAttrs: (node) => {
+          if (typeof node === 'string') return false;
+          const el = node as HTMLElement;
+          const existingStyle = el.getAttribute('style') || '';
+          const defaultMargins = 'margin-left: 25px !important; margin-right: 25px !important;';
+          let finalStyle = existingStyle;
+          if (!existingStyle.includes('margin-left') || !existingStyle.includes('margin-right')) {
+            finalStyle = existingStyle ? `${existingStyle}; ${defaultMargins}` : defaultMargins;
+          }
+          return {
+            class: 'signature-box',
+            'data-signature': 'true',
+            style: finalStyle,
+          };
+        },
+        preserveWhitespace: 'full',
+      },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes, node }) {
+    // Merge existing styles with default styles, ensuring margins are always present
+    const existingStyle = HTMLAttributes?.style || '';
+    const defaultStyle = 'display: inline-block !important; width: 200px !important; height: 140px !important; border: 1px solid #9ca3af !important; background-color: transparent !important; border-radius: 3px !important; padding: 2px !important; text-align: center !important; vertical-align: middle !important; line-height: 136px !important; font-size: 10px !important; color: #6b7280 !important; box-sizing: border-box !important; margin-top: 20px !important; margin-bottom: 20px !important; margin-left: 25px !important; margin-right: 25px !important;';
+    
+    // If existing style doesn't have margins, add them
+    let finalStyle = defaultStyle;
+    if (existingStyle && !existingStyle.includes('margin-left') && !existingStyle.includes('margin-right')) {
+      // Merge styles, but ensure margins are present
+      finalStyle = `${existingStyle}; ${defaultStyle}`;
+    } else if (existingStyle) {
+      finalStyle = existingStyle;
+    }
+    
+    return [
+      'span',
+      {
+        ...HTMLAttributes,
+        class: 'signature-box',
+        'data-signature': 'true',
+        style: finalStyle,
+      },
+      node.textContent || 'var[{{signature}}]',
+    ];
+  },
+});
 
 const FontSize = Extension.create({
   name: 'fontSize',
@@ -2752,6 +2876,7 @@ export default function TiptapEditor({
       ListItem,
       Underline,
       TextStyle,
+      SignatureBox,
       Color,
       FontFamily,
       FontSize,
@@ -2925,7 +3050,39 @@ export default function TiptapEditor({
     ],
     content,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      // Preserve multiple spaces by converting them to non-breaking spaces
+      let html = editor.getHTML();
+      // Process HTML to preserve multiple spaces
+      // Split by HTML tags, process text content, then rejoin
+      const parts: string[] = [];
+      let lastIndex = 0;
+      const tagRegex = /<[^>]+>/g;
+      let match;
+      
+      while ((match = tagRegex.exec(html)) !== null) {
+        // Add text before tag (with space preservation)
+        const textBefore = html.substring(lastIndex, match.index);
+        if (textBefore) {
+          // Replace 2+ consecutive spaces with &nbsp;
+          const preserved = textBefore.replace(/ {2,}/g, (spaces) => {
+            return '&nbsp;'.repeat(spaces.length);
+          });
+          parts.push(preserved);
+        }
+        // Add the tag itself
+        parts.push(match[0]);
+        lastIndex = tagRegex.lastIndex;
+      }
+      // Add remaining text after last tag
+      const textAfter = html.substring(lastIndex);
+      if (textAfter) {
+        const preserved = textAfter.replace(/ {2,}/g, (spaces) => {
+          return '&nbsp;'.repeat(spaces.length);
+        });
+        parts.push(preserved);
+      }
+      
+      onChange(parts.join(''));
     },
     editorProps: {
       attributes: {
