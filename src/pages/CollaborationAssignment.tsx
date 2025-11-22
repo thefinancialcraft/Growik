@@ -1342,6 +1342,26 @@ const CollaborationAssignment = () => {
       }
       
       // Process signature entries separately - display as image or styled text
+      // First, remove existing signature boxes and replace them with placeholders
+      // This ensures we start with a clean template
+      previewHtml = previewHtml
+        // Remove existing signature images
+        .replace(/<img[^>]*alt=["']Signature["'][^>]*>/gi, 'var[{{signature}}]')
+        // Remove existing signature text spans (with signature fonts)
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Dancing Script['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Great Vibes['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Allura['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Brush Script MT['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Lucida Handwriting['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Pacifico['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Satisfy['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Kalam['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Caveat['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Permanent Marker['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        // Remove existing signature box containers (keep only the placeholder)
+        .replace(/<span[^>]*class=["'][^"']*signature-box[^"']*["'][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+        .replace(/<span[^>]*data-signature=["']true["'][^>]*>.*?<\/span>/gi, 'var[{{signature}}]');
+      
       // Sort signature entries by index for sequential replacement
       const signatureEntries = contractVariableEntries
         .filter(e => (e.originalKey?.startsWith("signature_") || e.key.includes("signature")) && !e.originalKey?.startsWith("plain_text_"))
@@ -1390,8 +1410,9 @@ const CollaborationAssignment = () => {
               displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
             }
           } else {
-            // Show placeholder box (without border)
-            displayHtml = `<div style="display: inline-block; width: 200px; height: 140px; background-color: transparent; padding: 2px; text-align: center; vertical-align: middle; line-height: 136px; font-size: 10px; color: #6b7280; margin-top: 20px; margin-bottom: 20px;">var[{{signature}}]</div>`;
+            // Show placeholder box with signature box styling - keep var[{{signature}}] as is
+            // Use only class, let CSS handle all styling to avoid nested boxes
+            displayHtml = `<span class="signature-box" data-signature="true">var[{{signature}}]</span>`;
           }
           
           // Store variable value for saving
@@ -1456,7 +1477,15 @@ const CollaborationAssignment = () => {
         variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
       });
 
-      previewHtml = previewHtml.replace(/var\[\s*\{\{[^}]+\}\}\s*\]/g, "--");
+      // Replace remaining placeholders with --, but keep signature placeholders as var[{{signature}}]
+      previewHtml = previewHtml.replace(/var\[\s*\{\{([^}]+)\}\}\s*\]/g, (match, variableName) => {
+        // Keep signature placeholders as is
+        if (variableName.trim() === "signature") {
+          return match; // Keep var[{{signature}}] as is
+        }
+        // Replace other placeholders with --
+        return "--";
+      });
 
       // Extract all existing styles and links from the original contract content
       let extractedStyles = "";
@@ -1650,24 +1679,44 @@ const CollaborationAssignment = () => {
               variant: "destructive",
             });
           } else {
-            // Generate magic link for influencer
-            const magicLink = generateMagicLink(collaborationId);
-            
-            // Update collaboration_actions with magic link
+            // Check if magic link already exists, if not then generate new one
+            let magicLink: string | null = null;
             if (collaborationId) {
               try {
-                const { error: actionUpdateError } = await client
+                // First, check if magic link already exists
+                const { data: existingAction, error: fetchError } = await client
                   .from("collaboration_actions")
-                  .update({ magic_link: magicLink })
-                  .eq("collaboration_id", collaborationId);
+                  .select("magic_link")
+                  .eq("collaboration_id", collaborationId)
+                  .maybeSingle();
                 
-                if (actionUpdateError) {
-                  console.error("CollaborationAssignment: Failed to update magic link", actionUpdateError);
+                if (fetchError) {
+                  console.error("CollaborationAssignment: Failed to fetch existing magic link", fetchError);
                 } else {
-                  console.log("CollaborationAssignment: ✓ Magic link generated and saved:", magicLink);
+                  const existingActionTyped = existingAction as { magic_link?: string | null } | null;
+                  if (existingActionTyped?.magic_link) {
+                    // Magic link already exists, use the existing one
+                    magicLink = existingActionTyped.magic_link;
+                    console.log("CollaborationAssignment: ✓ Using existing magic link:", magicLink);
+                  } else {
+                    // Magic link doesn't exist, generate new one
+                    magicLink = generateMagicLink(collaborationId);
+                    
+                    // Update collaboration_actions with new magic link
+                    const { error: actionUpdateError } = await client
+                      .from("collaboration_actions")
+                      .update({ magic_link: magicLink })
+                      .eq("collaboration_id", collaborationId);
+                    
+                    if (actionUpdateError) {
+                      console.error("CollaborationAssignment: Failed to update magic link", actionUpdateError);
+                    } else {
+                      console.log("CollaborationAssignment: ✓ New magic link generated and saved:", magicLink);
+                    }
+                  }
                 }
               } catch (magicLinkErr) {
-                console.error("CollaborationAssignment: Error updating magic link", magicLinkErr);
+                console.error("CollaborationAssignment: Error handling magic link", magicLinkErr);
               }
             }
             

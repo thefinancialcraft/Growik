@@ -23,6 +23,7 @@ import Campaign from "./pages/Campaign";
 import CampaignDetail from "./pages/CampaignDetail";
 import Collaboration from "./pages/Collaboration";
 import CollaborationAssignment from "./pages/CollaborationAssignment";
+import ContractSign from "./pages/ContractSign";
 import Companies from "./pages/Companies";
 import Settings from "./pages/Settings";
 import ApprovalPending from "./components/ApprovalPending";
@@ -94,6 +95,7 @@ const App = () => (
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/contract-sign/:token" element={<ContractSign />} />
             <Route
               path="/profile-completion"
               element={

@@ -33,3 +33,55 @@ export function extractTokenFromUrl(url: string): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * Extract body content from HTML
+ */
+export function extractBodyContent(html: string | null): string {
+  if (!html) return "";
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const body = doc.body;
+    if (body) {
+      const tiptapDiv = body.querySelector('.contract-preview-container .tiptap-rendered') || 
+                       body.querySelector('.tiptap-rendered');
+      if (tiptapDiv) {
+        return tiptapDiv.innerHTML;
+      }
+      return body.innerHTML;
+    }
+    return html;
+  } catch {
+    return html || "";
+  }
+}
+ 
+/**
+ * Extract styles from HTML
+ */
+export function extractStylesFromHtml(html: string | null): { css: string; links: string } {
+  if (!html) return { css: "", links: "" };
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const head = doc.head;
+    if (!head) return { css: "", links: "" };
+    
+    let css = "";
+    const styleTags = head.querySelectorAll("style");
+    styleTags.forEach((tag) => {
+      css += tag.textContent || "";
+    });
+    
+    let links = "";
+    const linkTags = head.querySelectorAll('link[rel="stylesheet"]');
+    linkTags.forEach((tag) => {
+      links += tag.outerHTML || "";
+    });
+    
+    return { css, links };
+  } catch {
+    return { css: "", links: "" };
+  }
+}
+
