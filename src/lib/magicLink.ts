@@ -19,10 +19,35 @@ export function generateMagicLinkToken(): string {
 /**
  * Generate a full magic link URL for contract signing
  */
-export function generateMagicLink(collaborationId: string): string {
+export function generateMagicLink(
+  collaborationId: string,
+  params?: {
+    campaignId?: string;
+    influencerPid?: string;
+    contractPid?: string;
+    employeeId?: string;
+  }
+): string {
   const token = generateMagicLinkToken();
   const baseUrl = window.location.origin;
-  return `${baseUrl}/contract-sign/${token}`;
+  let url = `${baseUrl}/contract-sign/${token}`;
+  
+  // Add query parameters if provided
+  if (params) {
+    const queryParams = new URLSearchParams();
+    if (params.campaignId) queryParams.append('campaignId', params.campaignId);
+    if (params.influencerPid) queryParams.append('influencerPid', params.influencerPid);
+    if (params.contractPid) queryParams.append('contractPid', params.contractPid);
+    if (params.employeeId) queryParams.append('employeeId', params.employeeId);
+    if (collaborationId) queryParams.append('collaborationId', collaborationId);
+    
+    const queryString = queryParams.toString();
+    if (queryString) {
+      url += `?${queryString}`;
+    }
+  }
+  
+  return url;
 }
 
 /**

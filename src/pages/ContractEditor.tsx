@@ -884,6 +884,7 @@ const ContractEditor = () => {
   const [variableSourceTable, setVariableSourceTable] = useState<string>("");
   const [variableSourceColumn, setVariableSourceColumn] = useState<string>("");
   const [variableSourceSchema, setVariableSourceSchema] = useState<string>("");
+  const [signatureType, setSignatureType] = useState<'influencer' | 'user' | ''>('');
   const [variableTables, setVariableTables] = useState<SupabaseTableMetadata[]>([]);
   const [variableTablesLoading, setVariableTablesLoading] = useState<boolean>(false);
   const [variableTablesError, setVariableTablesError] = useState<string | null>(null);
@@ -1010,6 +1011,7 @@ const ContractEditor = () => {
         setVariableTablesError(null);
         setVariableColumns([]);
         setVariableColumnsError(null);
+        setSignatureType(''); // Reset signature type when dialog closes
       }
     },
     []
@@ -1022,6 +1024,14 @@ const ContractEditor = () => {
     } else {
       setVariableKey(value);
     }
+    
+    // Reset signature type when signature is selected/deselected
+    if (value === 'signature') {
+      setSignatureType(''); // Reset to empty, user will select
+    } else {
+      setSignatureType('');
+    }
+    
     const defaults = VARIABLE_DEFAULT_SOURCES[value];
     if (defaults) {
       setVariableSourceTable(defaults.table);
@@ -1071,7 +1081,7 @@ const ContractEditor = () => {
     } finally {
       setVariableTablesLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
   const loadVariableColumns = useCallback(
     async (tableName: string) => {
@@ -1143,7 +1153,7 @@ const ContractEditor = () => {
         setVariableColumnsLoading(false);
       }
     },
-    [supabase],
+    [],
   );
 
   const closeSupabaseRowDialog = useCallback(() => {
@@ -1198,7 +1208,7 @@ const ContractEditor = () => {
         setSupabaseTablesLoading(false);
       }
     },
-    [supabase],
+    [],
   );
 
   const fetchSupabaseTableColumns = useCallback(
@@ -1235,7 +1245,7 @@ const ContractEditor = () => {
         setSupabaseColumnsLoading(false);
       }
     },
-    [supabase],
+    [],
   );
 
   const fetchSupabaseColumnValues = useCallback(
@@ -1297,7 +1307,7 @@ const ContractEditor = () => {
         setSupabaseValuesLoading(false);
       }
     },
-    [supabase],
+    [],
   );
 
   const handleSupabaseMentionTrigger = useCallback(
@@ -2363,21 +2373,39 @@ const ContractEditor = () => {
       return;
     }
 
-    if ((variableSourceTable && !variableSourceColumn) || (!variableSourceTable && variableSourceColumn)) {
+    // For signature, require signature type selection
+    if (variableKey.trim() === 'signature' && !signatureType) {
       toast({
-        title: "Incomplete source selection",
-        description: "Select both table and column to link data, or leave both blank.",
+        title: "Signature Type Required",
+        description: "Please select whether this signature is for influencer or user.",
         variant: "destructive",
       });
       return;
     }
 
+    // For non-signature variables, check source table/column consistency
+    if (variableKey.trim() !== 'signature') {
+      if ((variableSourceTable && !variableSourceColumn) || (!variableSourceTable && variableSourceColumn)) {
+        toast({
+          title: "Incomplete source selection",
+          description: "Select both table and column to link data, or leave both blank.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     // Insert variable placeholder in format {{variable_key}}
-    const trimmedKey = variableKey.trim();
+    let trimmedKey = variableKey.trim();
+    
+    // Special handling for signature variable - use signature.user or signature.influencer
+    if (trimmedKey === 'signature' && signatureType) {
+      trimmedKey = `signature.${signatureType}`;
+    }
     
     // Special handling for signature variable - create a box
     let variablePlaceholder: string;
-    if (trimmedKey === 'signature') {
+    if (variableKey.trim() === 'signature' && signatureType) {
       variablePlaceholder = `<span class="signature-box" data-signature="true" style="display: inline-block !important; width: 200px !important; height: 140px !important; border: 1px solid #9ca3af !important; background-color: transparent !important; border-radius: 3px !important; padding: 2px !important; text-align: center !important; vertical-align: middle !important; line-height: 136px !important; font-size: 10px !important; color: #6b7280 !important; box-sizing: border-box !important; margin-top: 20px !important; margin-bottom: 20px !important; margin-left: 25px !important; margin-right: 25px !important;">var[{{${trimmedKey}}}]</span>`;
     } else {
       variablePlaceholder = `<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">var[{{${trimmedKey}}}]</span>`;
@@ -2908,6 +2936,10 @@ Use the toolbar above to format text, add headings, lists, and more."
                     </span>
                   </p>
                 </>
+              ) : variableKeyOption === 'signature' && signatureType ? (
+                <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
+                  {`var[{{signature.${signatureType}}}]`}
+                </div>
               ) : (
                 <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
                   {`var[{{${variableKey}}}]`}
@@ -2917,100 +2949,129 @@ Use the toolbar above to format text, add headings, lists, and more."
                 Select a preset placeholder or choose Custom to define your own key.
               </p>
             </div>
-            <div className="space-y-2">
-              <Label>Source Table (Optional)</Label>
-              <Select
-                value={variableSourceTable || undefined}
-                onValueChange={(value) => {
-                  setVariableSourceTable(value);
-                  setVariableSourceColumn('');
-                  const selected = variableTables.find((table) => table.name === value);
-                  setVariableSourceSchema(selected?.schema ?? '');
-                }}
-                disabled={variableTablesLoading}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue
-                    placeholder={
-                      variableTablesLoading ? "Loading tables..." : "Select a table"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {variableTablesLoading ? (
-                    <SelectItem value="__loading" disabled>
-                      Loading tables...
-                    </SelectItem>
-                  ) : variableTables.length ? (
-                    variableTables.map((table) => (
-                      <SelectItem key={table.name} value={table.name}>
-                        {table.schema ? `${table.schema}.${table.name}` : table.name}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <SelectItem value="__no_tables" disabled>
-                      {variableTablesError ?? "No tables available"}
-                    </SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Choose the table that provides this dynamic value.
-              </p>
-              {!variableTablesLoading && variableTablesError && (
-                <p className="text-xs text-red-500">{variableTablesError}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Source Column (Optional)</Label>
-              <Select
-                value={variableSourceColumn || undefined}
-                onValueChange={setVariableSourceColumn}
-                disabled={!variableSourceTable || variableColumnsLoading}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue
-                    placeholder={
-                      variableSourceTable
-                        ? variableColumnsLoading
-                          ? "Loading columns..."
-                          : "Select a column"
-                        : "Select a table first"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {variableSourceTable ? (
-                    variableColumnsLoading ? (
-                      <SelectItem value="__loading" disabled>
-                        Loading columns...
-                      </SelectItem>
-                    ) : variableColumns.length ? (
-                      variableColumns.map((column) => (
-                        <SelectItem key={column.name} value={column.name}>
-                          {column.name}
-                          {column.dataType ? ` (${column.dataType})` : ""}
+            {/* Show signature type selector for signature variable, otherwise show source table/column */}
+            {variableKeyOption === 'signature' ? (
+              <div className="space-y-2">
+                <Label>Signature Type *</Label>
+                <Select
+                  value={signatureType || undefined}
+                  onValueChange={(value: 'influencer' | 'user') => setSignatureType(value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select signature type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="influencer">Influencer</SelectItem>
+                    <SelectItem value="user">User</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Select whether this signature is for the influencer or user.
+                </p>
+                {signatureType && (
+                  <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
+                    {`var[{{signature.${signatureType}}}]`}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Source Table (Optional)</Label>
+                  <Select
+                    value={variableSourceTable || undefined}
+                    onValueChange={(value) => {
+                      setVariableSourceTable(value);
+                      setVariableSourceColumn('');
+                      const selected = variableTables.find((table) => table.name === value);
+                      setVariableSourceSchema(selected?.schema ?? '');
+                    }}
+                    disabled={variableTablesLoading}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue
+                        placeholder={
+                          variableTablesLoading ? "Loading tables..." : "Select a table"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {variableTablesLoading ? (
+                        <SelectItem value="__loading" disabled>
+                          Loading tables...
                         </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="__no_columns" disabled>
-                        {variableColumnsError ?? "No columns found"}
-                      </SelectItem>
-                    )
-                  ) : (
-                    <SelectItem value="__no_table" disabled>
-                      Select a table first
-                    </SelectItem>
+                      ) : variableTables.length ? (
+                        variableTables.map((table) => (
+                          <SelectItem key={table.name} value={table.name}>
+                            {table.schema ? `${table.schema}.${table.name}` : table.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="__no_tables" disabled>
+                          {variableTablesError ?? "No tables available"}
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Choose the table that provides this dynamic value.
+                  </p>
+                  {!variableTablesLoading && variableTablesError && (
+                    <p className="text-xs text-red-500">{variableTablesError}</p>
                   )}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Pick the column to map this variable to. Leave blank to manage the value manually.
-              </p>
-              {!variableColumnsLoading && variableColumnsError && (
-                <p className="text-xs text-red-500">{variableColumnsError}</p>
-              )}
-            </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Source Column (Optional)</Label>
+                  <Select
+                    value={variableSourceColumn || undefined}
+                    onValueChange={setVariableSourceColumn}
+                    disabled={!variableSourceTable || variableColumnsLoading}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue
+                        placeholder={
+                          variableSourceTable
+                            ? variableColumnsLoading
+                              ? "Loading columns..."
+                              : "Select a column"
+                            : "Select a table first"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {variableSourceTable ? (
+                        variableColumnsLoading ? (
+                          <SelectItem value="__loading" disabled>
+                            Loading columns...
+                          </SelectItem>
+                        ) : variableColumns.length ? (
+                          variableColumns.map((column) => (
+                            <SelectItem key={column.name} value={column.name}>
+                              {column.name}
+                              {column.dataType ? ` (${column.dataType})` : ""}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="__no_columns" disabled>
+                            {variableColumnsError ?? "No columns found"}
+                          </SelectItem>
+                        )
+                      ) : (
+                        <SelectItem value="__no_table" disabled>
+                          Select a table first
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Pick the column to map this variable to. Leave blank to manage the value manually.
+                  </p>
+                  {!variableColumnsLoading && variableColumnsError && (
+                    <p className="text-xs text-red-500">{variableColumnsError}</p>
+                  )}
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button

@@ -36,7 +36,6 @@ import {
   getPlatformMeta,
   mapCampaignRow,
 } from "@/lib/campaign";
-import { generateMagicLink } from "@/lib/magicLink";
 
 type LocationState = {
   campaign?: CampaignRecord;
@@ -159,8 +158,8 @@ const CollaborationAssignment = () => {
           if (ctx && rect.width > 0 && rect.height > 0) {
             // Only set dimensions if canvas is empty or dimensions changed
             // Setting width/height clears the canvas, so we check if it's already initialized
-            if (canvas.width === 0 || canvas.height === 0 || 
-                (canvas.width !== rect.width || canvas.height !== rect.height)) {
+            if (canvas.width === 0 || canvas.height === 0 ||
+              (canvas.width !== rect.width || canvas.height !== rect.height)) {
               canvas.width = rect.width;
               canvas.height = rect.height;
               // Reconfigure context after resize
@@ -181,6 +180,86 @@ const CollaborationAssignment = () => {
       return () => clearTimeout(timer);
     }
   }, [isSignatureDialogOpen]);
+
+  // Attach click handlers to signature placeholders in preview HTML
+  useEffect(() => {
+    if (!contractPreviewHtml || !isPreviewOpen) return;
+
+    const contractContainer = document.querySelector('.contract-preview-container .tiptap-rendered');
+    if (!contractContainer) return;
+
+    const clickableBoxes = contractContainer.querySelectorAll('.signature-box-clickable[data-signature-key]');
+    const cleanupFunctions: Array<() => void> = [];
+
+    clickableBoxes.forEach((box) => {
+      const signatureKey = (box as HTMLElement).getAttribute('data-signature-key');
+      if (!signatureKey) return;
+
+      // Add hover effect
+      const handleMouseEnter = () => {
+        (box as HTMLElement).style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
+      };
+      const handleMouseLeave = () => {
+        (box as HTMLElement).style.backgroundColor = 'transparent';
+      };
+      const handleClick = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Find or create the signature entry
+        const existingEntry = contractVariableEntries.find(
+          e => (e.originalKey === signatureKey || e.key === signatureKey)
+        );
+
+        if (existingEntry) {
+          setCurrentSignatureEntry(existingEntry.originalKey || existingEntry.key);
+          const existingValue = existingEntry.inputValue || existingEntry.value || '';
+          setSignatureValue(existingValue);
+
+          if (existingValue && existingValue.startsWith('data:image')) {
+            setSignatureMode('draw');
+            setTimeout(() => {
+              if (signatureCanvasRef.current && existingValue) {
+                const img = new Image();
+                img.onload = () => {
+                  const ctx = signatureCanvasRef.current?.getContext('2d');
+                  if (ctx && signatureCanvasRef.current) {
+                    signatureCanvasRef.current.width = signatureCanvasRef.current.offsetWidth;
+                    signatureCanvasRef.current.height = signatureCanvasRef.current.offsetHeight;
+                    ctx.drawImage(img, 0, 0, signatureCanvasRef.current.width, signatureCanvasRef.current.height);
+                  }
+                };
+                img.src = existingValue;
+              }
+            }, 100);
+          } else {
+            setSignatureMode('type');
+          }
+        } else {
+          // Create new entry if it doesn't exist
+          setCurrentSignatureEntry(signatureKey);
+          setSignatureValue('');
+          setSignatureMode('draw');
+        }
+
+        setIsSignatureDialogOpen(true);
+      };
+
+      box.addEventListener('mouseenter', handleMouseEnter);
+      box.addEventListener('mouseleave', handleMouseLeave);
+      box.addEventListener('click', handleClick);
+
+      cleanupFunctions.push(() => {
+        box.removeEventListener('mouseenter', handleMouseEnter);
+        box.removeEventListener('mouseleave', handleMouseLeave);
+        box.removeEventListener('click', handleClick);
+      });
+    });
+
+    return () => {
+      cleanupFunctions.forEach(cleanup => cleanup());
+    };
+  }, [contractPreviewHtml, isPreviewOpen, contractVariableEntries]);
 
   const isUuid = (value: string | undefined | null): value is string =>
     Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
@@ -248,7 +327,7 @@ const CollaborationAssignment = () => {
     }
     return campaign.influencers[0];
   }, [campaign, state.influencerId]);
-  
+
   // Get current influencer index and navigation info
   const influencerNavigation = useMemo(() => {
     if (!campaign || !campaign.influencers.length || !influencer) {
@@ -270,7 +349,7 @@ const CollaborationAssignment = () => {
     }
     return null;
   }, [influencer?.id]);
-  
+
   // Navigation functions for previous/next influencer
   const handlePreviousInfluencer = useCallback(() => {
     if (!influencerNavigation.hasPrevious || !influencerNavigation.previousInfluencer || !campaign) {
@@ -289,7 +368,7 @@ const CollaborationAssignment = () => {
       },
     });
   }, [influencerNavigation, campaign, navigate]);
-  
+
   const handleNextInfluencer = useCallback(() => {
     if (!influencerNavigation.hasNext || !influencerNavigation.nextInfluencer || !campaign) {
       return;
@@ -452,10 +531,10 @@ const CollaborationAssignment = () => {
         if (latestAction) {
           const actionValue = (latestAction.action ?? "") as ActionOption | "";
           const remarkValue = (latestAction.remark ?? "").trim();
-          
+
           if (actionValue) {
             setSelectedAction(actionValue);
-            
+
             if (actionValue === "callback" && latestAction.occurred_at) {
               const occurredDate = new Date(latestAction.occurred_at);
               setCallbackDate(occurredDate.toISOString().split("T")[0]);
@@ -463,11 +542,11 @@ const CollaborationAssignment = () => {
               const minutes = occurredDate.getMinutes().toString().padStart(2, "0");
               setCallbackTime(`${hours}:${minutes}`);
             }
-            
+
             if (remarkValue) {
               setActionRemark(remarkValue);
             }
-            
+
             setActionBaseline({
               action: actionValue,
               callbackDate: actionValue === "callback" ? (latestAction.occurred_at ? new Date(latestAction.occurred_at).toISOString().split("T")[0] : "") : "",
@@ -476,7 +555,7 @@ const CollaborationAssignment = () => {
             });
           }
         }
-        
+
         setHasLoadedInitialAction(true);
       } catch (err) {
         console.error("CollaborationAssignment: Error fetching latest action", err);
@@ -569,7 +648,7 @@ const CollaborationAssignment = () => {
 
     try {
       console.log("CollaborationAssignment: Attempting to delete timeline entries for collaboration_id:", collaborationId);
-      
+
       const client = supabase as any;
       const { data, error } = await client
         .from("collaboration_timeline")
@@ -586,7 +665,7 @@ const CollaborationAssignment = () => {
 
       // Refresh timeline to ensure UI is in sync
       await fetchTimelineEntries();
-      
+
       toast({
         title: "Timeline cleared",
         description: "All timeline entries have been removed.",
@@ -608,6 +687,7 @@ const CollaborationAssignment = () => {
     }
   }, [collaborationId, fetchTimelineEntries]);
 
+
   const handleActionSubmit = async () => {
     if (!selectedAction || !resolvedCampaignId || !resolvedInfluencerId || !currentUserId || !collaborationId) {
       toast({
@@ -621,7 +701,7 @@ const CollaborationAssignment = () => {
     try {
       const timestamp = new Date().toLocaleString();
       let label = ACTION_LABELS[selectedAction] || "Action recorded";
-      
+
       const finalRemark = selectedAction === "callback" && callbackDate && callbackTime
         ? `Callback scheduled for ${new Date(`${callbackDate}T${callbackTime}`).toLocaleString()}. ${actionRemark.trim()}`.trim()
         : actionRemark.trim();
@@ -658,7 +738,7 @@ const CollaborationAssignment = () => {
           onConflict: "collaboration_id",
         })
         .select();
-      
+
       if (upsertError) {
         console.error("CollaborationAssignment: Failed to upsert action", upsertError);
         throw upsertError;
@@ -839,12 +919,12 @@ const CollaborationAssignment = () => {
 
             const existing = collected.get(normalizedKey);
             // Preserve order: keep existing descriptors first, then add new ones (avoiding duplicates)
-            const mergedDescriptors = existing 
+            const mergedDescriptors = existing
               ? (() => {
-                  const existingSet = new Set(existing.descriptors);
-                  const newUnique = uniqueDescriptors.filter(d => !existingSet.has(d));
-                  return [...existing.descriptors, ...newUnique];
-                })()
+                const existingSet = new Set(existing.descriptors);
+                const newUnique = uniqueDescriptors.filter(d => !existingSet.has(d));
+                return [...existing.descriptors, ...newUnique];
+              })()
               : uniqueDescriptors;
             const description = existing?.description
               ? existing.description
@@ -860,7 +940,7 @@ const CollaborationAssignment = () => {
         if (typeof contractData.content === "string" && contractData.content.trim().length) {
           const regex = /var\[\s*\{\{\s*([^}\s]+(?:[^}]*)?)\s*\}\}\s*\]/gi;
           let match: RegExpExecArray | null;
-          
+
           // Track occurrences of plain_text and signature separately
           const plainTextOccurrences = new Map<string, number>();
           const signatureOccurrences = new Map<string, number>();
@@ -873,11 +953,11 @@ const CollaborationAssignment = () => {
                 const currentCount = plainTextOccurrences.get("plain_text") ?? 0;
                 const indexedKey = `plain_text_${currentCount}`;
                 plainTextOccurrences.set("plain_text", currentCount + 1);
-                
+
                 if (!collected.has(indexedKey)) {
-                  collected.set(indexedKey, { 
-                    description: `Manual text placeholder (occurrence ${currentCount + 1})`, 
-                    descriptors: [] 
+                  collected.set(indexedKey, {
+                    description: `Manual text placeholder (occurrence ${currentCount + 1})`,
+                    descriptors: []
                   });
                 }
               } else if (normalizedKey === "signature") {
@@ -885,11 +965,11 @@ const CollaborationAssignment = () => {
                 const currentCount = signatureOccurrences.get("signature") ?? 0;
                 const indexedKey = `signature_${currentCount}`;
                 signatureOccurrences.set("signature", currentCount + 1);
-                
+
                 if (!collected.has(indexedKey)) {
-                  collected.set(indexedKey, { 
-                    description: `Signature placeholder (occurrence ${currentCount + 1})`, 
-                    descriptors: [] 
+                  collected.set(indexedKey, {
+                    description: `Signature placeholder (occurrence ${currentCount + 1})`,
+                    descriptors: []
                   });
                 }
               } else {
@@ -1109,7 +1189,7 @@ const CollaborationAssignment = () => {
         // Filter out base "signature" and "plain_text" entries if we have indexed versions
         const hasIndexedSignatures = Array.from(collected.keys()).some(k => k.startsWith("signature_"));
         const hasIndexedPlainText = Array.from(collected.keys()).some(k => k.startsWith("plain_text_"));
-        
+
         const filteredCollected = new Map(collected);
         if (hasIndexedSignatures && filteredCollected.has("signature")) {
           filteredCollected.delete("signature");
@@ -1117,16 +1197,16 @@ const CollaborationAssignment = () => {
         if (hasIndexedPlainText && filteredCollected.has("plain_text")) {
           filteredCollected.delete("plain_text");
         }
-        
+
         const preparedEntries = await Promise.all(
           Array.from(filteredCollected.entries()).map(async ([key, info]) => {
             const resolved = await resolveDescriptorsToValue(info.descriptors);
             // Check if this is a plain_text entry (with or without index)
             const isPlainText = key === "plain_text" || key.startsWith("plain_text_");
             // Check if this is a signature entry (with or without index)
-            const isSignature = key === "signature" || key.startsWith("signature_");
+            const isSignature = key === "signature" || key.startsWith("signature_") || key === "signature.user" || key === "signature.influencer";
             const isEditable = isPlainText || isSignature;
-            
+
             // Normalize key for placeholder (remove index suffix)
             let placeholderKey = key;
             if (key.startsWith("plain_text_")) {
@@ -1134,7 +1214,7 @@ const CollaborationAssignment = () => {
             } else if (key.startsWith("signature_")) {
               placeholderKey = "signature";
             }
-            
+
             return {
               key: `var[{{${placeholderKey}}}]`, // Use base key in placeholder, but keep indexed key for tracking
               originalKey: key, // Store original key for tracking (e.g., signature_0, signature_1)
@@ -1192,8 +1272,8 @@ const CollaborationAssignment = () => {
               // If it's "all_variables", parse the JSON to get individual variable values
               if (override.variable_key === "all_variables") {
                 try {
-                  const variablesObj = typeof override.value === 'string' 
-                    ? JSON.parse(override.value) 
+                  const variablesObj = typeof override.value === 'string'
+                    ? JSON.parse(override.value)
                     : override.value;
                   Object.entries(variablesObj).forEach(([key, value]) => {
                     if (value) {
@@ -1310,7 +1390,7 @@ const CollaborationAssignment = () => {
           const bIndex = parseInt(b.originalKey?.replace("plain_text_", "") || "0", 10);
           return aIndex - bIndex;
         });
-      const otherEntries = contractVariableEntries.filter(e => 
+      const otherEntries = contractVariableEntries.filter(e =>
         !e.originalKey?.startsWith("plain_text_") && !e.key.includes("signature")
       );
 
@@ -1320,18 +1400,18 @@ const CollaborationAssignment = () => {
         const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const regex = new RegExp(escapedPlaceholder, "g");
         const matches: Array<{ index: number; value: string }> = [];
-        
+
         // Collect all plain_text values in order
         plainTextEntries.forEach((entry) => {
           const input = entry.inputValue?.trim() ?? "";
           let sanitizedValue = input ? escapeHtml(input).replace(/\r?\n/g, "<br />") : "--";
           const entryIndex = parseInt(entry.originalKey?.replace("plain_text_", "") || "0", 10);
           matches.push({ index: entryIndex, value: sanitizedValue });
-          
+
           // Store value for this specific occurrence
           variablesMap[entry.originalKey || entry.key] = input || null;
         });
-        
+
         // Replace occurrences sequentially
         let occurrenceIndex = 0;
         previewHtml = previewHtml.replace(regex, () => {
@@ -1340,12 +1420,18 @@ const CollaborationAssignment = () => {
           return match ? match.value : "--";
         });
       }
-      
+
       // Process signature entries separately - display as image or styled text
       // First, remove existing signature boxes and replace them with placeholders
       // This ensures we start with a clean template
       previewHtml = previewHtml
-        // Remove existing signature images
+        // Restore signature.user placeholders from existing images/spans
+        .replace(/<img[^>]*data-signature-key=["']signature\.user["'][^>]*>/gi, 'var[{{signature.user}}]')
+        .replace(/<span[^>]*data-signature-key=["']signature\.user["'][^>]*>.*?<\/span>/gi, 'var[{{signature.user}}]')
+        // Restore signature.influencer placeholders from existing images/spans
+        .replace(/<img[^>]*data-signature-key=["']signature\.influencer["'][^>]*>/gi, 'var[{{signature.influencer}}]')
+        .replace(/<span[^>]*data-signature-key=["']signature\.influencer["'][^>]*>.*?<\/span>/gi, 'var[{{signature.influencer}}]')
+        // Remove existing signature images (generic fallback)
         .replace(/<img[^>]*alt=["']Signature["'][^>]*>/gi, 'var[{{signature}}]')
         // Remove existing signature text spans (with signature fonts)
         .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Dancing Script['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
@@ -1359,34 +1445,29 @@ const CollaborationAssignment = () => {
         .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Caveat['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
         .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Permanent Marker['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
         // Remove existing signature box containers (keep only the placeholder)
-        .replace(/<span[^>]*class=["'][^"']*signature-box[^"']*["'][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
-        .replace(/<span[^>]*data-signature=["']true["'][^>]*>.*?<\/span>/gi, 'var[{{signature}}]');
-      
-      // Sort signature entries by index for sequential replacement
-      const signatureEntries = contractVariableEntries
-        .filter(e => (e.originalKey?.startsWith("signature_") || e.key.includes("signature")) && !e.originalKey?.startsWith("plain_text_"))
-        .sort((a, b) => {
-          // Sort by index: signature_0, signature_1, etc.
-          const aIndex = a.originalKey?.startsWith("signature_") 
-            ? parseInt(a.originalKey.replace("signature_", "") || "0", 10)
-            : 0;
-          const bIndex = b.originalKey?.startsWith("signature_")
-            ? parseInt(b.originalKey.replace("signature_", "") || "0", 10)
-            : 0;
-          return aIndex - bIndex;
+        .replace(/<span[^>]*class=["'][^"']*signature-box[^"']*["'][^>]*>(.*?)<\/span>/gi, (match, content) => {
+          if (content.match(/signature\.user/i)) return 'var[{{signature.user}}]';
+          if (content.match(/signature\.influencer/i)) return 'var[{{signature.influencer}}]';
+          return 'var[{{signature}}]';
+        })
+        .replace(/<span[^>]*data-signature=["']true["'][^>]*>(.*?)<\/span>/gi, (match, content) => {
+          if (content.match(/signature\.user/i)) return 'var[{{signature.user}}]';
+          if (content.match(/signature\.influencer/i)) return 'var[{{signature.influencer}}]';
+          return 'var[{{signature}}]';
         });
-      
-      if (signatureEntries.length > 0) {
-        const placeholder = "var[{{signature}}]";
-        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex = new RegExp(escapedPlaceholder, "g");
-        let occurrenceIndex = 0;
-        
-        // Replace each signature occurrence sequentially
-        previewHtml = previewHtml.replace(regex, () => {
-          const entry = signatureEntries[occurrenceIndex] || signatureEntries[0];
-          occurrenceIndex++;
-          
+
+      // Handle signature.user and signature.influencer placeholders separately
+      // First, handle signature.user
+      const signatureUserEntries = contractVariableEntries.filter(
+        e => (e.originalKey === 'signature.user' || e.key === 'signature.user') && !e.originalKey?.startsWith("plain_text_")
+      );
+
+      if (signatureUserEntries.length > 0) {
+        // Use flexible regex to match var[{{signature.user}}] with optional spaces
+        const regex = /var\[\s*\{\{\s*signature\.user\s*\}\}\s*\]/gi;
+
+        previewHtml = previewHtml.replace(regex, (match) => {
+          const entry = signatureUserEntries[0];
           let signatureValue: string | null = null;
 
           if (entry.editable) {
@@ -1398,7 +1479,136 @@ const CollaborationAssignment = () => {
           }
 
           let displayHtml = "";
-          
+
+          if (signatureValue && signatureValue !== "--") {
+            if (signatureValue.startsWith("data:image")) {
+              displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="signature.user" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+            } else {
+              const sanitizedText = escapeHtml(signatureValue);
+              displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
+            }
+          } else {
+            // Make clickable placeholder with data attribute
+            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user}}]</span>`;
+          }
+
+          const storedValue = entry.editable
+            ? entry.inputValue?.trim() ?? null
+            : entry.rawValues && entry.rawValues.length
+              ? entry.rawValues.join("\n")
+              : entry.value ?? null;
+
+          if (entry.originalKey) {
+            variablesMap[entry.originalKey] = storedValue && storedValue.length ? storedValue : null;
+          }
+
+          return displayHtml;
+        });
+      } else {
+        // If no entry exists, make placeholder clickable
+        const placeholder = "var[{{signature.user}}]";
+        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escapedPlaceholder, "g");
+        previewHtml = previewHtml.replace(regex, () => {
+          return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user}}]</span>`;
+        });
+      }
+
+      // Handle signature.influencer
+      const signatureInfluencerEntries = contractVariableEntries.filter(
+        e => (e.originalKey === 'signature.influencer' || e.key === 'signature.influencer') && !e.originalKey?.startsWith("plain_text_")
+      );
+
+      if (signatureInfluencerEntries.length > 0) {
+        const placeholder = "var[{{signature.influencer}}]";
+        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escapedPlaceholder, "g");
+
+        previewHtml = previewHtml.replace(regex, (match) => {
+          const entry = signatureInfluencerEntries[0];
+          let signatureValue: string | null = null;
+
+          if (entry.editable) {
+            signatureValue = entry.inputValue?.trim() ?? null;
+          } else if (entry.rawValues && entry.rawValues.length) {
+            signatureValue = entry.rawValues[0];
+          } else if (entry.value) {
+            signatureValue = entry.value;
+          }
+
+          let displayHtml = "";
+
+          if (signatureValue && signatureValue !== "--") {
+            if (signatureValue.startsWith("data:image")) {
+              displayHtml = `<img src="${signatureValue}" alt="Signature" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+            } else {
+              const sanitizedText = escapeHtml(signatureValue);
+              displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
+            }
+          } else {
+            // Make clickable placeholder with data attribute
+            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer}}]</span>`;
+          }
+
+          const storedValue = entry.editable
+            ? entry.inputValue?.trim() ?? null
+            : entry.rawValues && entry.rawValues.length
+              ? entry.rawValues.join("\n")
+              : entry.value ?? null;
+
+          if (entry.originalKey) {
+            variablesMap[entry.originalKey] = storedValue && storedValue.length ? storedValue : null;
+          }
+
+          return displayHtml;
+        });
+      } else {
+        // If no entry exists, make placeholder clickable
+        const placeholder = "var[{{signature.influencer}}]";
+        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escapedPlaceholder, "g");
+        previewHtml = previewHtml.replace(regex, () => {
+          return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer}}]</span>`;
+        });
+      }
+
+      // Sort signature entries by index for sequential replacement (legacy signature_0, signature_1, etc.)
+      const signatureEntries = contractVariableEntries
+        .filter(e => (e.originalKey?.startsWith("signature_") || (e.key.includes("signature") && !e.key.includes("signature.user") && !e.key.includes("signature.influencer"))) && !e.originalKey?.startsWith("plain_text_"))
+        .sort((a, b) => {
+          // Sort by index: signature_0, signature_1, etc.
+          const aIndex = a.originalKey?.startsWith("signature_")
+            ? parseInt(a.originalKey.replace("signature_", "") || "0", 10)
+            : 0;
+          const bIndex = b.originalKey?.startsWith("signature_")
+            ? parseInt(b.originalKey.replace("signature_", "") || "0", 10)
+            : 0;
+          return aIndex - bIndex;
+        });
+
+      if (signatureEntries.length > 0) {
+        const placeholder = "var[{{signature}}]";
+        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escapedPlaceholder, "g");
+        let occurrenceIndex = 0;
+
+        // Replace each signature occurrence sequentially
+        previewHtml = previewHtml.replace(regex, () => {
+          const entry = signatureEntries[occurrenceIndex] || signatureEntries[0];
+          occurrenceIndex++;
+
+          let signatureValue: string | null = null;
+
+          if (entry.editable) {
+            signatureValue = entry.inputValue?.trim() ?? null;
+          } else if (entry.rawValues && entry.rawValues.length) {
+            signatureValue = entry.rawValues[0];
+          } else if (entry.value) {
+            signatureValue = entry.value;
+          }
+
+          let displayHtml = "";
+
           if (signatureValue && signatureValue !== "--") {
             // Check if it's an image data URL (drawn signature)
             if (signatureValue.startsWith("data:image")) {
@@ -1414,18 +1624,18 @@ const CollaborationAssignment = () => {
             // Use only class, let CSS handle all styling to avoid nested boxes
             displayHtml = `<span class="signature-box" data-signature="true">var[{{signature}}]</span>`;
           }
-          
+
           // Store variable value for saving
           const storedValue = entry.editable
             ? entry.inputValue?.trim() ?? null
             : entry.rawValues && entry.rawValues.length
-            ? entry.rawValues.join("\n")
-            : entry.value ?? null;
-          
+              ? entry.rawValues.join("\n")
+              : entry.value ?? null;
+
           if (entry.originalKey) {
             variablesMap[entry.originalKey] = storedValue && storedValue.length ? storedValue : null;
           }
-          
+
           return displayHtml;
         });
       }
@@ -1450,7 +1660,7 @@ const CollaborationAssignment = () => {
           const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           const regex = new RegExp(escapedPlaceholder, "g");
           let occurrenceIndex = 0;
-          
+
           previewHtml = previewHtml.replace(regex, () => {
             const valueIndex = occurrenceIndex % values.length; // Cycle through values if more occurrences than values
             const selectedValue = values[valueIndex];
@@ -1462,7 +1672,7 @@ const CollaborationAssignment = () => {
           const sanitizedValue = values.length
             ? escapeHtml(values[0]).replace(/\r?\n/g, "<br />")
             : "--";
-          
+
           const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           previewHtml = previewHtml.replace(new RegExp(escapedPlaceholder, "g"), sanitizedValue);
         }
@@ -1471,9 +1681,9 @@ const CollaborationAssignment = () => {
         const storedValue = entry.editable
           ? entry.inputValue?.trim() ?? null
           : entry.rawValues && entry.rawValues.length
-          ? entry.rawValues.join("\n")
-          : entry.value ?? null;
-        
+            ? entry.rawValues.join("\n")
+            : entry.value ?? null;
+
         variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
       });
 
@@ -1656,7 +1866,7 @@ const CollaborationAssignment = () => {
       const persistOverrides = async () => {
         try {
           const client = supabase as any;
-          
+
           // Create a single record with all variables as JSON and complete HTML
           const singleOverrideRecord = {
             campaign_id: resolvedCampaignId,
@@ -1679,47 +1889,6 @@ const CollaborationAssignment = () => {
               variant: "destructive",
             });
           } else {
-            // Check if magic link already exists, if not then generate new one
-            let magicLink: string | null = null;
-            if (collaborationId) {
-              try {
-                // First, check if magic link already exists
-                const { data: existingAction, error: fetchError } = await client
-                  .from("collaboration_actions")
-                  .select("magic_link")
-                  .eq("collaboration_id", collaborationId)
-                  .maybeSingle();
-                
-                if (fetchError) {
-                  console.error("CollaborationAssignment: Failed to fetch existing magic link", fetchError);
-                } else {
-                  const existingActionTyped = existingAction as { magic_link?: string | null } | null;
-                  if (existingActionTyped?.magic_link) {
-                    // Magic link already exists, use the existing one
-                    magicLink = existingActionTyped.magic_link;
-                    console.log("CollaborationAssignment: ✓ Using existing magic link:", magicLink);
-                  } else {
-                    // Magic link doesn't exist, generate new one
-                    magicLink = generateMagicLink(collaborationId);
-                    
-                    // Update collaboration_actions with new magic link
-                    const { error: actionUpdateError } = await client
-                      .from("collaboration_actions")
-                      .update({ magic_link: magicLink })
-                      .eq("collaboration_id", collaborationId);
-                    
-                    if (actionUpdateError) {
-                      console.error("CollaborationAssignment: Failed to update magic link", actionUpdateError);
-                    } else {
-                      console.log("CollaborationAssignment: ✓ New magic link generated and saved:", magicLink);
-                    }
-                  }
-                }
-              } catch (magicLinkErr) {
-                console.error("CollaborationAssignment: Error handling magic link", magicLinkErr);
-              }
-            }
-            
             // Log to timeline after successfully saving overrides
             const variableCount = Object.keys(variablesMap).length;
             await logTimelineEntry(
@@ -1727,10 +1896,9 @@ const CollaborationAssignment = () => {
               `Contract updated with ${variableCount} variable${variableCount !== 1 ? 's' : ''}`,
               null,
               null,
-              { 
+              {
                 variable_count: variableCount,
-                variable_keys: Object.keys(variablesMap),
-                magic_link: magicLink
+                variable_keys: Object.keys(variablesMap)
               }
             );
             console.log("CollaborationAssignment: ✓ Contract and variables saved successfully");
@@ -1803,6 +1971,25 @@ const CollaborationAssignment = () => {
     } finally {
       setIsLoadingSavedContract(false);
     }
+  };
+
+  const handleSendContract = async () => {
+    const timestamp = new Date().toLocaleString();
+    setLastAction({
+      label: "Contract sent",
+      timestamp,
+    });
+    await logTimelineEntry(
+      'contract_sent',
+      'Contract sent to influencer',
+      null,
+      null,
+      { timestamp }
+    );
+    toast({
+      title: "Contract sent",
+      description: "Contract has been sent to the influencer.",
+    });
   };
 
   return (
@@ -2022,24 +2209,7 @@ const CollaborationAssignment = () => {
                                   <Button
                                     size="sm"
                                     className="bg-primary text-white hover:bg-primary/90"
-                                    onClick={async () => {
-                                      const timestamp = new Date().toLocaleString();
-                                      setLastAction({
-                                        label: "Contract sent",
-                                        timestamp,
-                                      });
-                                      await logTimelineEntry(
-                                        'contract_sent',
-                                        'Contract sent to influencer',
-                                        null,
-                                        null,
-                                        { timestamp }
-                                      );
-                                      toast({
-                                        title: "Contract sent",
-                                        description: "Contract has been sent to the influencer.",
-                                      });
-                                    }}
+                                    onClick={handleSendContract}
                                   >
                                     Send Contract
                                   </Button>
@@ -2299,7 +2469,7 @@ const CollaborationAssignment = () => {
                                   setIsSignatureDialogOpen(true);
                                 }}
                               >
-                                {item.inputValue ? '✓' : 'var[{{signature}}]'}
+                                {item.inputValue ? '✓' : `var[{{${item.key}}}]`}
                               </div>
                             ) : (
                               <Input
@@ -2311,9 +2481,9 @@ const CollaborationAssignment = () => {
                                     prev.map((entry) =>
                                       (entry.originalKey || entry.key) === uniqueKey
                                         ? {
-                                            ...entry,
-                                            inputValue: value,
-                                          }
+                                          ...entry,
+                                          inputValue: value,
+                                        }
                                         : entry
                                     )
                                   );
@@ -2408,6 +2578,10 @@ const CollaborationAssignment = () => {
             .contract-preview-container .tiptap-rendered {
               overflow-x: auto !important;
             }
+            .contract-preview-container .tiptap-rendered .signature-box-clickable:hover {
+              background-color: rgba(59, 130, 246, 0.1) !important;
+              border-color: #3b82f6 !important;
+            }
           `}</style>
           {contractPreviewHtml ? (
             <ScrollArea className="contract-preview-container max-h-[70vh] rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-inner">
@@ -2419,6 +2593,24 @@ const CollaborationAssignment = () => {
           ) : (
             <p className="text-sm text-slate-500">No contract content available.</p>
           )}
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => {
+              setIsPreviewOpen(false);
+              setIsVariableSheetOpen(false);
+            }}>
+              Ok
+            </Button>
+            <Button
+              className="bg-primary text-white hover:bg-primary/90"
+              onClick={() => {
+                handleSendContract();
+                setIsPreviewOpen(false);
+                setIsVariableSheetOpen(false);
+              }}
+            >
+              Send Contract
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -2488,14 +2680,14 @@ const CollaborationAssignment = () => {
                     if (savedContractHtml.includes('<body>')) {
                       bodyContent = savedContractHtml.split('<body>')[1]?.split('</body>')[0] || savedContractHtml;
                     }
-                    
+
                     // Extract existing styles
                     const styleMatches = savedContractHtml.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) || [];
                     const existingStyles = styleMatches.map(match => {
                       const content = match.replace(/<\/?style[^>]*>/gi, '');
                       return content;
                     }).join('\n');
-                    
+
                     // Create complete HTML document with Google Fonts
                     const printHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -2546,10 +2738,10 @@ const CollaborationAssignment = () => {
   ${bodyContent}
 </body>
 </html>`;
-                    
+
                     printWindow.document.write(printHtml);
                     printWindow.document.close();
-                    
+
                     // Wait for fonts to load before printing
                     printWindow.onload = () => {
                       // Wait a bit for fonts to load
@@ -2572,13 +2764,13 @@ const CollaborationAssignment = () => {
               <span className="ml-2 text-sm text-slate-500">Loading contract...</span>
             </div>
           ) : savedContractHtml ? (
-            <ScrollArea 
+            <ScrollArea
               className="contract-preview-container max-h-[70vh] rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-inner"
             >
               <div
                 className="tiptap-rendered"
                 dangerouslySetInnerHTML={{
-                  __html: savedContractHtml.includes('<body>') 
+                  __html: savedContractHtml.includes('<body>')
                     ? savedContractHtml.split('<body>')[1]?.split('</body>')[0] || savedContractHtml
                     : savedContractHtml
                 }}
@@ -2601,7 +2793,7 @@ const CollaborationAssignment = () => {
               Choose how you want to add your signature: draw it or type it.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             {/* Mode Selection */}
             <div className="flex gap-2">
@@ -2762,26 +2954,74 @@ const CollaborationAssignment = () => {
             <Button
               onClick={() => {
                 let finalValue = signatureValue;
-                
+
                 if (signatureMode === 'draw') {
                   const canvas = signatureCanvasRef.current;
                   if (canvas) {
                     // Convert canvas to data URL
                     finalValue = canvas.toDataURL('image/png');
                   }
+                } else if (signatureMode === 'type') {
+                  // Convert typed text to image using a temporary canvas
+                  const canvas = document.createElement('canvas');
+                  // Set dimensions - large enough for high quality
+                  canvas.width = 600;
+                  canvas.height = 200;
+                  const ctx = canvas.getContext('2d');
+                  if (ctx) {
+                    // Transparent background
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    // Configure text style
+                    // Use a large font size for better resolution
+                    ctx.font = `60px "${signatureFont}"`;
+                    ctx.fillStyle = '#000000';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+
+                    // Draw text in the center
+                    ctx.fillText(signatureValue, canvas.width / 2, canvas.height / 2);
+
+                    finalValue = canvas.toDataURL('image/png');
+                  }
                 }
-                
+
                 if (currentSignatureEntry && finalValue) {
-                  setContractVariableEntries((prev) =>
-                    prev.map((entry) =>
-                      (entry.originalKey || entry.key) === currentSignatureEntry
-                        ? {
+                  setContractVariableEntries((prev) => {
+                    const existingIndex = prev.findIndex(
+                      (entry) => (entry.originalKey || entry.key) === currentSignatureEntry
+                    );
+
+                    if (existingIndex !== -1) {
+                      // Update existing entry
+                      return prev.map((entry) =>
+                        (entry.originalKey || entry.key) === currentSignatureEntry
+                          ? {
                             ...entry,
                             inputValue: finalValue,
                           }
-                        : entry
-                    )
-                  );
+                          : entry
+                      );
+                    } else {
+                      // Create new entry for signature.user or signature.influencer
+                      return [
+                        ...prev,
+                        {
+                          key: currentSignatureEntry,
+                          originalKey: currentSignatureEntry,
+                          editable: true,
+                          inputValue: finalValue,
+                          value: null,
+                          rawValues: [],
+                          description: currentSignatureEntry === 'signature.user'
+                            ? 'User signature'
+                            : currentSignatureEntry === 'signature.influencer'
+                              ? 'Influencer signature'
+                              : 'Signature',
+                        },
+                      ];
+                    }
+                  });
                 }
                 setIsSignatureDialogOpen(false);
               }}
