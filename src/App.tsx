@@ -31,6 +31,7 @@ import Suspended from "./pages/Suspended";
 import Rejected from "./pages/Rejected";
 import ProfileCompletion from "./pages/ProfileCompletion";
 import ChatWidget from "./components/ChatWidget";
+import PublicContractSigning from "./pages/PublicContractSigning";
 // Intermediate pages removed for direct-to-dashboard flow
 import NotFound from "./pages/NotFound";
 
@@ -68,9 +69,9 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   if (!isAuthenticated) {
     return (
-      <Navigate 
-        to="/" 
-        replace 
+      <Navigate
+        to="/"
+        replace
         state={{ message: "User data deleted or not found contact to your admin" }}
       />
     );
@@ -94,6 +95,7 @@ const App = () => (
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/share/contract/:id" element={<PublicContractSigning />} />
             <Route
               path="/profile-completion"
               element={

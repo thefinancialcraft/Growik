@@ -140,6 +140,7 @@ const CollaborationAssignment = () => {
   const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [currentSignatureEntry, setCurrentSignatureEntry] = useState<string | null>(null);
+  const [isSigned, setIsSigned] = useState<boolean>(false);
 
   // Initialize and reset canvas when dialog opens/closes
   useEffect(() => {
@@ -355,6 +356,8 @@ const CollaborationAssignment = () => {
     if (!influencerNavigation.hasPrevious || !influencerNavigation.previousInfluencer || !campaign) {
       return;
     }
+    // Scroll to top immediately on click
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     // Clear action and remark when navigating
     setSelectedAction("");
     setActionRemark("");
@@ -367,12 +370,18 @@ const CollaborationAssignment = () => {
         campaignId: campaign.id,
       },
     });
+    // Also scroll after a short delay to ensure it works after navigation
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 100);
   }, [influencerNavigation, campaign, navigate]);
 
   const handleNextInfluencer = useCallback(() => {
     if (!influencerNavigation.hasNext || !influencerNavigation.nextInfluencer || !campaign) {
       return;
     }
+    // Scroll to top immediately on click
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     // Clear action and remark when navigating
     setSelectedAction("");
     setActionRemark("");
@@ -385,6 +394,10 @@ const CollaborationAssignment = () => {
         campaignId: campaign.id,
       },
     });
+    // Also scroll after a short delay to ensure it works after navigation
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 100);
   }, [influencerNavigation, campaign, navigate]);
 
   const collaborationId = useMemo(() => {
@@ -686,6 +699,35 @@ const CollaborationAssignment = () => {
       void fetchTimelineEntries();
     }
   }, [collaborationId, fetchTimelineEntries]);
+
+  // Fetch is_signed status from collaboration_actions
+  useEffect(() => {
+    const fetchSignedStatus = async () => {
+      if (!collaborationId) {
+        setIsSigned(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await (supabase as any)
+          .from("collaboration_actions")
+          .select("is_signed")
+          .eq("collaboration_id", collaborationId)
+          .maybeSingle();
+
+        if (!error && data) {
+          setIsSigned(data.is_signed === true);
+        } else {
+          setIsSigned(false);
+        }
+      } catch (err) {
+        console.error("Error fetching signed status:", err);
+        setIsSigned(false);
+      }
+    };
+
+    fetchSignedStatus();
+  }, [collaborationId]);
 
 
   const handleActionSubmit = async () => {
@@ -1238,7 +1280,7 @@ const CollaborationAssignment = () => {
           const loadOverrides = async (sessionId?: string | null) => {
             let query = client
               .from(VARIABLE_OVERRIDE_TABLE)
-              .select("variable_key,value,contract_html");
+              .select("variable_key,value,contract_html,magic_link");
 
             if (baseFilters.campaign_id) {
               query = query.eq("campaign_id", baseFilters.campaign_id);
@@ -1267,7 +1309,13 @@ const CollaborationAssignment = () => {
           };
 
           const overrides = await loadOverrides(collaborationId ?? null);
+          let loadedMagicLink: string | null = null;
           overrides.forEach((override: any) => {
+            // Load magic_link from the column if available
+            if (override.magic_link) {
+              loadedMagicLink = override.magic_link;
+            }
+            
             if (override.variable_key && override.value) {
               // If it's "all_variables", parse the JSON to get individual variable values
               if (override.variable_key === "all_variables") {
@@ -1288,6 +1336,11 @@ const CollaborationAssignment = () => {
               }
             }
           });
+          
+          // Add magic_link to overrideMap if found in column
+          if (loadedMagicLink) {
+            overrideMap.set("magic_link", loadedMagicLink);
+          }
         } catch (overrideErr) {
           console.error("CollaborationAssignment: failed to load overrides", overrideErr);
         }
@@ -1859,6 +1912,38 @@ const CollaborationAssignment = () => {
 </body>
 </html>`;
 
+      // --- Magic Link Generation ---
+      // Check if we already have a magic link token from loaded overrides
+      let magicLinkToken = contractVariableEntries.find(e => e.key === "magic_link")?.value;
+
+      if (!magicLinkToken) {
+        // Try to load existing magic_link from database column
+        try {
+          const { data: existingMagicLink } = await (supabase as any)
+            .from(VARIABLE_OVERRIDE_TABLE)
+            .select("magic_link")
+            .eq("collaboration_id", collaborationId)
+            .not("magic_link", "is", null)
+            .limit(1)
+            .maybeSingle();
+          
+          if (existingMagicLink?.magic_link) {
+            magicLinkToken = existingMagicLink.magic_link;
+          }
+        } catch (err) {
+          console.error("Error loading existing magic_link", err);
+        }
+      }
+
+      if (!magicLinkToken) {
+        // Generate new token if not exists
+        magicLinkToken = crypto.randomUUID();
+      }
+
+      // Add to variables map to be saved (for backwards compatibility)
+      variablesMap["magic_link"] = magicLinkToken;
+      // -----------------------------
+
       setContractPreviewHtml(previewHtml);
       setIsPreviewOpen(true);
 
@@ -1867,28 +1952,55 @@ const CollaborationAssignment = () => {
         try {
           const client = supabase as any;
 
-          // Create a single record with all variables as JSON and complete HTML
-          const singleOverrideRecord = {
+          // Create a single record with all variables, contract_html, and magic_link
+          const contractRecord = {
             campaign_id: resolvedCampaignId,
             influencer_id: resolvedInfluencerId,
             collaboration_id: collaborationId,
             variable_key: "all_variables",
             value: JSON.stringify(variablesMap),
             contract_html: completeHtmlDocument,
+            magic_link: magicLinkToken // Save magic_link in the dedicated column
           };
 
-          const { error } = await client
-            .from(VARIABLE_OVERRIDE_TABLE)
-            .upsert(singleOverrideRecord, { onConflict: "collaboration_id" });
+          // First, delete any existing rows for this collaboration_id to avoid duplicates
+          try {
+            await (supabase as any)
+              .from(VARIABLE_OVERRIDE_TABLE)
+              .delete()
+              .eq("collaboration_id", collaborationId);
+          } catch (deleteErr) {
+            console.warn("Failed to delete existing entries, will try to upsert anyway:", deleteErr);
+          }
 
-          if (error) {
-            console.error("CollaborationAssignment: Failed to upsert variable overrides", error);
+          // Upsert the single contract record with all data
+          const { error: contractError } = await (supabase as any)
+            .from(VARIABLE_OVERRIDE_TABLE)
+            .upsert(contractRecord, { 
+              onConflict: 'collaboration_id,variable_key'
+            });
+
+          if (contractError) {
+            const errorDetails = contractError;
+            console.error("Failed to save contract - Error:", contractError);
+            console.error("Error details:", JSON.stringify(errorDetails, null, 2));
+            
+            const errorMessage = errorDetails?.message || errorDetails?.code || "Unknown error";
             toast({
-              title: "Failed to save contract",
-              description: "Could not save the updated contract to the database.",
+              title: "Warning",
+              description: `Failed to save contract variables: ${errorMessage}. Preview generated successfully.`,
               variant: "destructive",
             });
           } else {
+            // Update local state for magic link if it was newly generated
+            if (!contractVariableEntries.find(e => e.key === "magic_link")) {
+              setContractVariableEntries(prev => [...prev, {
+                key: "magic_link",
+                value: magicLinkToken,
+                editable: false
+              }]);
+            }
+
             // Log to timeline after successfully saving overrides
             const variableCount = Object.keys(variablesMap).length;
             await logTimelineEntry(
@@ -1939,10 +2051,12 @@ const CollaborationAssignment = () => {
     setIsLoadingSavedContract(true);
     setIsViewContractOpen(true);
     try {
-      const { data, error } = await supabase
+      // Query with variable_key filter to get the record with "all_variables"
+      const { data, error } = await (supabase as any)
         .from("collaboration_variable_overrides")
         .select("contract_html")
         .eq("collaboration_id", collaborationId)
+        .eq("variable_key", "all_variables")
         .maybeSingle();
 
       if (error) {
@@ -1953,12 +2067,24 @@ const CollaborationAssignment = () => {
       if (overrideData?.contract_html) {
         setSavedContractHtml(overrideData.contract_html);
       } else {
-        setSavedContractHtml(null);
-        toast({
-          title: "No saved contract",
-          description: "Please update the contract first to view it.",
-          variant: "destructive",
-        });
+        // Fallback: Try to get any record with contract_html for this collaboration_id
+        const { data: fallbackData, error: fallbackError } = await (supabase as any)
+          .from("collaboration_variable_overrides")
+          .select("contract_html")
+          .eq("collaboration_id", collaborationId)
+          .not("contract_html", "is", null)
+          .maybeSingle();
+
+        if (!fallbackError && fallbackData?.contract_html) {
+          setSavedContractHtml(fallbackData.contract_html);
+        } else {
+          setSavedContractHtml(null);
+          toast({
+            title: "No saved contract",
+            description: "Please update the contract first to view it.",
+            variant: "destructive",
+          });
+        }
       }
     } catch (err: any) {
       console.error("CollaborationAssignment: Error fetching saved contract", err);
@@ -2205,7 +2331,7 @@ const CollaborationAssignment = () => {
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                   <Button
                                     size="sm"
                                     className="bg-primary text-white hover:bg-primary/90"
@@ -2236,6 +2362,14 @@ const CollaborationAssignment = () => {
                                   >
                                     View Contract
                                   </Button>
+                                  {isSigned && (
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-100 text-green-800 rounded-md">
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                      <span className="text-sm font-semibold">Contract Signed</span>
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   <Button
@@ -2247,6 +2381,63 @@ const CollaborationAssignment = () => {
                                   >
                                     <ChevronLeft className="h-4 w-4 mr-1" />
                                     Previous
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={async () => {
+                                      // Find magic link token from loaded entries
+                                      let magicLinkToken = contractVariableEntries.find(e => e.key === "magic_link")?.value;
+
+                                      // If not found locally, try to fetch from database column
+                                      if (!magicLinkToken && collaborationId) {
+                                        try {
+                                          const { data: magicLinkData } = await (supabase as any)
+                                            .from(VARIABLE_OVERRIDE_TABLE)
+                                            .select("magic_link")
+                                            .eq("collaboration_id", collaborationId)
+                                            .not("magic_link", "is", null)
+                                            .limit(1)
+                                            .maybeSingle();
+                                          
+                                          if (magicLinkData?.magic_link) {
+                                            magicLinkToken = magicLinkData.magic_link;
+                                            // Update local state
+                                            setContractVariableEntries(prev => {
+                                              const existing = prev.find(e => e.key === "magic_link");
+                                              if (existing) {
+                                                return prev.map(e => e.key === "magic_link" ? { ...e, value: magicLinkToken } : e);
+                                              }
+                                              return [...prev, {
+                                                key: "magic_link",
+                                                value: magicLinkToken,
+                                                editable: false
+                                              }];
+                                            });
+                                          }
+                                        } catch (err) {
+                                          console.error("Error fetching magic_link from database", err);
+                                        }
+                                      }
+
+                                      if (!magicLinkToken) {
+                                        toast({
+                                          title: "Magic Link Not Ready",
+                                          description: "Please click 'Update Contract' to generate the magic link first.",
+                                          variant: "destructive"
+                                        });
+                                        return;
+                                      }
+
+                                      const link = `${window.location.origin}/share/contract/${magicLinkToken}`;
+                                      navigator.clipboard.writeText(link);
+                                      toast({
+                                        title: "Link Copied",
+                                        description: "Magic link copied to clipboard.",
+                                      });
+                                    }}
+                                  >
+                                    Copy Magic Link
                                   </Button>
                                   <Button
                                     size="sm"
@@ -2718,6 +2909,15 @@ const CollaborationAssignment = () => {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         color-adjust: exact !important;
+      }
+      body {
+        padding: 0;
+        margin: 0;
+      }
+      .contract-preview-container {
+        border: none;
+        box-shadow: none;
+        padding: 0;
       }
       span[style*="font-family"][style*="Dancing Script"],
       span[style*="font-family"][style*="Great Vibes"],

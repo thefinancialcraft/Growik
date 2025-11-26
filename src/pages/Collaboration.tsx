@@ -36,7 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Printer, ChevronLeft, ChevronRight, FileText, UserCog, Trash2, CheckCircle2, FileCheck } from "lucide-react";
+import { Loader2, Printer, ChevronLeft, ChevronRight, FileText, UserCog, Trash2, CheckCircle2, FileCheck, Circle } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -756,7 +756,7 @@ const Collaboration = () => {
 
       // Enrich actions with campaign, contract names, user names, and influencer names
       const enrichedActions = await Promise.all(
-        (data || []).map(async (action) => {
+        (data || []).map(async (action: any) => {
           let campaignName: string | null = null;
           let contractName: string | null = null;
           let userName: string | null = null;
@@ -775,7 +775,7 @@ const Collaboration = () => {
                 .eq("collaboration_id", action.collaboration_id)
                 .maybeSingle();
 
-              if (overrideData?.contract_html) {
+              if (overrideData && (overrideData as any).contract_html) {
                 hasContractHtml = true;
               }
             } catch (overrideErr) {
@@ -793,7 +793,7 @@ const Collaboration = () => {
                 .maybeSingle();
 
               if (userData) {
-                userName = userData.user_name || null;
+                userName = (userData as any).user_name || null;
               }
             } catch (userErr) {
               console.error("Collaboration: Error fetching user name", userErr);
@@ -810,7 +810,7 @@ const Collaboration = () => {
                 .maybeSingle();
 
               if (influencerData) {
-                influencerName = influencerData.name || null;
+                influencerName = (influencerData as any).name || null;
               }
             } catch (influencerErr) {
               console.error("Collaboration: Error fetching influencer name", influencerErr);
@@ -827,11 +827,12 @@ const Collaboration = () => {
                 .maybeSingle();
 
               if (campaignData) {
-                campaignName = campaignData.name || null;
+                campaignName = (campaignData as any).name || null;
+                const campaignContractId = (campaignData as any).contract_id;
                 
                 // Fetch contract name if contract_id exists
-                if (campaignData.contract_id || action.contract_id) {
-                  const contractId = campaignData.contract_id || action.contract_id;
+                if (campaignContractId || action.contract_id) {
+                  const contractId = campaignContractId || action.contract_id;
                   const { data: contractData } = await supabase
                     .from("contracts")
                     .select("contract_name")
@@ -839,7 +840,7 @@ const Collaboration = () => {
                     .maybeSingle();
 
                   if (contractData) {
-                    contractName = contractData.contract_name || null;
+                    contractName = (contractData as any).contract_name || null;
                   }
                 }
               }
@@ -849,17 +850,26 @@ const Collaboration = () => {
           }
 
           return {
-            ...action,
+            id: action.id,
+            campaign_id: action.campaign_id,
+            influencer_id: action.influencer_id,
+            user_id: action.user_id,
+            action: action.action,
+            remark: action.remark,
+            occurred_at: action.occurred_at,
+            collaboration_id: action.collaboration_id,
+            contract_id: action.contract_id,
+            is_signed: action.is_signed,
             campaign_name: campaignName,
             contract_name: contractName,
             user_name: userName,
             influencer_name: influencerName,
             has_contract_html: hasContractHtml,
-          };
+          } as typeof collaborationActions[0];
         })
       );
 
-      setCollaborationActions(enrichedActions);
+      setCollaborationActions(enrichedActions as typeof collaborationActions);
     } catch (err) {
       console.error("Collaboration: Failed to fetch collaboration actions", err);
       setCollaborationActions([]);
@@ -895,8 +905,8 @@ const Collaboration = () => {
         throw error;
       }
 
-      if (data?.contract_html) {
-        setContractHtmlFromTable(data.contract_html);
+      if (data && (data as any).contract_html) {
+        setContractHtmlFromTable((data as any).contract_html);
       } else {
         toast({
           title: "No contract found",
@@ -921,7 +931,7 @@ const Collaboration = () => {
   // Handle changing user ID
   const handleChangeUserId = useCallback(async (actionId: string, newUserId: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("collaboration_actions")
         .update({ user_id: newUserId || null })
         .eq("id", actionId);
@@ -979,7 +989,7 @@ const Collaboration = () => {
   // Handle toggling signed status
   const handleToggleSigned = useCallback(async (actionId: string, currentStatus: boolean | null) => {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("collaboration_actions")
         .update({ is_signed: !currentStatus })
         .eq("id", actionId);
@@ -1039,7 +1049,8 @@ const Collaboration = () => {
           return;
         }
 
-        if (!campaignData || !campaignData.users || !Array.isArray(campaignData.users)) {
+        const users = (campaignData as any)?.users;
+        if (!campaignData || !users || !Array.isArray(users)) {
           console.log("Collaboration: No users found in campaign", campaignKey);
           setUsersForPicker([]);
           setLoadingCampaignUsers(false);
@@ -1047,7 +1058,7 @@ const Collaboration = () => {
         }
 
         // Extract user IDs from campaign.users array
-        const userIds = campaignData.users
+        const userIds = users
           .map((user: any) => user.id || user.user_id)
           .filter(Boolean);
 
@@ -3368,9 +3379,15 @@ const Collaboration = () => {
                                         title={action.is_signed ? "Mark as Unsigned" : "Mark as Signed"}
                                       >
                                         {action.is_signed ? (
-                                          <FileCheck className="h-4 w-4 text-green-600" />
+                                          <div className="relative inline-flex items-center justify-center">
+                                            <div className="h-4 w-4 rounded-full bg-green-600 flex items-center justify-center">
+                                              <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M9 12l2 2 4-4" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                                              </svg>
+                                            </div>
+                                          </div>
                                         ) : (
-                                          <CheckCircle2 className="h-4 w-4 text-slate-400" />
+                                          <Circle className="h-4 w-4 text-slate-400" />
                                         )}
                                       </Button>
                                     </div>
@@ -3422,14 +3439,14 @@ const Collaboration = () => {
                   if (contractHtmlFromTable.includes('<body>')) {
                     bodyContent = contractHtmlFromTable.split('<body>')[1]?.split('</body>')[0] || contractHtmlFromTable;
                   }
-                  
+
                   // Extract existing styles
                   const styleMatches = contractHtmlFromTable.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) || [];
                   const existingStyles = styleMatches.map(match => {
                     const content = match.replace(/<\/?style[^>]*>/gi, '');
                     return content;
                   }).join('\n');
-                  
+
                   // Create complete HTML document with Google Fonts
                   const printHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -3461,6 +3478,15 @@ const Collaboration = () => {
         print-color-adjust: exact !important;
         color-adjust: exact !important;
       }
+      body {
+        padding: 0;
+        margin: 0;
+      }
+      .contract-preview-container {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+      }
       span[style*="font-family"][style*="Dancing Script"],
       span[style*="font-family"][style*="Great Vibes"],
       span[style*="font-family"][style*="Allura"],
@@ -3480,10 +3506,10 @@ const Collaboration = () => {
   ${bodyContent}
 </body>
 </html>`;
-                  
+
                   printWindow.document.write(printHtml);
                   printWindow.document.close();
-                  
+
                   // Wait for fonts to load before printing
                   printWindow.onload = () => {
                     // Wait a bit for fonts to load
