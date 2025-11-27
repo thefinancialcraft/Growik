@@ -2509,11 +2509,30 @@ const ContractEditor = () => {
         });
 
       if (uploadError) {
-        if (uploadError.message?.includes('Bucket not found')) {
+        if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('not found')) {
           toast({
-            title: 'Storage bucket missing',
-            description: "Please create a 'contracts' bucket in Supabase Storage and make it public.",
+            title: 'Storage Bucket Missing',
+            description: "The 'contracts' bucket doesn't exist. Please create it in Supabase Storage (Storage → Create Bucket → Name: 'contracts' → Public: Yes).",
             variant: 'destructive',
+          });
+          // Don't throw, return a data URL as fallback
+          console.warn('ContractEditor: Bucket not found, using data URL as fallback');
+          const reader = new FileReader();
+          return new Promise((resolve, reject) => {
+            reader.onload = (e) => {
+              const dataUrl = e.target?.result as string;
+              if (dataUrl) {
+                resolve({
+                  url: dataUrl,
+                  alignment: 'left' as const,
+                  offsetX: 0,
+                });
+              } else {
+                reject(new Error('Failed to read file'));
+              }
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
           });
         }
         throw uploadError;

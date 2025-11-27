@@ -25,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Printer, ChevronLeft, ChevronRight, Pen, Type, X, RotateCcw, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Printer, ChevronLeft, ChevronRight, Pen, Type, X, RotateCcw, RefreshCw, Trash2, Mail } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -141,6 +141,7 @@ const CollaborationAssignment = () => {
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [currentSignatureEntry, setCurrentSignatureEntry] = useState<string | null>(null);
   const [isSigned, setIsSigned] = useState<boolean>(false);
+  const [isContractSent, setIsContractSent] = useState<boolean>(false);
 
   // Initialize and reset canvas when dialog opens/closes
   useEffect(() => {
@@ -524,7 +525,7 @@ const CollaborationAssignment = () => {
       try {
         const { data, error } = await supabase
           .from("collaboration_actions")
-          .select("action, remark, occurred_at")
+          .select("action, remark, occurred_at, is_contract_sent")
           .eq("campaign_id", resolvedCampaignId)
           .eq("collaboration_id", collaborationId)
           .order("occurred_at", { ascending: false })
@@ -539,7 +540,12 @@ const CollaborationAssignment = () => {
           return;
         }
 
-        const latestAction = data as { action?: string | null; remark?: string | null; occurred_at?: string | null } | null;
+        const latestAction = data as { action?: string | null; remark?: string | null; occurred_at?: string | null; is_contract_sent?: boolean | null } | null;
+        
+        // Set is_contract_sent status
+        if (latestAction && latestAction.is_contract_sent !== undefined) {
+          setIsContractSent(latestAction.is_contract_sent === true);
+        }
 
         if (latestAction) {
           const actionValue = (latestAction.action ?? "") as ActionOption | "";
@@ -699,6 +705,39 @@ const CollaborationAssignment = () => {
       void fetchTimelineEntries();
     }
   }, [collaborationId, fetchTimelineEntries]);
+
+  // Fetch is_contract_sent status from collaboration_actions
+  useEffect(() => {
+    const fetchContractSentStatus = async () => {
+      if (!collaborationId) {
+        setIsContractSent(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("collaboration_actions")
+          .select("is_contract_sent")
+          .eq("collaboration_id", collaborationId)
+          .order("occurred_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (error) {
+          console.error("Error fetching contract sent status:", error);
+          return;
+        }
+
+        if (data && data.is_contract_sent !== undefined) {
+          setIsContractSent(data.is_contract_sent === true);
+        }
+      } catch (err) {
+        console.error("Error fetching contract sent status:", err);
+      }
+    };
+
+    fetchContractSentStatus();
+  }, [collaborationId]);
 
   // Fetch is_signed status from collaboration_actions
   useEffect(() => {
@@ -2100,22 +2139,210 @@ const CollaborationAssignment = () => {
   };
 
   const handleSendContract = async () => {
-    const timestamp = new Date().toLocaleString();
-    setLastAction({
-      label: "Contract sent",
-      timestamp,
-    });
-    await logTimelineEntry(
-      'contract_sent',
-      'Contract sent to influencer',
-      null,
-      null,
-      { timestamp }
-    );
-    toast({
-      title: "Contract sent",
-      description: "Contract has been sent to the influencer.",
-    });
+    if (!collaborationId) {
+      toast({
+        title: "Error",
+        description: "Collaboration ID not found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!influencer) {
+      toast({
+        title: "Error",
+        description: "Influencer information not found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Get magic link token
+      let magicLinkToken = contractVariableEntries.find(e => e.key === "magic_link")?.value;
+
+      if (!magicLinkToken && collaborationId) {
+        try {
+          const { data: magicLinkData } = await (supabase as any)
+            .from("collaboration_variable_overrides")
+            .select("magic_link")
+            .eq("collaboration_id", collaborationId)
+            .not("magic_link", "is", null)
+            .limit(1)
+            .maybeSingle();
+          
+          if (magicLinkData?.magic_link) {
+            magicLinkToken = magicLinkData.magic_link;
+          }
+        } catch (err) {
+          console.error("Error fetching magic_link from database", err);
+        }
+      }
+
+      if (!magicLinkToken) {
+        toast({
+          title: "Magic Link Not Ready",
+          description: "Please click 'Update Contract' to generate the magic link first.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Update is_contract_sent flag in collaboration_actions
+      const { error: updateError } = await supabase
+        .from("collaboration_actions")
+        .update({ is_contract_sent: true })
+        .eq("collaboration_id", collaborationId);
+
+      if (updateError) {
+        console.error("Error updating is_contract_sent:", updateError);
+        throw updateError;
+      }
+
+      // Update local state
+      setIsContractSent(true);
+
+      const timestamp = new Date().toLocaleString();
+      setLastAction({
+        label: "Contract sent",
+        timestamp,
+      });
+      await logTimelineEntry(
+        'contract_sent',
+        'Contract sent to influencer',
+        null,
+        null,
+        { timestamp }
+      );
+
+      // Create email body and redirect to Zoho Mail
+      const magicLink = `${window.location.origin}/share/contract/${magicLinkToken}`;
+      const influencerName = influencer.name || "Influencer";
+      const influencerEmail = influencer.email || "";
+
+      // Create email body
+      const emailBody = `hii ${influencerName}\n\nthis is your magic link\n\n${magicLink}`;
+      
+      // Encode for URL
+      const encodedBody = encodeURIComponent(emailBody);
+      const encodedSubject = encodeURIComponent("Contract Signing Link");
+
+      // Zoho Mail compose URL (using .in domain)
+      // Try multiple formats - first with query params, then with slashes
+      const zohoMailUrl1 = `https://mail.zoho.in/zm/#compose?to=${encodeURIComponent(influencerEmail)}&subject=${encodedSubject}&body=${encodedBody}`;
+      const zohoMailUrl2 = `https://mail.zoho.in/zm/#compose/to=${encodeURIComponent(influencerEmail)}/subject=${encodedSubject}/body=${encodedBody}`;
+      
+      // Open Zoho Mail in new tab
+      setTimeout(() => {
+        // Try first format
+        let newWindow = window.open(zohoMailUrl1, '_blank', 'noopener,noreferrer');
+        
+        if (!newWindow) {
+          // Popup blocked, try mailto as fallback
+          const mailtoLink = `mailto:${encodeURIComponent(influencerEmail)}?subject=${encodedSubject}&body=${encodedBody}`;
+          window.location.href = mailtoLink;
+          toast({
+            title: "Opening Email Client",
+            description: "Your default email client is opening with the draft email.",
+          });
+        } else {
+          // Wait a bit and check if we need to try alternative format
+          setTimeout(() => {
+            // If first format didn't work, try alternative format
+            // But only if user is still on the page (not redirected properly)
+            toast({
+              title: "Opening Zoho Mail",
+              description: "Zoho Mail compose window should open. If it shows inbox, please use 'Create Draft Email' button.",
+            });
+          }, 500);
+        }
+      }, 100);
+    } catch (error: any) {
+      console.error("Error sending contract:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to send contract.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCreateDraftEmail = async () => {
+    if (!influencer) {
+      toast({
+        title: "Error",
+        description: "Influencer information not found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get magic link token
+    let magicLinkToken = contractVariableEntries.find(e => e.key === "magic_link")?.value;
+
+    if (!magicLinkToken && collaborationId) {
+      try {
+        const { data: magicLinkData } = await (supabase as any)
+          .from("collaboration_variable_overrides")
+          .select("magic_link")
+          .eq("collaboration_id", collaborationId)
+          .not("magic_link", "is", null)
+          .limit(1)
+          .maybeSingle();
+        
+        if (magicLinkData?.magic_link) {
+          magicLinkToken = magicLinkData.magic_link;
+        }
+      } catch (err) {
+        console.error("Error fetching magic_link from database", err);
+      }
+    }
+
+    if (!magicLinkToken) {
+      toast({
+        title: "Magic Link Not Ready",
+        description: "Please click 'Update Contract' to generate the magic link first.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const magicLink = `${window.location.origin}/share/contract/${magicLinkToken}`;
+    const influencerName = influencer.name || "Influencer";
+    const influencerEmail = influencer.email || "";
+
+    // Create email body
+    const emailBody = `hii ${influencerName}\n\nthis is your magic link\n\n${magicLink}`;
+    
+    // Encode for URL
+    const encodedBody = encodeURIComponent(emailBody);
+    const encodedSubject = encodeURIComponent("Contract Signing Link");
+
+    // Try Zoho Mail compose URL first, then fallback to mailto
+    const zohoMailUrl1 = `https://mail.zoho.in/zm/#compose?to=${encodeURIComponent(influencerEmail)}&subject=${encodedSubject}&body=${encodedBody}`;
+    const zohoMailUrl2 = `https://mail.zoho.in/zm/#compose/to=${encodeURIComponent(influencerEmail)}/subject=${encodedSubject}/body=${encodedBody}`;
+    const mailtoLink = `mailto:${encodeURIComponent(influencerEmail)}?subject=${encodedSubject}&body=${encodedBody}`;
+    
+    // Open Zoho Mail in new tab
+    // Using setTimeout to ensure it's a direct user action (helps with popup blockers)
+    setTimeout(() => {
+      // Try first format
+      let newWindow = window.open(zohoMailUrl1, '_blank', 'noopener,noreferrer');
+      
+      if (!newWindow) {
+        // Popup blocked, use mailto as fallback
+        window.location.href = mailtoLink;
+        toast({
+          title: "Opening Email Client",
+          description: "Your default email client is opening with the draft email.",
+        });
+      } else {
+        toast({
+          title: "Opening Zoho Mail",
+          description: "Zoho Mail compose window opened. If it shows inbox, the compose window should appear.",
+        });
+      }
+    }, 100);
   };
 
   return (
@@ -2337,7 +2564,7 @@ const CollaborationAssignment = () => {
                                     className="bg-primary text-white hover:bg-primary/90"
                                     onClick={handleSendContract}
                                   >
-                                    Send Contract
+                                    {isContractSent ? "Resend" : "Send Contract"}
                                   </Button>
                                   <Button
                                     size="sm"
@@ -2438,6 +2665,19 @@ const CollaborationAssignment = () => {
                                     }}
                                   >
                                     Copy Magic Link
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      handleCreateDraftEmail();
+                                    }}
+                                    title="Create draft email in Zoho Mail"
+                                  >
+                                    <Mail className="h-4 w-4 mr-2" />
+                                    Create Draft Email
                                   </Button>
                                   <Button
                                     size="sm"
@@ -2799,7 +3039,7 @@ const CollaborationAssignment = () => {
                 setIsVariableSheetOpen(false);
               }}
             >
-              Send Contract
+              {isContractSent ? "Resend" : "Send Contract"}
             </Button>
           </div>
         </DialogContent>

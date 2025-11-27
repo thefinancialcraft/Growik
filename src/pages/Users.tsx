@@ -874,7 +874,7 @@ const Users = () => {
         holdDurationDays = null;
       }
 
-      console.log('Calling supabase update with profile ID:', profileId);
+      console.log('Calling supabase update helper with profile ID:', profileId);
       const updateData: any = { 
         status: newStatus,
         status_reason: statusReason.trim()
@@ -889,62 +889,7 @@ const Users = () => {
         updateData.hold_duration_days = null;
       }
 
-      const { data, error } = await supabase
-        .from('user_profiles')
-        // @ts-ignore - Supabase type inference issue with update method
-        .update(updateData)
-        .eq('id', profileId)
-        .select();
-
-      console.log('Update response - data:', data);
-      console.log('Update response - error:', error);
-
-      if (error) {
-        console.error('Update error details:', {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint
-        });
-        throw error;
-      }
-
-      if (!data || data.length === 0) {
-        console.warn('Update returned no rows. This might be an RLS policy issue.');
-        console.warn('Trying alternative update method...');
-        
-        // Try updating by user_id as fallback
-        const fallbackUpdateData: any = { 
-          status: newStatus,
-          status_reason: statusReason.trim()
-        };
-
-        if (newStatus === 'hold') {
-          fallbackUpdateData.hold_end_time = holdEndTime;
-          fallbackUpdateData.hold_duration_days = holdDurationDays;
-        } else {
-          fallbackUpdateData.hold_end_time = null;
-          fallbackUpdateData.hold_duration_days = null;
-        }
-
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('user_profiles')
-          // @ts-ignore - Supabase type inference issue with update method
-          .update(fallbackUpdateData)
-          .eq('user_id', userId)
-          .select();
-        
-        console.log('Fallback update response - data:', fallbackData);
-        console.log('Fallback update response - error:', fallbackError);
-        
-        if (fallbackError || !fallbackData || fallbackData.length === 0) {
-          throw new Error('Update failed: RLS policy may be blocking the update. Please check admin permissions in Supabase.');
-        }
-        
-        // Use fallback data
-        const updatedData = fallbackData;
-        console.log('Fallback update succeeded');
-      }
+      await updateUserProfileRecord(updateData, { profileId, userId });
 
       // Refresh users list to get updated data from database
       const { getAllUserProfiles } = await import('@/lib/userProfile');
@@ -1087,6 +1032,58 @@ const Users = () => {
     }
   };
 
+  // Centralized profile update helper with RLS/admin fallbacks
+  const updateUserProfileRecord = async (
+    updateData: Record<string, any>,
+    identifiers: { profileId?: string | null; userId?: string | null }
+  ) => {
+    const attempts: Array<{ client: any; field: 'id' | 'user_id'; value: string }> = [];
+
+    if (identifiers.profileId) {
+      attempts.push({ client: supabase, field: 'id', value: identifiers.profileId });
+    }
+    if (identifiers.userId) {
+      attempts.push({ client: supabase, field: 'user_id', value: identifiers.userId });
+    }
+    if (supabaseAdmin) {
+      if (identifiers.profileId) {
+        attempts.push({ client: supabaseAdmin, field: 'id', value: identifiers.profileId });
+      }
+      if (identifiers.userId) {
+        attempts.push({ client: supabaseAdmin, field: 'user_id', value: identifiers.userId });
+      }
+    }
+
+    if (attempts.length === 0) {
+      throw new Error('No identifiers provided to update user profile.');
+    }
+
+    let lastError: any = null;
+    for (const attempt of attempts) {
+      try {
+        const { data, error } = await attempt.client
+          .from('user_profiles')
+          // @ts-ignore - Supabase type inference issue with update method
+          .update(updateData)
+          .eq(attempt.field, attempt.value)
+          .select();
+
+        if (error) {
+          lastError = error;
+          continue;
+        }
+
+        if (data && data.length > 0) {
+          return data;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    throw lastError || new Error('Failed to update user profile. Please verify admin permissions or RLS policies.');
+  };
+
   const handleApprovalChange = async (userId: string, newApproval: 'pending' | 'approved' | 'rejected') => {
     try {
       console.log('=== HANDLE APPROVAL CHANGE ===');
@@ -1138,49 +1135,9 @@ const Users = () => {
       }
 
       console.log('Update data:', updateData);
-      console.log('Calling supabase update with profile ID:', profileId);
-      
-      const { data, error } = await supabase
-        .from('user_profiles')
-        // @ts-ignore - Supabase type inference issue with update method
-        .update(updateData)
-        .eq('id', profileId)
-        .select();
+      console.log('Attempting profile update with helper');
 
-      console.log('Update response - data:', data);
-      console.log('Update response - error:', error);
-
-      if (error) {
-        console.error('Update error details:', {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint
-        });
-        throw error;
-      }
-
-      if (!data || data.length === 0) {
-        console.warn('Update returned no rows. This might be an RLS policy issue.');
-        console.warn('Trying alternative update method...');
-        
-        // Try updating by user_id as fallback
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('user_profiles')
-          // @ts-ignore - Supabase type inference issue with update method
-          .update(updateData)
-          .eq('user_id', userId)
-          .select();
-        
-        console.log('Fallback update response - data:', fallbackData);
-        console.log('Fallback update response - error:', fallbackError);
-        
-        if (fallbackError || !fallbackData || fallbackData.length === 0) {
-          throw new Error('Update failed: RLS policy may be blocking the update. Please check admin permissions.');
-        }
-        
-        console.log('Fallback update succeeded');
-      }
+      await updateUserProfileRecord(updateData, { profileId, userId });
 
       // Refresh users list to get updated data
       console.log('Refreshing users list...');

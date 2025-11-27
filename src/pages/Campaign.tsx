@@ -1490,12 +1490,13 @@ const Campaign = () => {
                             <DropdownMenuLabel>Campaign Actions</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              onSelect={() => {
+                              onSelect={(e) => {
+                                e.preventDefault();
                                 handleOpenUserPicker(campaign);
                               }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                e.preventDefault();
+                                handleOpenUserPicker(campaign);
                               }}
                               onPointerDown={(e) => {
                                 e.stopPropagation();
@@ -1506,12 +1507,13 @@ const Campaign = () => {
                               Add Users
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onSelect={() => {
+                              onSelect={(e) => {
+                                e.preventDefault();
                                 handleOpenInfluencerPicker(campaign);
                               }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                e.preventDefault();
+                                handleOpenInfluencerPicker(campaign);
                               }}
                               onPointerDown={(e) => {
                                 e.stopPropagation();
@@ -1749,7 +1751,11 @@ const Campaign = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleOpenUserPickerForCreate}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleOpenUserPickerForCreate();
+                  }}
                   disabled={usersLoading && !users.length}
                   className="flex items-center gap-2"
                 >
@@ -1857,7 +1863,11 @@ const Campaign = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleOpenInfluencerPickerForCreate}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleOpenInfluencerPickerForCreate();
+                  }}
                   disabled={influencersLoading && !influencers.length}
                   className="flex items-center gap-2"
                 >
