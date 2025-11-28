@@ -2258,35 +2258,39 @@ const CollaborationAssignment = () => {
       });
 
       // Create email subject with company name and collaboration ID
-      const emailSubject = `Contract Signing Link – Action Required | ${companyName} | ${collaborationId}`;
+      const emailSubject = `${companyName} – Contract Signing Link | Collaboration ID: ${collaborationId}`;
 
       // Create email body with new template
       const emailBody = `Hi ${influencerName},
 
-We hope you're doing great!
+We hope you're doing well!
 
-As discussed during our onboarding, we are sharing your secure contract signing link.
+Your collaboration has been successfully initiated with Growwik Media.
 
-Please use the magic link below to review and digitally sign your contract:
+Below is your secure contract signing magic link for Collaboration ID: ${collaborationId}.
+
+Please click the link below to open and sign your contract:
 
 🔗 Contract Signing Link:
 
 ${magicLink}
 
-Simply click the link, complete the signature, and your onboarding process will be finalized.
+Once the contract is signed, your onboarding for this collaboration will be completed.
 
-If you face any issues while opening or signing the contract, feel free to reach out to us — we're here to help.
+If you face any issue while accessing the link or signing the contract, feel free to contact us anytime.
+
+Footer – User Details
+
+Processed By:
+
+• Name: ${userProfile?.user_name || 'N/A'}
+• Email: ${userProfile?.email || 'N/A'}
+• Employee Code: ${userProfile?.employee_id || 'N/A'}
+• Date: ${currentDate}
 
 Best regards,
 
-Growwik Media
-
----
-Collaboration ID: ${collaborationId}
-${userProfile?.user_name ? `Sent by: ${userProfile.user_name}` : ''}
-${userProfile?.email ? `Email: ${userProfile.email}` : ''}
-${userProfile?.employee_id ? `Employee Code: ${userProfile.employee_id}` : ''}
-Date: ${currentDate}`;
+Growwik Media`;
 
       // Call email API to send email via Zoho SMTP
       try {
