@@ -2229,9 +2229,64 @@ const CollaborationAssignment = () => {
         return;
       }
 
-      // Create email body
-      const emailBody = `Hi ${influencerName},\n\nThis is your contract signing link:\n\n${magicLink}\n\nPlease click on the link above to sign the contract.\n\nBest regards,\nGrowwik Media`;
-      const emailSubject = "Contract Signing Link";
+      // Fetch current user profile for email signature
+      let userProfile: { user_name?: string; email?: string; employee_id?: string } | null = null;
+      if (currentUserId) {
+        try {
+          const { data: profileData } = await supabase
+            .from("user_profiles")
+            .select("user_name, email, employee_id")
+            .eq("user_id", currentUserId)
+            .maybeSingle();
+          
+          if (profileData) {
+            userProfile = profileData;
+          }
+        } catch (err) {
+          console.error("Error fetching user profile:", err);
+        }
+      }
+
+      // Get company name from campaign
+      const companyName = campaign?.brand || "Company";
+      
+      // Format current date
+      const currentDate = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+
+      // Create email subject with company name and collaboration ID
+      const emailSubject = `Contract Signing Link – Action Required | ${companyName} | ${collaborationId}`;
+
+      // Create email body with new template
+      const emailBody = `Hi ${influencerName},
+
+We hope you're doing great!
+
+As discussed during our onboarding, we are sharing your secure contract signing link.
+
+Please use the magic link below to review and digitally sign your contract:
+
+🔗 Contract Signing Link:
+
+${magicLink}
+
+Simply click the link, complete the signature, and your onboarding process will be finalized.
+
+If you face any issues while opening or signing the contract, feel free to reach out to us — we're here to help.
+
+Best regards,
+
+Growwik Media
+
+---
+Collaboration ID: ${collaborationId}
+${userProfile?.user_name ? `Sent by: ${userProfile.user_name}` : ''}
+${userProfile?.email ? `Email: ${userProfile.email}` : ''}
+${userProfile?.employee_id ? `Employee Code: ${userProfile.employee_id}` : ''}
+Date: ${currentDate}`;
 
       // Call email API to send email via Zoho SMTP
       try {
@@ -2245,13 +2300,37 @@ const CollaborationAssignment = () => {
             subject: emailSubject,
             body: emailBody,
             influencerName: influencerName,
+            collaborationId: collaborationId,
+            companyName: companyName,
+            userName: userProfile?.user_name || null,
+            userEmail: userProfile?.email || null,
+            employeeId: userProfile?.employee_id || null,
+            date: currentDate,
           }),
         });
 
-        const result = await response.json();
+        // Check if response has content before parsing
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          throw new Error(`Invalid response from server: ${text || 'Empty response'}`);
+        }
+
+        // Check if response body is empty
+        const text = await response.text();
+        if (!text) {
+          throw new Error('Empty response from server. Make sure the API endpoint is deployed.');
+        }
+
+        let result;
+        try {
+          result = JSON.parse(text);
+        } catch (parseError) {
+          throw new Error(`Failed to parse response: ${text}`);
+        }
 
         if (!response.ok) {
-          throw new Error(result.error || 'Failed to send email');
+          throw new Error(result.error || result.details || 'Failed to send email');
         }
 
         toast({
@@ -2260,7 +2339,17 @@ const CollaborationAssignment = () => {
         });
       } catch (emailError: any) {
         console.error("Error sending email:", emailError);
-        throw new Error(`Failed to send email: ${emailError.message}`);
+        
+        // Provide more helpful error messages
+        let errorMessage = emailError.message || 'Failed to send email';
+        
+        if (emailError.message?.includes('fetch')) {
+          errorMessage = 'Unable to reach email server. Please check your connection or ensure the API is deployed.';
+        } else if (emailError.message?.includes('Empty response')) {
+          errorMessage = 'Email API endpoint not available. Please deploy the API or use "vercel dev" for local development.';
+        }
+        
+        throw new Error(`Failed to send email: ${errorMessage}`);
       }
     } catch (error: any) {
       console.error("Error sending contract:", error);
