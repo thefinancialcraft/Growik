@@ -21,34 +21,14 @@ export default async function handler(
   }
 
   try {
-    console.log('=== EMAIL API CALLED ===');
-    console.log('Request method:', req.method);
-    console.log('Request body keys:', Object.keys(req.body || {}));
-    
     const { to, subject, body, influencerName, collaborationId, companyName, userName, userEmail, employeeId, date } = req.body;
 
     // Validate required fields
     if (!to || !subject || !body) {
-      console.error('Missing required fields:', { to: !!to, subject: !!subject, body: !!body });
       return res.status(400).json({ 
         error: 'Missing required fields: to, subject, and body are required' 
       });
     }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(to)) {
-      console.error('Invalid email format:', to);
-      return res.status(400).json({ 
-        error: 'Invalid email address format',
-        details: `The email address "${to}" is not valid`
-      });
-    }
-
-    console.log('Email validation passed. Preparing to send email...');
-    console.log('To:', to);
-    console.log('Subject:', subject);
-    console.log('Body length:', body.length);
 
     // Zoho SMTP configuration
     const transporter = nodemailer.createTransport({
@@ -59,36 +39,15 @@ export default async function handler(
         user: 'contact@growwik.com',
         pass: 'Growwik@8521',
       },
-      // Add connection timeout and retry options
-      connectionTimeout: 10000, // 10 seconds
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
-      // Debug mode for better error messages
-      debug: false,
-      logger: false,
     });
 
-    // Verify SMTP connection before sending
-    try {
-      await transporter.verify();
-      console.log('SMTP connection verified successfully');
-    } catch (verifyError: any) {
-      console.error('SMTP verification failed:', verifyError);
-      return res.status(500).json({
-        error: 'SMTP connection failed',
-        details: verifyError?.message || 'Unable to connect to email server',
-        code: verifyError?.code || 'ECONNECTION',
-      });
-    }
-
     // Convert plain text body to HTML, preserving structure
+    const bodyLines = body.split('\n');
     let htmlBody = '';
-    try {
-      const bodyLines = body.split('\n');
-      let inFooter = false;
-      let inProcessedBy = false;
-      
-      for (let i = 0; i < bodyLines.length; i++) {
+    let inFooter = false;
+    let inProcessedBy = false;
+    
+    for (let i = 0; i < bodyLines.length; i++) {
       const line = bodyLines[i].trim();
       
       // Check if we're in the footer section
@@ -111,15 +70,14 @@ export default async function handler(
       }
       // Handle magic link
       else if (line.includes('http') && line.includes('/share/contract/')) {
-        const cleanLink = line.trim().replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         htmlBody += `
           <div style="margin: 30px 0; text-align: center;">
-            <a href="${cleanLink}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3); transition: all 0.3s;">
+            <a href="${line.trim()}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3); transition: all 0.3s;">
               🔗 Contract Signing Link
             </a>
           </div>
           <p style="color: #666; font-size: 13px; margin: 15px 0; text-align: center; word-break: break-all; padding: 12px; background-color: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb;">
-            ${cleanLink}
+            ${line.trim()}
           </p>`;
       }
       // Handle emoji lines
@@ -152,42 +110,28 @@ export default async function handler(
       }
       // Regular paragraphs
       else if (line && !inFooter) {
-        // Escape HTML special characters
-        const escapedLine = line
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
-        htmlBody += `<p style="color: #4a5568; line-height: 1.7; margin: 0 0 18px 0; font-size: 15px;">${escapedLine}</p>`;
+        htmlBody += `<p style="color: #4a5568; line-height: 1.7; margin: 0 0 18px 0; font-size: 15px;">${line}</p>`;
       }
     }
-    
-    console.log('HTML body generated successfully. Length:', htmlBody.length);
-    } catch (htmlError: any) {
-      console.error('Error generating HTML body:', htmlError);
-      throw new Error(`Failed to generate email HTML: ${htmlError.message}`);
-    }
 
-    // Google Drive direct image URLs - using proper format for public access
-    // Signify logo: https://drive.google.com/file/d/1-EV9JiBIzd4_n0AlBYfhXPe4GQZrj2vu/view?usp=sharing
-    // Try multiple URL formats for better compatibility
-    const signifyFileId = '1-EV9JiBIzd4_n0AlBYfhXPe4GQZrj2vu';
-    const signifyLogoUrl = `https://drive.google.com/uc?export=view&id=${signifyFileId}`;
+    // Get base URL for logo (use the origin from the request or default)
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : 'https://growik.vercel.app';
     
-    // Growwik logo: https://drive.google.com/file/d/1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA/view?usp=sharing
-    const growwikFileId = '1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA';
-    const growwikLogoUrl = `https://drive.google.com/uc?export=view&id=${growwikFileId}`;
-    
-    console.log('Logo URLs:', { signifyLogoUrl, growwikLogoUrl });
+    // Use PNG logo for better email client compatibility
+    const logoUrl = `${baseUrl}/growiik.png`;
 
-    console.log('Building email template...');
-    
     // Email options with professional HTML template
-    let mailOptions: nodemailer.SendMailOptions;
-    try {
-      // Build HTML template
-      const htmlTemplate = `
+    const mailOptions = {
+      from: {
+        name: 'Growwik Media',
+        address: 'contact@growwik.com',
+      },
+      to: to,
+      subject: subject,
+      text: body,
+      html: `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -207,16 +151,15 @@ export default async function handler(
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
                 <tr>
                   <td align="center">
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                      <tr>
-                        <td style="padding: 0 10px; vertical-align: middle;">
-                          <img src="${signifyLogoUrl}" alt="Signify Logo" style="height: 50px; width: auto; max-width: 150px; display: block; border: 0;" />
-                        </td>
-                        <td style="padding: 0 10px; vertical-align: middle;">
-                          <img src="${growwikLogoUrl}" alt="Growwik Media Logo" style="height: 50px; width: auto; max-width: 150px; display: block; border: 0;" />
-                        </td>
-                      </tr>
-                    </table>
+                    <div style="display: inline-block; text-align: center;">
+                      <div style="margin-bottom: 12px;">
+                        <img src="${logoUrl}" alt="Growwik Media Logo" style="width: 60px; height: 60px; border-radius: 8px; object-fit: contain;" onerror="this.style.display='none';">
+                      </div>
+                      <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.5px;">
+                        Signify
+                      </h1>
+                      <p style="margin: 6px 0 0 0; font-size: 15px; color: #667eea; font-weight: 600;">Growwik Media</p>
+                    </div>
                   </td>
                 </tr>
               </table>
@@ -240,23 +183,23 @@ export default async function handler(
                     <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                       <tr>
                         <td style="padding: 0 8px;">
-                          <a href="https://www.facebook.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #1877f2; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
-                            <img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" alt="Facebook" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          <a href="https://www.facebook.com/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background-color: #1877f2; border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
+                            <span style="color: #ffffff; font-size: 18px; font-weight: bold;">f</span>
                           </a>
                         </td>
                         <td style="padding: 0 8px;">
-                          <a href="https://twitter.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #1da1f2; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
-                            <img src="https://cdn-icons-png.flaticon.com/512/124/124021.png" alt="Twitter" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          <a href="https://twitter.com/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background-color: #1da1f2; border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
+                            <span style="color: #ffffff; font-size: 18px;">🐦</span>
                           </a>
                         </td>
                         <td style="padding: 0 8px;">
-                          <a href="https://www.instagram.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
-                            <img src="https://cdn-icons-png.flaticon.com/512/174/174855.png" alt="Instagram" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          <a href="https://www.instagram.com/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
+                            <span style="color: #ffffff; font-size: 18px;">📷</span>
                           </a>
                         </td>
                         <td style="padding: 0 8px;">
-                          <a href="https://www.linkedin.com/company/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #0077b5; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
-                            <img src="https://cdn-icons-png.flaticon.com/512/174/174857.png" alt="LinkedIn" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          <a href="https://www.linkedin.com/company/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background-color: #0077b5; border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
+                            <span style="color: #ffffff; font-size: 18px; font-weight: bold;">in</span>
                           </a>
                         </td>
                       </tr>
@@ -282,72 +225,26 @@ export default async function handler(
   </table>
 </body>
 </html>
-      `;
-      
-      mailOptions = {
-        from: {
-          name: 'Growwik Media',
-          address: 'contact@growwik.com',
-        },
-        to: to,
-        subject: subject,
-        text: body,
-        html: htmlTemplate,
-      };
-      
-      console.log('Email template built successfully');
-    } catch (templateError: any) {
-      console.error('Error building email template:', templateError);
-      throw new Error(`Failed to build email template: ${templateError.message}`);
-    }
+      `,
+    };
 
     // Send email
-    console.log('Attempting to send email to:', to);
-    console.log('Email subject:', subject);
-    
     const info = await transporter.sendMail(mailOptions);
-    
-    console.log('Email sent successfully. Message ID:', info.messageId);
-    console.log('Response:', info.response);
 
     return res.status(200).json({ 
       success: true, 
       message: 'Email sent successfully',
-      messageId: info.messageId,
-      response: info.response
+      messageId: info.messageId 
     });
 
   } catch (error: any) {
-    console.error('Error sending email - Full error:', error);
-    console.error('Error stack:', error?.stack);
-    console.error('Error code:', error?.code);
-    console.error('Error command:', error?.command);
-    console.error('Error response:', error?.response);
-    console.error('Error responseCode:', error?.responseCode);
-    
-    // Provide more detailed error messages
-    let errorMessage = 'Unknown error occurred';
-    let errorCode = error?.code || 'UNKNOWN';
-    
-    if (error?.code === 'EAUTH') {
-      errorMessage = 'SMTP authentication failed. Please check email credentials.';
-    } else if (error?.code === 'ECONNECTION' || error?.code === 'ETIMEDOUT') {
-      errorMessage = 'Unable to connect to email server. Please check network connection.';
-    } else if (error?.code === 'EENVELOPE') {
-      errorMessage = 'Invalid email address format.';
-    } else if (error?.response) {
-      errorMessage = `SMTP server error: ${error.response}`;
-    } else if (error?.message) {
-      errorMessage = error.message;
-    }
+    console.error('Error sending email:', error);
     
     // Ensure we always return valid JSON
     const errorResponse = {
       error: 'Failed to send email',
-      details: errorMessage,
-      code: errorCode,
-      ...(error?.response && { smtpResponse: error.response }),
-      ...(error?.responseCode && { smtpResponseCode: error.responseCode }),
+      details: error?.message || 'Unknown error occurred',
+      ...(error?.code && { code: error.code }),
     };
     
     return res.status(500).json(errorResponse);
