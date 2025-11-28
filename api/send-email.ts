@@ -171,13 +171,13 @@ export default async function handler(
 
     // Google Drive direct image URLs - using proper format for public access
     // Signify logo: https://drive.google.com/file/d/1-EV9JiBIzd4_n0AlBYfhXPe4GQZrj2vu/view?usp=sharing
-    // Extract file ID and use direct download URL
+    // Try multiple URL formats for better compatibility
     const signifyFileId = '1-EV9JiBIzd4_n0AlBYfhXPe4GQZrj2vu';
-    const signifyLogoUrl = `https://drive.google.com/uc?export=download&id=${signifyFileId}`;
+    const signifyLogoUrl = `https://drive.google.com/uc?export=view&id=${signifyFileId}`;
     
     // Growwik logo: https://drive.google.com/file/d/1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA/view?usp=sharing
     const growwikFileId = '1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA';
-    const growwikLogoUrl = `https://drive.google.com/uc?export=download&id=${growwikFileId}`;
+    const growwikLogoUrl = `https://drive.google.com/uc?export=view&id=${growwikFileId}`;
     
     console.log('Logo URLs:', { signifyLogoUrl, growwikLogoUrl });
 
@@ -186,15 +186,8 @@ export default async function handler(
     // Email options with professional HTML template
     let mailOptions: nodemailer.SendMailOptions;
     try {
-      mailOptions = {
-      from: {
-        name: 'Growwik Media',
-        address: 'contact@growwik.com',
-      },
-      to: to,
-      subject: subject,
-      text: body,
-      html: htmlTemplate,
+      // Build HTML template
+      const htmlTemplate = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -289,7 +282,17 @@ export default async function handler(
   </table>
 </body>
 </html>
-      `,
+      `;
+      
+      mailOptions = {
+        from: {
+          name: 'Growwik Media',
+          address: 'contact@growwik.com',
+        },
+        to: to,
+        subject: subject,
+        text: body,
+        html: htmlTemplate,
       };
       
       console.log('Email template built successfully');
