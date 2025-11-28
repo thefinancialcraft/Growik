@@ -66,54 +66,63 @@ export default async function handler(
       
       // Handle greeting
       if (line.startsWith('Hi ') && !inFooter) {
-        htmlBody += `<p style="color: #333; font-size: 16px; margin-bottom: 15px;"><strong>${line}</strong></p>`;
+        htmlBody += `<p style="color: #1a1a1a; font-size: 18px; margin: 0 0 20px 0; font-weight: 600;">${line}</p>`;
       }
       // Handle magic link
       else if (line.includes('http') && line.includes('/share/contract/')) {
-        htmlBody += `<p style="margin: 20px 0;">
-          <a href="${line.trim()}" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
-            🔗 Contract Signing Link
-          </a>
-        </p>
-        <p style="color: #666; font-size: 14px; margin-top: 10px; word-break: break-all;">
-          ${line.trim()}
-        </p>`;
+        htmlBody += `
+          <div style="margin: 30px 0; text-align: center;">
+            <a href="${line.trim()}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3); transition: all 0.3s;">
+              🔗 Contract Signing Link
+            </a>
+          </div>
+          <p style="color: #666; font-size: 13px; margin: 15px 0; text-align: center; word-break: break-all; padding: 12px; background-color: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb;">
+            ${line.trim()}
+          </p>`;
       }
       // Handle emoji lines
       else if (line.startsWith('🔗')) {
-        htmlBody += `<p style="color: #333; font-size: 16px; margin: 20px 0 10px 0; font-weight: 600;">${line}</p>`;
+        htmlBody += `<p style="color: #1a1a1a; font-size: 18px; margin: 25px 0 15px 0; font-weight: 600;">${line}</p>`;
       }
       // Handle empty lines
       else if (line === '') {
-        htmlBody += '<br>';
+        htmlBody += '<div style="height: 8px;"></div>';
       }
       // Handle "Footer – User Details" header
       else if (line.includes('Footer – User Details')) {
-        htmlBody += `<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0 15px 0;">`;
-        htmlBody += `<p style="color: #666; font-size: 14px; font-weight: 600; margin: 20px 0 10px 0;">${line}</p>`;
+        htmlBody += `<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 40px 0 20px 0;">`;
+        htmlBody += `<p style="color: #333; font-size: 15px; font-weight: 700; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 0.5px;">${line}</p>`;
       }
       // Handle "Processed By:" label
       else if (line.includes('Processed By:')) {
-        htmlBody += `<p style="color: #666; font-size: 13px; font-weight: 600; margin: 15px 0 10px 0;">${line}</p>`;
+        htmlBody += `<p style="color: #1a1a1a; font-size: 14px; font-weight: 600; margin: 20px 0 12px 0;">${line}</p>`;
       }
       // Handle bullet points (Name, Email, Employee Code, Date)
       else if (inProcessedBy && line.startsWith('•')) {
-        htmlBody += `<p style="color: #666; font-size: 12px; margin: 5px 0 5px 20px;">${line}</p>`;
+        htmlBody += `<p style="color: #555; font-size: 13px; margin: 6px 0 6px 25px; line-height: 1.5;">${line}</p>`;
       }
       // Handle signature section
       else if (line.includes('Best regards')) {
-        htmlBody += `<p style="color: #666; margin-top: 30px; font-weight: 500;">${line}</p>`;
+        htmlBody += `<p style="color: #1a1a1a; margin-top: 35px; margin-bottom: 8px; font-weight: 500; font-size: 15px;">${line}</p>`;
       }
       else if (line.includes('Growwik Media') && !inFooter) {
-        htmlBody += `<p style="color: #666; margin: 5px 0 20px 0; font-weight: 500;">${line}</p>`;
+        htmlBody += `<p style="color: #667eea; margin: 0 0 0 0; font-weight: 600; font-size: 16px;">${line}</p>`;
       }
       // Regular paragraphs
       else if (line && !inFooter) {
-        htmlBody += `<p style="color: #666; line-height: 1.6; margin-bottom: 15px;">${line}</p>`;
+        htmlBody += `<p style="color: #4a5568; line-height: 1.7; margin: 0 0 18px 0; font-size: 15px;">${line}</p>`;
       }
     }
 
-    // Email options
+    // Get base URL for logo (use the origin from the request or default)
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : 'https://growik.vercel.app';
+    
+    // Use PNG logo for better email client compatibility
+    const logoUrl = `${baseUrl}/growiik.png`;
+
+    // Email options with professional HTML template
     const mailOptions = {
       from: {
         name: 'Growwik Media',
@@ -123,9 +132,99 @@ export default async function handler(
       subject: subject,
       text: body,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
-          ${htmlBody}
-        </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contract Signing Link</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f5f5f5;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          
+          <!-- Header with Logo -->
+          <tr>
+            <td style="padding: 30px 40px 20px; text-align: center; border-bottom: 2px solid #f0f0f0; background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                  <td align="center">
+                    <div style="display: inline-block; text-align: center;">
+                      <div style="margin-bottom: 12px;">
+                        <img src="${logoUrl}" alt="Growwik Media Logo" style="width: 60px; height: 60px; border-radius: 8px; object-fit: contain;" onerror="this.style.display='none';">
+                      </div>
+                      <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.5px;">
+                        Signify
+                      </h1>
+                      <p style="margin: 6px 0 0 0; font-size: 15px; color: #667eea; font-weight: 600;">Growwik Media</p>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 40px;">
+              ${htmlBody}
+            </td>
+          </tr>
+
+          <!-- Footer with Social Media -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                  <td align="center" style="padding-bottom: 20px;">
+                    <p style="margin: 0; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 15px;">Connect with us</p>
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="padding: 0 8px;">
+                          <a href="https://www.facebook.com/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background-color: #1877f2; border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
+                            <span style="color: #ffffff; font-size: 18px; font-weight: bold;">f</span>
+                          </a>
+                        </td>
+                        <td style="padding: 0 8px;">
+                          <a href="https://twitter.com/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background-color: #1da1f2; border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
+                            <span style="color: #ffffff; font-size: 18px;">🐦</span>
+                          </a>
+                        </td>
+                        <td style="padding: 0 8px;">
+                          <a href="https://www.instagram.com/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
+                            <span style="color: #ffffff; font-size: 18px;">📷</span>
+                          </a>
+                        </td>
+                        <td style="padding: 0 8px;">
+                          <a href="https://www.linkedin.com/company/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background-color: #0077b5; border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
+                            <span style="color: #ffffff; font-size: 18px; font-weight: bold;">in</span>
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                    <p style="margin: 0; font-size: 12px; color: #666; line-height: 1.6;">
+                      <strong style="color: #333;">Growwik Media</strong><br>
+                      Email: <a href="mailto:contact@growwik.com" style="color: #2563eb; text-decoration: none;">contact@growwik.com</a><br>
+                      <span style="color: #999;">© ${new Date().getFullYear()} Growwik Media. All rights reserved.</span>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
       `,
     };
 
