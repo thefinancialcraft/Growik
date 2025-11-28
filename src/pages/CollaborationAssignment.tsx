@@ -715,7 +715,7 @@ const CollaborationAssignment = () => {
       }
 
       try {
-        const { data, error } = await supabase
+        const { data, error } = await (supabase as any)
           .from("collaboration_actions")
           .select("is_contract_sent")
           .eq("collaboration_id", collaborationId)
@@ -728,8 +728,8 @@ const CollaborationAssignment = () => {
           return;
         }
 
-        if (data && data.is_contract_sent !== undefined) {
-          setIsContractSent(data.is_contract_sent === true);
+        if (data && (data as any).is_contract_sent !== undefined) {
+          setIsContractSent((data as any).is_contract_sent === true);
         }
       } catch (err) {
         console.error("Error fetching contract sent status:", err);
@@ -2189,7 +2189,7 @@ const CollaborationAssignment = () => {
       }
 
       // Update is_contract_sent flag in collaboration_actions
-      const { error: updateError } = await supabase
+      const { error: updateError } = await (supabase as any)
         .from("collaboration_actions")
         .update({ is_contract_sent: true })
         .eq("collaboration_id", collaborationId);
@@ -2215,48 +2215,53 @@ const CollaborationAssignment = () => {
         { timestamp }
       );
 
-      // Create email body and redirect to Zoho Mail
+      // Send email via Zoho SMTP
       const magicLink = `${window.location.origin}/share/contract/${magicLinkToken}`;
       const influencerName = influencer.name || "Influencer";
       const influencerEmail = influencer.email || "";
 
-      // Create email body
-      const emailBody = `hii ${influencerName}\n\nthis is your magic link\n\n${magicLink}`;
-      
-      // Encode for URL
-      const encodedBody = encodeURIComponent(emailBody);
-      const encodedSubject = encodeURIComponent("Contract Signing Link");
+      if (!influencerEmail) {
+        toast({
+          title: "Error",
+          description: "Influencer email address not found.",
+          variant: "destructive",
+        });
+        return;
+      }
 
-      // Zoho Mail compose URL (using .in domain)
-      // Try multiple formats - first with query params, then with slashes
-      const zohoMailUrl1 = `https://mail.zoho.in/zm/#compose?to=${encodeURIComponent(influencerEmail)}&subject=${encodedSubject}&body=${encodedBody}`;
-      const zohoMailUrl2 = `https://mail.zoho.in/zm/#compose/to=${encodeURIComponent(influencerEmail)}/subject=${encodedSubject}/body=${encodedBody}`;
-      
-      // Open Zoho Mail in new tab
-      setTimeout(() => {
-        // Try first format
-        let newWindow = window.open(zohoMailUrl1, '_blank', 'noopener,noreferrer');
-        
-        if (!newWindow) {
-          // Popup blocked, try mailto as fallback
-          const mailtoLink = `mailto:${encodeURIComponent(influencerEmail)}?subject=${encodedSubject}&body=${encodedBody}`;
-          window.location.href = mailtoLink;
-          toast({
-            title: "Opening Email Client",
-            description: "Your default email client is opening with the draft email.",
-          });
-        } else {
-          // Wait a bit and check if we need to try alternative format
-          setTimeout(() => {
-            // If first format didn't work, try alternative format
-            // But only if user is still on the page (not redirected properly)
-            toast({
-              title: "Opening Zoho Mail",
-              description: "Zoho Mail compose window should open. If it shows inbox, please use 'Create Draft Email' button.",
-            });
-          }, 500);
+      // Create email body
+      const emailBody = `Hi ${influencerName},\n\nThis is your contract signing link:\n\n${magicLink}\n\nPlease click on the link above to sign the contract.\n\nBest regards,\nGrowwik Media`;
+      const emailSubject = "Contract Signing Link";
+
+      // Call email API to send email via Zoho SMTP
+      try {
+        const response = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            to: influencerEmail,
+            subject: emailSubject,
+            body: emailBody,
+            influencerName: influencerName,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to send email');
         }
-      }, 100);
+
+        toast({
+          title: "Email Sent Successfully",
+          description: `Contract link has been sent to ${influencerEmail}`,
+        });
+      } catch (emailError: any) {
+        console.error("Error sending email:", emailError);
+        throw new Error(`Failed to send email: ${emailError.message}`);
+      }
     } catch (error: any) {
       console.error("Error sending contract:", error);
       toast({
