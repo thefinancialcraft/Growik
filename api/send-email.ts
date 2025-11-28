@@ -114,13 +114,14 @@ export default async function handler(
       }
     }
 
-    // Get base URL for logo (use the origin from the request or default)
-    const baseUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}` 
-      : 'https://growik.vercel.app';
+    // Google Drive direct image URLs
+    // Signify logo: https://drive.google.com/file/d/1-EV9JiBIzd4_n0AlBYfhXPe4GQZrj2vu/view?usp=sharing
+    const signifyLogoId = '1-EV9JiBIzd4_n0AlBYfhXPe4GQZrj2vu';
+    const signifyLogoUrl = `https://drive.google.com/uc?export=view&id=${signifyLogoId}`;
     
-    // Use PNG logo for better email client compatibility
-    const logoUrl = `${baseUrl}/growiik.png`;
+    // Growwik logo: https://drive.google.com/file/d/1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA/view?usp=sharing
+    const growwikLogoId = '1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA';
+    const growwikLogoUrl = `https://drive.google.com/uc?export=view&id=${growwikLogoId}`;
 
     // Email options with professional HTML template
     const mailOptions = {
@@ -145,26 +146,27 @@ export default async function handler(
       <td align="center" style="padding: 40px 20px;">
         <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
           
-          <!-- Header with Logo -->
-          <tr>
-            <td style="padding: 30px 40px 20px; text-align: center; border-bottom: 2px solid #f0f0f0; background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);">
-              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                <tr>
-                  <td align="center">
-                    <div style="display: inline-block; text-align: center;">
-                      <div style="margin-bottom: 12px;">
-                        <img src="${logoUrl}" alt="Growwik Media Logo" style="width: 60px; height: 60px; border-radius: 8px; object-fit: contain;" onerror="this.style.display='none';">
-                      </div>
-                      <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.5px;">
-                        Signify
-                      </h1>
-                      <p style="margin: 6px 0 0 0; font-size: 15px; color: #667eea; font-weight: 600;">Growwik Media</p>
-                    </div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+           <!-- Header with Logos -->
+           <tr>
+             <td style="padding: 30px 40px 20px; text-align: center; border-bottom: 2px solid #f0f0f0; background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);">
+               <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                 <tr>
+                   <td align="center">
+                     <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                       <tr>
+                         <td style="padding: 0 15px; vertical-align: middle;">
+                           <img src="${signifyLogoUrl}" alt="Signify Logo" style="height: 50px; width: auto; max-width: 150px; display: block; border: 0;" onerror="this.style.display='none';">
+                         </td>
+                         <td style="padding: 0 15px; vertical-align: middle;">
+                           <img src="${growwikLogoUrl}" alt="Growwik Media Logo" style="height: 50px; width: auto; max-width: 150px; display: block; border: 0;" onerror="this.style.display='none';">
+                         </td>
+                       </tr>
+                     </table>
+                   </td>
+                 </tr>
+               </table>
+             </td>
+           </tr>
 
           <!-- Main Content -->
           <tr>
@@ -180,30 +182,30 @@ export default async function handler(
                 <tr>
                   <td align="center" style="padding-bottom: 20px;">
                     <p style="margin: 0; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 15px;">Connect with us</p>
-                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
-                      <tr>
-                        <td style="padding: 0 8px;">
-                          <a href="https://www.facebook.com/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background-color: #1877f2; border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
-                            <span style="color: #ffffff; font-size: 18px; font-weight: bold;">f</span>
-                          </a>
-                        </td>
-                        <td style="padding: 0 8px;">
-                          <a href="https://twitter.com/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background-color: #1da1f2; border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
-                            <span style="color: #ffffff; font-size: 18px;">🐦</span>
-                          </a>
-                        </td>
-                        <td style="padding: 0 8px;">
-                          <a href="https://www.instagram.com/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
-                            <span style="color: #ffffff; font-size: 18px;">📷</span>
-                          </a>
-                        </td>
-                        <td style="padding: 0 8px;">
-                          <a href="https://www.linkedin.com/company/growwikmedia" target="_blank" style="display: inline-block; width: 40px; height: 40px; background-color: #0077b5; border-radius: 50%; text-align: center; line-height: 40px; text-decoration: none;">
-                            <span style="color: #ffffff; font-size: 18px; font-weight: bold;">in</span>
-                          </a>
-                        </td>
-                      </tr>
-                    </table>
+                     <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                       <tr>
+                         <td style="padding: 0 8px;">
+                           <a href="https://www.facebook.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #1877f2; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                             <img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" alt="Facebook" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                           </a>
+                         </td>
+                         <td style="padding: 0 8px;">
+                           <a href="https://twitter.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #1da1f2; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                             <img src="https://cdn-icons-png.flaticon.com/512/124/124021.png" alt="Twitter" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                           </a>
+                         </td>
+                         <td style="padding: 0 8px;">
+                           <a href="https://www.instagram.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                             <img src="https://cdn-icons-png.flaticon.com/512/174/174855.png" alt="Instagram" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                           </a>
+                         </td>
+                         <td style="padding: 0 8px;">
+                           <a href="https://www.linkedin.com/company/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #0077b5; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                             <img src="https://cdn-icons-png.flaticon.com/512/174/174857.png" alt="LinkedIn" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                           </a>
+                         </td>
+                       </tr>
+                     </table>
                   </td>
                 </tr>
                 <tr>
