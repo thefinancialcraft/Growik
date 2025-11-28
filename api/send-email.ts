@@ -30,6 +30,17 @@ export default async function handler(
       });
     }
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(to)) {
+      return res.status(400).json({ 
+        error: 'Invalid email address format',
+        details: `The email address "${to}" is not valid`
+      });
+    }
+
+    console.log('Email validation passed. Preparing to send email...');
+
     // Zoho SMTP configuration
     const transporter = nodemailer.createTransport({
       host: 'smtppro.zoho.in',
@@ -39,7 +50,27 @@ export default async function handler(
         user: 'contact@growwik.com',
         pass: 'Growwik@8521',
       },
+      // Add connection timeout and retry options
+      connectionTimeout: 10000, // 10 seconds
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+      // Debug mode for better error messages
+      debug: false,
+      logger: false,
     });
+
+    // Verify SMTP connection before sending
+    try {
+      await transporter.verify();
+      console.log('SMTP connection verified successfully');
+    } catch (verifyError: any) {
+      console.error('SMTP verification failed:', verifyError);
+      return res.status(500).json({
+        error: 'SMTP connection failed',
+        details: verifyError?.message || 'Unable to connect to email server',
+        code: verifyError?.code || 'ECONNECTION',
+      });
+    }
 
     // Convert plain text body to HTML, preserving structure
     const bodyLines = body.split('\n');
@@ -70,14 +101,15 @@ export default async function handler(
       }
       // Handle magic link
       else if (line.includes('http') && line.includes('/share/contract/')) {
+        const cleanLink = line.trim().replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         htmlBody += `
           <div style="margin: 30px 0; text-align: center;">
-            <a href="${line.trim()}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3); transition: all 0.3s;">
+            <a href="${cleanLink}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3); transition: all 0.3s;">
               🔗 Contract Signing Link
             </a>
           </div>
           <p style="color: #666; font-size: 13px; margin: 15px 0; text-align: center; word-break: break-all; padding: 12px; background-color: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb;">
-            ${line.trim()}
+            ${cleanLink}
           </p>`;
       }
       // Handle emoji lines
@@ -228,22 +260,52 @@ export default async function handler(
     };
 
     // Send email
+    console.log('Attempting to send email to:', to);
+    console.log('Email subject:', subject);
+    
     const info = await transporter.sendMail(mailOptions);
+    
+    console.log('Email sent successfully. Message ID:', info.messageId);
+    console.log('Response:', info.response);
 
     return res.status(200).json({ 
       success: true, 
       message: 'Email sent successfully',
-      messageId: info.messageId 
+      messageId: info.messageId,
+      response: info.response
     });
 
   } catch (error: any) {
-    console.error('Error sending email:', error);
+    console.error('Error sending email - Full error:', error);
+    console.error('Error stack:', error?.stack);
+    console.error('Error code:', error?.code);
+    console.error('Error command:', error?.command);
+    console.error('Error response:', error?.response);
+    console.error('Error responseCode:', error?.responseCode);
+    
+    // Provide more detailed error messages
+    let errorMessage = 'Unknown error occurred';
+    let errorCode = error?.code || 'UNKNOWN';
+    
+    if (error?.code === 'EAUTH') {
+      errorMessage = 'SMTP authentication failed. Please check email credentials.';
+    } else if (error?.code === 'ECONNECTION' || error?.code === 'ETIMEDOUT') {
+      errorMessage = 'Unable to connect to email server. Please check network connection.';
+    } else if (error?.code === 'EENVELOPE') {
+      errorMessage = 'Invalid email address format.';
+    } else if (error?.response) {
+      errorMessage = `SMTP server error: ${error.response}`;
+    } else if (error?.message) {
+      errorMessage = error.message;
+    }
     
     // Ensure we always return valid JSON
     const errorResponse = {
       error: 'Failed to send email',
-      details: error?.message || 'Unknown error occurred',
-      ...(error?.code && { code: error.code }),
+      details: errorMessage,
+      code: errorCode,
+      ...(error?.response && { smtpResponse: error.response }),
+      ...(error?.responseCode && { smtpResponseCode: error.responseCode }),
     };
     
     return res.status(500).json(errorResponse);
