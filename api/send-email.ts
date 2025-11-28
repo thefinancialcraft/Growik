@@ -169,11 +169,17 @@ export default async function handler(
       throw new Error(`Failed to generate email HTML: ${htmlError.message}`);
     }
 
-    // Google Drive direct image URLs
+    // Google Drive direct image URLs - using proper format for public access
     // Signify logo: https://drive.google.com/file/d/1-EV9JiBIzd4_n0AlBYfhXPe4GQZrj2vu/view?usp=sharing
-    const signifyLogoUrl = 'https://drive.google.com/uc?export=view&id=1-EV9JiBIzd4_n0AlBYfhXPe4GQZrj2vu';
+    // Extract file ID and use direct download URL
+    const signifyFileId = '1-EV9JiBIzd4_n0AlBYfhXPe4GQZrj2vu';
+    const signifyLogoUrl = `https://drive.google.com/uc?export=download&id=${signifyFileId}`;
+    
     // Growwik logo: https://drive.google.com/file/d/1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA/view?usp=sharing
-    const growwikLogoUrl = 'https://drive.google.com/uc?export=view&id=1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA';
+    const growwikFileId = '1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA';
+    const growwikLogoUrl = `https://drive.google.com/uc?export=download&id=${growwikFileId}`;
+    
+    console.log('Logo URLs:', { signifyLogoUrl, growwikLogoUrl });
 
     console.log('Building email template...');
     
@@ -188,7 +194,7 @@ export default async function handler(
       to: to,
       subject: subject,
       text: body,
-      html: `
+      html: htmlTemplate,
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -210,11 +216,11 @@ export default async function handler(
                   <td align="center">
                     <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                       <tr>
-                        <td style="padding: 0 10px;">
-                          <img src="${signifyLogoUrl}" alt="Signify Logo" style="height: 50px; width: auto; max-width: 150px; display: block;" onerror="this.style.display='none';">
+                        <td style="padding: 0 10px; vertical-align: middle;">
+                          <img src="${signifyLogoUrl}" alt="Signify Logo" style="height: 50px; width: auto; max-width: 150px; display: block; border: 0;" />
                         </td>
-                        <td style="padding: 0 10px;">
-                          <img src="${growwikLogoUrl}" alt="Growwik Media Logo" style="height: 50px; width: auto; max-width: 150px; display: block;" onerror="this.style.display='none';">
+                        <td style="padding: 0 10px; vertical-align: middle;">
+                          <img src="${growwikLogoUrl}" alt="Growwik Media Logo" style="height: 50px; width: auto; max-width: 150px; display: block; border: 0;" />
                         </td>
                       </tr>
                     </table>
