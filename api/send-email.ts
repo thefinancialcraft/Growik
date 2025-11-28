@@ -21,10 +21,15 @@ export default async function handler(
   }
 
   try {
+    console.log('=== EMAIL API CALLED ===');
+    console.log('Request method:', req.method);
+    console.log('Request body keys:', Object.keys(req.body || {}));
+    
     const { to, subject, body, influencerName, collaborationId, companyName, userName, userEmail, employeeId, date } = req.body;
 
     // Validate required fields
     if (!to || !subject || !body) {
+      console.error('Missing required fields:', { to: !!to, subject: !!subject, body: !!body });
       return res.status(400).json({ 
         error: 'Missing required fields: to, subject, and body are required' 
       });
@@ -33,6 +38,7 @@ export default async function handler(
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(to)) {
+      console.error('Invalid email format:', to);
       return res.status(400).json({ 
         error: 'Invalid email address format',
         details: `The email address "${to}" is not valid`
@@ -40,6 +46,9 @@ export default async function handler(
     }
 
     console.log('Email validation passed. Preparing to send email...');
+    console.log('To:', to);
+    console.log('Subject:', subject);
+    console.log('Body length:', body.length);
 
     // Zoho SMTP configuration
     const transporter = nodemailer.createTransport({
@@ -73,12 +82,13 @@ export default async function handler(
     }
 
     // Convert plain text body to HTML, preserving structure
-    const bodyLines = body.split('\n');
     let htmlBody = '';
-    let inFooter = false;
-    let inProcessedBy = false;
-    
-    for (let i = 0; i < bodyLines.length; i++) {
+    try {
+      const bodyLines = body.split('\n');
+      let inFooter = false;
+      let inProcessedBy = false;
+      
+      for (let i = 0; i < bodyLines.length; i++) {
       const line = bodyLines[i].trim();
       
       // Check if we're in the footer section
@@ -142,8 +152,21 @@ export default async function handler(
       }
       // Regular paragraphs
       else if (line && !inFooter) {
-        htmlBody += `<p style="color: #4a5568; line-height: 1.7; margin: 0 0 18px 0; font-size: 15px;">${line}</p>`;
+        // Escape HTML special characters
+        const escapedLine = line
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+        htmlBody += `<p style="color: #4a5568; line-height: 1.7; margin: 0 0 18px 0; font-size: 15px;">${escapedLine}</p>`;
       }
+    }
+    
+    console.log('HTML body generated successfully. Length:', htmlBody.length);
+    } catch (htmlError: any) {
+      console.error('Error generating HTML body:', htmlError);
+      throw new Error(`Failed to generate email HTML: ${htmlError.message}`);
     }
 
     // Google Drive direct image URLs
@@ -152,8 +175,12 @@ export default async function handler(
     // Growwik logo: https://drive.google.com/file/d/1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA/view?usp=sharing
     const growwikLogoUrl = 'https://drive.google.com/uc?export=view&id=1t8YhI2TDzxh9A71pc4WsMFe9LIR8hQUA';
 
+    console.log('Building email template...');
+    
     // Email options with professional HTML template
-    const mailOptions = {
+    let mailOptions: nodemailer.SendMailOptions;
+    try {
+      mailOptions = {
       from: {
         name: 'Growwik Media',
         address: 'contact@growwik.com',
@@ -257,7 +284,13 @@ export default async function handler(
 </body>
 </html>
       `,
-    };
+      };
+      
+      console.log('Email template built successfully');
+    } catch (templateError: any) {
+      console.error('Error building email template:', templateError);
+      throw new Error(`Failed to build email template: ${templateError.message}`);
+    }
 
     // Send email
     console.log('Attempting to send email to:', to);
