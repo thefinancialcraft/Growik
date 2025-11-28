@@ -142,6 +142,7 @@ const CollaborationAssignment = () => {
   const [currentSignatureEntry, setCurrentSignatureEntry] = useState<string | null>(null);
   const [isSigned, setIsSigned] = useState<boolean>(false);
   const [isContractSent, setIsContractSent] = useState<boolean>(false);
+  const [emailTimer, setEmailTimer] = useState<number | null>(null); // Timer in seconds
 
   // Initialize and reset canvas when dialog opens/closes
   useEffect(() => {
@@ -767,6 +768,54 @@ const CollaborationAssignment = () => {
 
     fetchSignedStatus();
   }, [collaborationId]);
+
+  // Initialize email timer from localStorage on mount
+  useEffect(() => {
+    if (!collaborationId) return;
+
+    const timerKey = `email_timer_${collaborationId}`;
+    const savedTimerEnd = localStorage.getItem(timerKey);
+
+    if (savedTimerEnd) {
+      const endTime = parseInt(savedTimerEnd, 10);
+      const now = Date.now();
+      const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+
+      if (remaining > 0) {
+        setEmailTimer(remaining);
+      } else {
+        localStorage.removeItem(timerKey);
+        setEmailTimer(null);
+      }
+    }
+  }, [collaborationId]);
+
+  // Update email timer every second
+  useEffect(() => {
+    if (emailTimer === null || emailTimer <= 0) {
+      if (emailTimer === 0) {
+        setEmailTimer(null);
+        if (collaborationId) {
+          localStorage.removeItem(`email_timer_${collaborationId}`);
+        }
+      }
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setEmailTimer((prev) => {
+        if (prev === null || prev <= 1) {
+          if (collaborationId) {
+            localStorage.removeItem(`email_timer_${collaborationId}`);
+          }
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [emailTimer, collaborationId]);
 
 
   const handleActionSubmit = async () => {
@@ -2341,6 +2390,14 @@ Growwik Media`;
           title: "Email Sent Successfully",
           description: `Contract link has been sent to ${influencerEmail}`,
         });
+
+        // Start 2-minute timer and save to localStorage
+        const timerDuration = 120; // 2 minutes in seconds
+        setEmailTimer(timerDuration);
+        const timerEndTime = Date.now() + (timerDuration * 1000);
+        if (collaborationId) {
+          localStorage.setItem(`email_timer_${collaborationId}`, timerEndTime.toString());
+        }
       } catch (emailError: any) {
         console.error("Error sending email:", emailError);
         
@@ -2661,8 +2718,13 @@ Growwik Media`;
                                     size="sm"
                                     className="bg-primary text-white hover:bg-primary/90"
                                     onClick={handleSendContract}
+                                    disabled={emailTimer !== null && emailTimer > 0}
                                   >
-                                    {isContractSent ? "Resend" : "Send Contract"}
+                                    {emailTimer !== null && emailTimer > 0
+                                      ? `Resend (${Math.floor(emailTimer / 60)}:${String(emailTimer % 60).padStart(2, '0')})`
+                                      : isContractSent
+                                      ? "Resend"
+                                      : "Send Contract"}
                                   </Button>
                                   <Button
                                     size="sm"
@@ -3136,8 +3198,13 @@ Growwik Media`;
                 setIsPreviewOpen(false);
                 setIsVariableSheetOpen(false);
               }}
+              disabled={emailTimer !== null && emailTimer > 0}
             >
-              {isContractSent ? "Resend" : "Send Contract"}
+              {emailTimer !== null && emailTimer > 0
+                ? `Resend (${Math.floor(emailTimer / 60)}:${String(emailTimer % 60).padStart(2, '0')})`
+                : isContractSent
+                ? "Resend"
+                : "Send Contract"}
             </Button>
           </div>
         </DialogContent>
