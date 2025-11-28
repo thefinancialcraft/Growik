@@ -142,7 +142,6 @@ const CollaborationAssignment = () => {
   const [currentSignatureEntry, setCurrentSignatureEntry] = useState<string | null>(null);
   const [isSigned, setIsSigned] = useState<boolean>(false);
   const [isContractSent, setIsContractSent] = useState<boolean>(false);
-  const [emailTimer, setEmailTimer] = useState<number | null>(null); // Timer in seconds
 
   // Initialize and reset canvas when dialog opens/closes
   useEffect(() => {
@@ -768,54 +767,6 @@ const CollaborationAssignment = () => {
 
     fetchSignedStatus();
   }, [collaborationId]);
-
-  // Initialize email timer from localStorage on mount
-  useEffect(() => {
-    if (!collaborationId) return;
-
-    const timerKey = `email_timer_${collaborationId}`;
-    const savedTimerEnd = localStorage.getItem(timerKey);
-
-    if (savedTimerEnd) {
-      const endTime = parseInt(savedTimerEnd, 10);
-      const now = Date.now();
-      const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
-
-      if (remaining > 0) {
-        setEmailTimer(remaining);
-      } else {
-        localStorage.removeItem(timerKey);
-        setEmailTimer(null);
-      }
-    }
-  }, [collaborationId]);
-
-  // Update email timer every second
-  useEffect(() => {
-    if (emailTimer === null || emailTimer <= 0) {
-      if (emailTimer === 0) {
-        setEmailTimer(null);
-        if (collaborationId) {
-          localStorage.removeItem(`email_timer_${collaborationId}`);
-        }
-      }
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setEmailTimer((prev) => {
-        if (prev === null || prev <= 1) {
-          if (collaborationId) {
-            localStorage.removeItem(`email_timer_${collaborationId}`);
-          }
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [emailTimer, collaborationId]);
 
 
   const handleActionSubmit = async () => {
@@ -2264,154 +2215,48 @@ const CollaborationAssignment = () => {
         { timestamp }
       );
 
-      // Send email via Zoho SMTP
+      // Create email body and redirect to Zoho Mail
       const magicLink = `${window.location.origin}/share/contract/${magicLinkToken}`;
       const influencerName = influencer.name || "Influencer";
       const influencerEmail = influencer.email || "";
 
-      if (!influencerEmail) {
-        toast({
-          title: "Error",
-          description: "Influencer email address not found.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Fetch current user profile for email signature
-      let userProfile: { user_name?: string; email?: string; employee_id?: string } | null = null;
-      if (currentUserId) {
-        try {
-          const { data: profileData } = await supabase
-            .from("user_profiles")
-            .select("user_name, email, employee_id")
-            .eq("user_id", currentUserId)
-            .maybeSingle();
-          
-          if (profileData) {
-            userProfile = profileData;
-          }
-        } catch (err) {
-          console.error("Error fetching user profile:", err);
-        }
-      }
-
-      // Get company name from campaign
-      const companyName = campaign?.brand || "Company";
+      // Create email body
+      const emailBody = `hii ${influencerName}\n\nthis is your magic link\n\n${magicLink}`;
       
-      // Format current date
-      const currentDate = new Date().toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      });
+      // Encode for URL
+      const encodedBody = encodeURIComponent(emailBody);
+      const encodedSubject = encodeURIComponent("Contract Signing Link");
 
-      // Create email subject with company name and collaboration ID
-      const emailSubject = `${companyName} – Contract Signing Link | Collaboration ID: ${collaborationId}`;
-
-      // Create email body with new template
-      const emailBody = `Hi ${influencerName},
-
-We hope you're doing well!
-
-Your collaboration has been successfully initiated with Growwik Media.
-
-Below is your secure contract signing magic link for Collaboration ID: ${collaborationId}.
-
-Please click the link below to open and sign your contract:
-
-🔗 Contract Signing Link:
-
-${magicLink}
-
-Once the contract is signed, your onboarding for this collaboration will be completed.
-
-If you face any issue while accessing the link or signing the contract, feel free to contact us anytime.
-
-Footer – User Details
-
-Processed By:
-
-• Name: ${userProfile?.user_name || 'N/A'}
-• Email: ${userProfile?.email || 'N/A'}
-• Employee Code: ${userProfile?.employee_id || 'N/A'}
-• Date: ${currentDate}
-
-Best regards,
-
-Growwik Media`;
-
-      // Call email API to send email via Zoho SMTP
-      try {
-        const response = await fetch('/api/send-email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            to: influencerEmail,
-            subject: emailSubject,
-            body: emailBody,
-            influencerName: influencerName,
-            collaborationId: collaborationId,
-            companyName: companyName,
-            userName: userProfile?.user_name || null,
-            userEmail: userProfile?.email || null,
-            employeeId: userProfile?.employee_id || null,
-            date: currentDate,
-          }),
-        });
-
-        // Check if response has content before parsing
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await response.text();
-          throw new Error(`Invalid response from server: ${text || 'Empty response'}`);
-        }
-
-        // Check if response body is empty
-        const text = await response.text();
-        if (!text) {
-          throw new Error('Empty response from server. Make sure the API endpoint is deployed.');
-        }
-
-        let result;
-        try {
-          result = JSON.parse(text);
-        } catch (parseError) {
-          throw new Error(`Failed to parse response: ${text}`);
-        }
-
-        if (!response.ok) {
-          throw new Error(result.error || result.details || 'Failed to send email');
-        }
-
-        toast({
-          title: "Email Sent Successfully",
-          description: `Contract link has been sent to ${influencerEmail}`,
-        });
-
-        // Start 2-minute timer and save to localStorage
-        const timerDuration = 120; // 2 minutes in seconds
-        setEmailTimer(timerDuration);
-        const timerEndTime = Date.now() + (timerDuration * 1000);
-        if (collaborationId) {
-          localStorage.setItem(`email_timer_${collaborationId}`, timerEndTime.toString());
-        }
-      } catch (emailError: any) {
-        console.error("Error sending email:", emailError);
+      // Zoho Mail compose URL (using .in domain)
+      // Try multiple formats - first with query params, then with slashes
+      const zohoMailUrl1 = `https://mail.zoho.in/zm/#compose?to=${encodeURIComponent(influencerEmail)}&subject=${encodedSubject}&body=${encodedBody}`;
+      const zohoMailUrl2 = `https://mail.zoho.in/zm/#compose/to=${encodeURIComponent(influencerEmail)}/subject=${encodedSubject}/body=${encodedBody}`;
+      
+      // Open Zoho Mail in new tab
+      setTimeout(() => {
+        // Try first format
+        let newWindow = window.open(zohoMailUrl1, '_blank', 'noopener,noreferrer');
         
-        // Provide more helpful error messages
-        let errorMessage = emailError.message || 'Failed to send email';
-        
-        if (emailError.message?.includes('fetch')) {
-          errorMessage = 'Unable to reach email server. Please check your connection or ensure the API is deployed.';
-        } else if (emailError.message?.includes('Empty response')) {
-          errorMessage = 'Email API endpoint not available. Please deploy the API or use "vercel dev" for local development.';
+        if (!newWindow) {
+          // Popup blocked, try mailto as fallback
+          const mailtoLink = `mailto:${encodeURIComponent(influencerEmail)}?subject=${encodedSubject}&body=${encodedBody}`;
+          window.location.href = mailtoLink;
+          toast({
+            title: "Opening Email Client",
+            description: "Your default email client is opening with the draft email.",
+          });
+        } else {
+          // Wait a bit and check if we need to try alternative format
+          setTimeout(() => {
+            // If first format didn't work, try alternative format
+            // But only if user is still on the page (not redirected properly)
+            toast({
+              title: "Opening Zoho Mail",
+              description: "Zoho Mail compose window should open. If it shows inbox, please use 'Create Draft Email' button.",
+            });
+          }, 500);
         }
-        
-        throw new Error(`Failed to send email: ${errorMessage}`);
-      }
+      }, 100);
     } catch (error: any) {
       console.error("Error sending contract:", error);
       toast({
@@ -2718,13 +2563,8 @@ Growwik Media`;
                                     size="sm"
                                     className="bg-primary text-white hover:bg-primary/90"
                                     onClick={handleSendContract}
-                                    disabled={emailTimer !== null && emailTimer > 0}
                                   >
-                                    {emailTimer !== null && emailTimer > 0
-                                      ? `Resend (${Math.floor(emailTimer / 60)}:${String(emailTimer % 60).padStart(2, '0')})`
-                                      : isContractSent
-                                      ? "Resend"
-                                      : "Send Contract"}
+                                    {isContractSent ? "Resend" : "Send Contract"}
                                   </Button>
                                   <Button
                                     size="sm"
@@ -3198,13 +3038,8 @@ Growwik Media`;
                 setIsPreviewOpen(false);
                 setIsVariableSheetOpen(false);
               }}
-              disabled={emailTimer !== null && emailTimer > 0}
             >
-              {emailTimer !== null && emailTimer > 0
-                ? `Resend (${Math.floor(emailTimer / 60)}:${String(emailTimer % 60).padStart(2, '0')})`
-                : isContractSent
-                ? "Resend"
-                : "Send Contract"}
+              {isContractSent ? "Resend" : "Send Contract"}
             </Button>
           </div>
         </DialogContent>
