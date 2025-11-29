@@ -11,6 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { CalendarIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import TiptapEditor, { MenuBar } from '@/components/TiptapEditor';
 import type { Editor } from '@tiptap/react';
@@ -2479,7 +2483,7 @@ const ContractEditor = () => {
     handleVariableDialogOpenChange(false);
   };
 
-  const handleImageUpload = useCallback(async (file: File) => {
+  const handleImageUpload = useCallback(async (file: File): Promise<{ url: string; alignment?: "center" | "left" | "right"; offsetX?: number; }> => {
     if (!user?.id) {
       const error = new Error('You must be signed in to upload images.');
       toast({
@@ -2968,7 +2972,7 @@ Use the toolbar above to format text, add headings, lists, and more."
                 Select a preset placeholder or choose Custom to define your own key.
               </p>
             </div>
-            {/* Show signature type selector for signature variable, otherwise show source table/column */}
+            {/* Show signature type selector for signature variable, date picker for date, otherwise show source table/column */}
             {variableKeyOption === 'signature' ? (
               <div className="space-y-2">
                 <Label>Signature Type *</Label>
@@ -2992,6 +2996,16 @@ Use the toolbar above to format text, add headings, lists, and more."
                     {`var[{{signature.${signatureType}}}]`}
                   </div>
                 )}
+              </div>
+            ) : variableKeyOption === 'date' ? (
+              <div className="space-y-2">
+                <Label>Date Variable</Label>
+                <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
+                  {`var[{{date}}]`}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This variable will show a date picker when filling the contract. The date will be formatted automatically.
+                </p>
               </div>
             ) : (
               <>

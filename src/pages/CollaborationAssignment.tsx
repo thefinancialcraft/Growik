@@ -18,6 +18,9 @@ import {
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -25,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Printer, ChevronLeft, ChevronRight, Pen, Type, X, RotateCcw, RefreshCw, Trash2, Mail } from "lucide-react";
+import { Loader2, Printer, ChevronLeft, ChevronRight, Pen, Type, X, RotateCcw, RefreshCw, Trash2, Mail, CalendarIcon } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -950,8 +953,8 @@ const CollaborationAssignment = () => {
               return;
             }
 
-            // Skip base "signature" and "plain_text" entries - they will be handled by occurrence tracking
-            if (normalizedKey === "signature" || normalizedKey === "plain_text") {
+            // Skip base "signature", "plain_text", and "date" entries - they will be handled by occurrence tracking
+            if (normalizedKey === "signature" || normalizedKey === "plain_text" || normalizedKey === "date") {
               return;
             }
 
@@ -1022,9 +1025,10 @@ const CollaborationAssignment = () => {
           const regex = /var\[\s*\{\{\s*([^}\s]+(?:[^}]*)?)\s*\}\}\s*\]/gi;
           let match: RegExpExecArray | null;
 
-          // Track occurrences of plain_text and signature separately
+          // Track occurrences of plain_text, signature, and date separately
           const plainTextOccurrences = new Map<string, number>();
           const signatureOccurrences = new Map<string, number>();
+          const dateOccurrences = new Map<string, number>();
 
           while ((match = regex.exec(contractData.content)) !== null) {
             const normalizedKey = normalizeVariableKey(match[1]);
@@ -1051,6 +1055,45 @@ const CollaborationAssignment = () => {
                   collected.set(indexedKey, {
                     description: `Signature placeholder (occurrence ${currentCount + 1})`,
                     descriptors: []
+                  });
+                }
+              } else if (normalizedKey === "date" || normalizedKey.toLowerCase().includes("date")) {
+                // For date, create separate entries for each occurrence
+                const currentCount = dateOccurrences.get("date") ?? 0;
+                const indexedKey = `date_${currentCount}`;
+                dateOccurrences.set("date", currentCount + 1);
+
+                if (!collected.has(indexedKey)) {
+                  // Get the descriptors from the variables object if available
+                  const variableData = contractData.variables?.[normalizedKey];
+                  let allDescriptors: string[] = [];
+                  if (variableData && typeof variableData === "object" && variableData !== null) {
+                    const entry = variableData as { descriptor?: string; descriptors?: unknown };
+                    if (Array.isArray(entry.descriptors)) {
+                      allDescriptors = entry.descriptors
+                        .map((item) => (typeof item === "string" ? item : ""))
+                        .map((item) => item.trim())
+                        .filter(Boolean);
+                    } else if (typeof entry.descriptor === "string" && entry.descriptor.trim().length) {
+                      allDescriptors = [entry.descriptor.trim()];
+                    }
+                  }
+                  
+                  // Assign descriptor for this occurrence (cycle through if more occurrences than descriptors)
+                  const descriptorIndex = currentCount % (allDescriptors.length || 1);
+                  const occurrenceDescriptors = allDescriptors.length > 0 
+                    ? [allDescriptors[descriptorIndex] || allDescriptors[0]] 
+                    : [];
+                  
+                  const descriptionParts: string[] = [];
+                  if (occurrenceDescriptors.length > 0) {
+                    descriptionParts.push(occurrenceDescriptors.join(" • "));
+                  }
+                  descriptionParts.push(`(occurrence ${currentCount + 1})`);
+                  
+                  collected.set(indexedKey, {
+                    description: descriptionParts.join(" "),
+                    descriptors: occurrenceDescriptors
                   });
                 }
               } else {
@@ -1267,9 +1310,10 @@ const CollaborationAssignment = () => {
           };
         };
 
-        // Filter out base "signature" and "plain_text" entries if we have indexed versions
+        // Filter out base "signature", "plain_text", and "date" entries if we have indexed versions
         const hasIndexedSignatures = Array.from(collected.keys()).some(k => k.startsWith("signature_"));
         const hasIndexedPlainText = Array.from(collected.keys()).some(k => k.startsWith("plain_text_"));
+        const hasIndexedDates = Array.from(collected.keys()).some(k => k.startsWith("date_"));
 
         const filteredCollected = new Map(collected);
         if (hasIndexedSignatures && filteredCollected.has("signature")) {
@@ -1278,6 +1322,15 @@ const CollaborationAssignment = () => {
         if (hasIndexedPlainText && filteredCollected.has("plain_text")) {
           filteredCollected.delete("plain_text");
         }
+        if (hasIndexedDates && filteredCollected.has("date")) {
+          filteredCollected.delete("date");
+        }
+
+        // Helper function to check if a variable is a date variable
+        const isDateVariable = (key: string): boolean => {
+          const normalizedKey = key.toLowerCase();
+          return normalizedKey === "date" || normalizedKey.includes("date") || normalizedKey.includes("_date");
+        };
 
         const preparedEntries = await Promise.all(
           Array.from(filteredCollected.entries()).map(async ([key, info]) => {
@@ -1286,7 +1339,9 @@ const CollaborationAssignment = () => {
             const isPlainText = key === "plain_text" || key.startsWith("plain_text_");
             // Check if this is a signature entry (with or without index)
             const isSignature = key === "signature" || key.startsWith("signature_") || key === "signature.user" || key === "signature.influencer";
-            const isEditable = isPlainText || isSignature;
+            // Check if this is a date variable
+            const isDate = isDateVariable(key);
+            const isEditable = isPlainText || isSignature || isDate;
 
             // Normalize key for placeholder (remove index suffix)
             let placeholderKey = key;
@@ -1294,6 +1349,8 @@ const CollaborationAssignment = () => {
               placeholderKey = "plain_text";
             } else if (key.startsWith("signature_")) {
               placeholderKey = "signature";
+            } else if (key.startsWith("date_")) {
+              placeholderKey = "date";
             }
 
             return {
@@ -1482,8 +1539,63 @@ const CollaborationAssignment = () => {
           const bIndex = parseInt(b.originalKey?.replace("plain_text_", "") || "0", 10);
           return aIndex - bIndex;
         });
+
+      // Group date entries by their index for sequential replacement
+      const dateEntries = contractVariableEntries
+        .filter(e => e.originalKey?.startsWith("date_"))
+        .sort((a, b) => {
+          // Sort by index: date_0, date_1, etc.
+          const aIndex = parseInt(a.originalKey?.replace("date_", "") || "0", 10);
+          const bIndex = parseInt(b.originalKey?.replace("date_", "") || "0", 10);
+          return aIndex - bIndex;
+        });
+      // Process date entries sequentially - replace each occurrence with its corresponding value
+      if (dateEntries.length > 0) {
+        const placeholder = "var[{{date}}]";
+        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escapedPlaceholder, "g");
+        const matches: Array<{ index: number; value: string }> = [];
+
+        // Format date values for display (YYYY-MM-DD to readable format)
+        const formatValueForDisplay = (value: string): string => {
+          if (!value) return "--";
+          try {
+            // Try to parse and format the date
+            const date = new Date(value);
+            if (!isNaN(date.getTime())) {
+              return format(date, "MMMM d, yyyy");
+            }
+          } catch (e) {
+            // If parsing fails, return original value
+          }
+          return value;
+        };
+
+        // Collect all date values in order
+        dateEntries.forEach((entry) => {
+          const input = entry.inputValue?.trim() ?? "";
+          const formattedValue = formatValueForDisplay(input);
+          const sanitizedValue = formattedValue ? escapeHtml(formattedValue) : "--";
+          const entryIndex = parseInt(entry.originalKey?.replace("date_", "") || "0", 10);
+          matches.push({ index: entryIndex, value: sanitizedValue });
+
+          // Store value for this specific occurrence (keep YYYY-MM-DD format for storage)
+          variablesMap[entry.originalKey || entry.key] = input || null;
+        });
+
+        // Replace occurrences sequentially
+        let occurrenceIndex = 0;
+        previewHtml = previewHtml.replace(regex, () => {
+          const match = matches.find(m => m.index === occurrenceIndex);
+          occurrenceIndex++;
+          return match ? match.value : "--";
+        });
+      }
+
       const otherEntries = contractVariableEntries.filter(e =>
-        !e.originalKey?.startsWith("plain_text_") && !e.key.includes("signature")
+        !e.originalKey?.startsWith("plain_text_") && 
+        !e.originalKey?.startsWith("date_") && 
+        !e.key.includes("signature")
       );
 
       // Process plain_text entries sequentially - replace each occurrence with its corresponding value
@@ -1746,6 +1858,26 @@ const CollaborationAssignment = () => {
           values = [entry.value];
         }
 
+        // Check if this is a date variable
+        const normalizedKey = (entry.originalKey || entry.key).toLowerCase();
+        const isDate = normalizedKey === "date" || normalizedKey.includes("date") || normalizedKey.includes("_date");
+
+        // Format date values for display (YYYY-MM-DD to readable format)
+        const formatValueForDisplay = (value: string): string => {
+          if (isDate) {
+            try {
+              // Try to parse and format the date
+              const date = new Date(value);
+              if (!isNaN(date.getTime())) {
+                return format(date, "MMMM d, yyyy");
+              }
+            } catch (e) {
+              // If parsing fails, return original value
+            }
+          }
+          return value;
+        };
+
         // If multiple values exist, replace occurrences sequentially
         // First occurrence gets first value, second gets second, etc.
         if (values.length > 1) {
@@ -1756,13 +1888,15 @@ const CollaborationAssignment = () => {
           previewHtml = previewHtml.replace(regex, () => {
             const valueIndex = occurrenceIndex % values.length; // Cycle through values if more occurrences than values
             const selectedValue = values[valueIndex];
+            const formattedValue = formatValueForDisplay(selectedValue);
             occurrenceIndex++;
-            return escapeHtml(selectedValue).replace(/\r?\n/g, "<br />");
+            return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
           });
         } else {
           // Single value: replace all occurrences with the same value
-          const sanitizedValue = values.length
-            ? escapeHtml(values[0]).replace(/\r?\n/g, "<br />")
+          const displayValue = values.length ? formatValueForDisplay(values[0]) : "";
+          const sanitizedValue = displayValue
+            ? escapeHtml(displayValue).replace(/\r?\n/g, "<br />")
             : "--";
 
           const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -2902,25 +3036,101 @@ const CollaborationAssignment = () => {
                               >
                                 {item.inputValue ? '✓' : `var[{{${item.key}}}]`}
                               </div>
-                            ) : (
-                              <Input
-                                placeholder="Enter replacement text"
-                                value={item.inputValue ?? ""}
-                                onChange={(event) => {
-                                  const value = event.target.value;
-                                  setContractVariableEntries((prev) =>
-                                    prev.map((entry) =>
-                                      (entry.originalKey || entry.key) === uniqueKey
-                                        ? {
-                                          ...entry,
-                                          inputValue: value,
-                                        }
-                                        : entry
-                                    )
-                                  );
-                                }}
-                              />
-                            )
+                            ) : (() => {
+                              // Check if this is a date variable
+                              const normalizedKey = (item.originalKey || item.key).toLowerCase();
+                              const isDate = normalizedKey === "date" || normalizedKey.includes("date") || normalizedKey.includes("_date");
+                              
+                              if (isDate) {
+                                // Parse the date value if it exists
+                                const dateValue = item.inputValue || item.value || '';
+                                let selectedDate: Date | undefined = undefined;
+                                if (dateValue) {
+                                  try {
+                                    // Try to parse the date (could be YYYY-MM-DD or other formats)
+                                    const parsed = new Date(dateValue);
+                                    if (!isNaN(parsed.getTime())) {
+                                      selectedDate = parsed;
+                                    }
+                                  } catch (e) {
+                                    // If parsing fails, leave undefined
+                                  }
+                                }
+                                
+                                return (
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        className="w-full justify-start text-left font-normal"
+                                      >
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {selectedDate ? (
+                                          format(selectedDate, "PPP")
+                                        ) : (
+                                          <span className="text-muted-foreground">Pick a date</span>
+                                        )}
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="start">
+                                      <Calendar
+                                        mode="single"
+                                        selected={selectedDate}
+                                        onSelect={(date) => {
+                                          if (date) {
+                                            // Format date as YYYY-MM-DD for storage
+                                            const formattedDate = format(date, "yyyy-MM-dd");
+                                            setContractVariableEntries((prev) =>
+                                              prev.map((entry) =>
+                                                (entry.originalKey || entry.key) === uniqueKey
+                                                  ? {
+                                                      ...entry,
+                                                      inputValue: formattedDate,
+                                                    }
+                                                  : entry
+                                              )
+                                            );
+                                          } else {
+                                            // Clear the date if deselected
+                                            setContractVariableEntries((prev) =>
+                                              prev.map((entry) =>
+                                                (entry.originalKey || entry.key) === uniqueKey
+                                                  ? {
+                                                      ...entry,
+                                                      inputValue: "",
+                                                    }
+                                                  : entry
+                                              )
+                                            );
+                                          }
+                                        }}
+                                        initialFocus
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                );
+                              }
+                              
+                              return (
+                                <Input
+                                  placeholder="Enter replacement text"
+                                  value={item.inputValue ?? ""}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    setContractVariableEntries((prev) =>
+                                      prev.map((entry) =>
+                                        (entry.originalKey || entry.key) === uniqueKey
+                                          ? {
+                                              ...entry,
+                                              inputValue: value,
+                                            }
+                                          : entry
+                                      )
+                                    );
+                                  }}
+                                />
+                              );
+                            })()
                           ) : (
                             item.value && <p className="text-xs text-emerald-600">{item.value}</p>
                           )}
