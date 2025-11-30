@@ -7,6 +7,7 @@ import { Loader2, Printer } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -88,6 +89,11 @@ const PublicContractSigning = () => {
     const [dbCampaignId, setDbCampaignId] = useState<string | null>(null);
     const [dbInfluencerId, setDbInfluencerId] = useState<string | null>(null);
     const [isSigned, setIsSigned] = useState<boolean>(false);
+    
+    // Email Verification State
+    const [isEmailVerified, setIsEmailVerified] = useState<boolean>(false);
+    const [enteredEmail, setEnteredEmail] = useState<string>("");
+    const [emailError, setEmailError] = useState<string>("");
 
     // Signature Dialog State
     const [isSignatureDialogOpen, setIsSignatureDialogOpen] = useState(false);
@@ -712,6 +718,73 @@ const PublicContractSigning = () => {
 
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>;
     if (error) return <div className="flex h-screen items-center justify-center text-red-500">{error}</div>;
+
+    // Email Verification Handler
+    const handleEmailVerification = () => {
+        setEmailError("");
+        if (!enteredEmail.trim()) {
+            setEmailError("Please enter your email address.");
+            return;
+        }
+        
+        const enteredEmailLower = enteredEmail.trim().toLowerCase();
+        const influencerEmailLower = influencer?.email?.toLowerCase() || "";
+        
+        if (enteredEmailLower === influencerEmailLower) {
+            setIsEmailVerified(true);
+            setEmailError("");
+        } else {
+            setEmailError("Email does not match. Please enter the correct email address.");
+        }
+    };
+
+    // Show email verification form if not verified
+    if (!isEmailVerified && influencer?.email) {
+        return (
+            <div className="min-h-screen bg-slate-50 w-full flex items-center justify-center" style={{ width: '100vw', margin: 0, padding: 0 }}>
+                <Card className="w-full max-w-md p-6 md:p-8 shadow-lg">
+                    <div className="space-y-4">
+                        <div>
+                            <h1 className="text-2xl font-bold text-slate-900 mb-2">Email Verification</h1>
+                            <p className="text-sm text-slate-500">
+                                Please enter your registered email address to access the contract.
+                            </p>
+                        </div>
+                        
+                        <div className="space-y-2">
+                            <Label htmlFor="email">Email Address</Label>
+                            <Input
+                                id="email"
+                                type="email"
+                                placeholder="Enter your email"
+                                value={enteredEmail}
+                                onChange={(e) => {
+                                    setEnteredEmail(e.target.value);
+                                    setEmailError("");
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        handleEmailVerification();
+                                    }
+                                }}
+                                className={emailError ? "border-red-500" : ""}
+                            />
+                            {emailError && (
+                                <p className="text-sm text-red-500">{emailError}</p>
+                            )}
+                        </div>
+                        
+                        <Button 
+                            onClick={handleEmailVerification}
+                            className="w-full bg-primary text-white"
+                        >
+                            Verify Email
+                        </Button>
+                    </div>
+                </Card>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-slate-50 w-full" style={{ width: '100vw', margin: 0, padding: 0 }}>
