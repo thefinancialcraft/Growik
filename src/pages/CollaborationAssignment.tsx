@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Sheet,
@@ -145,6 +146,15 @@ const CollaborationAssignment = () => {
   const [currentSignatureEntry, setCurrentSignatureEntry] = useState<string | null>(null);
   const [isSigned, setIsSigned] = useState<boolean>(false);
   const [isContractSent, setIsContractSent] = useState<boolean>(false);
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState<boolean>(false);
+  const [isEditingEmail, setIsEditingEmail] = useState<boolean>(false);
+  const [emailViewMode, setEmailViewMode] = useState<'simple' | 'html'>('simple');
+  const [emailDetails, setEmailDetails] = useState<{
+    to: string;
+    subject: string;
+    body: string;
+    magicLink: string;
+  } | null>(null);
 
   // Initialize and reset canvas when dialog opens/closes
   useEffect(() => {
@@ -2349,48 +2359,42 @@ const CollaborationAssignment = () => {
         { timestamp }
       );
 
-      // Create email body and redirect to Zoho Mail
+      // Create email body and open Zoho Mail 
+      
+
       const magicLink = `${window.location.origin}/share/contract/${magicLinkToken}`;
       const influencerName = influencer.name || "Influencer";
       const influencerEmail = influencer.email || "";
 
-      // Create email body
-      const emailBody = `hii ${influencerName}\n\nthis is your magic link\n\n${magicLink}`;
-      
-      // Encode for URL
-      const encodedBody = encodeURIComponent(emailBody);
-      const encodedSubject = encodeURIComponent("Contract Signing Link");
+      if (!influencerEmail) {
+        toast({
+          title: "Error",
+          description: "Influencer email not found.",
+          variant: "destructive",
+        });
+        return;
+      }
 
-      // Zoho Mail compose URL (using .in domain)
-      // Try multiple formats - first with query params, then with slashes
-      const zohoMailUrl1 = `https://mail.zoho.in/zm/#compose?to=${encodeURIComponent(influencerEmail)}&subject=${encodedSubject}&body=${encodedBody}`;
-      const zohoMailUrl2 = `https://mail.zoho.in/zm/#compose/to=${encodeURIComponent(influencerEmail)}/subject=${encodedSubject}/body=${encodedBody}`;
+      // Create email body
+      const companyName = campaign?.brand || campaign?.name || "Company";
+      const collabId = collaborationId || "N/A";
+      const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      const emailBody = `Hi ${influencerName},\n\nWe hope you're doing well!\n\nYour collaboration has been successfully initiated with ${companyName}.\n\nBelow is your secure contract signing magic link for Collaboration ID: ${collabId}.\n\nPlease click the link below to open and sign your contract:\n\n${magicLink}\n\nOnce the contract is signed, your onboarding for this collaboration will be completed.\n\nIf you face any issue while accessing the link or signing the contract, feel free to contact us anytime.\n\nProcessed By:\n\n• Name: Deepak kumar\n• Email: deepakkumar.official32@gmail.com\n• Employee Code: GRWK-001\n• Date: ${currentDate}\n\nBest regards,\nGrowwik Media`;
+      const emailSubject = `${companyName} - Contract Sign | ${collabId}`;
       
-      // Open Zoho Mail in new tab
-      setTimeout(() => {
-        // Try first format
-        let newWindow = window.open(zohoMailUrl1, '_blank', 'noopener,noreferrer');
-        
-        if (!newWindow) {
-          // Popup blocked, try mailto as fallback
-          const mailtoLink = `mailto:${encodeURIComponent(influencerEmail)}?subject=${encodedSubject}&body=${encodedBody}`;
-          window.location.href = mailtoLink;
-          toast({
-            title: "Opening Email Client",
-            description: "Your default email client is opening with the draft email.",
-          });
-        } else {
-          // Wait a bit and check if we need to try alternative format
-          setTimeout(() => {
-            // If first format didn't work, try alternative format
-            // But only if user is still on the page (not redirected properly)
-            toast({
-              title: "Opening Zoho Mail",
-              description: "Zoho Mail compose window should open. If it shows inbox, please use 'Create Draft Email' button.",
-            });
-          }, 500);
-        }
-      }, 100);
+      // Store email details and show dialog instead of opening mail directly
+      setEmailDetails({
+        to: influencerEmail,
+        subject: emailSubject,
+        body: emailBody,
+        magicLink: magicLink,
+      });
+      setIsEmailDialogOpen(true);
+      
+      toast({
+        title: "Email Ready",
+        description: "Email details are ready. Click 'Open' in the dialog to open Zoho Mail.",
+      });
     } catch (error: any) {
       console.error("Error sending contract:", error);
       toast({
@@ -2445,38 +2449,35 @@ const CollaborationAssignment = () => {
     const influencerName = influencer.name || "Influencer";
     const influencerEmail = influencer.email || "";
 
-    // Create email body
-    const emailBody = `hii ${influencerName}\n\nthis is your magic link\n\n${magicLink}`;
-    
-    // Encode for URL
-    const encodedBody = encodeURIComponent(emailBody);
-    const encodedSubject = encodeURIComponent("Contract Signing Link");
+    if (!influencerEmail) {
+      toast({
+        title: "Error",
+        description: "Influencer email not found.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    // Try Zoho Mail compose URL first, then fallback to mailto
-    const zohoMailUrl1 = `https://mail.zoho.in/zm/#compose?to=${encodeURIComponent(influencerEmail)}&subject=${encodedSubject}&body=${encodedBody}`;
-    const zohoMailUrl2 = `https://mail.zoho.in/zm/#compose/to=${encodeURIComponent(influencerEmail)}/subject=${encodedSubject}/body=${encodedBody}`;
-    const mailtoLink = `mailto:${encodeURIComponent(influencerEmail)}?subject=${encodedSubject}&body=${encodedBody}`;
+    // Create email body
+    const companyName = campaign?.brand || campaign?.name || "Company";
+    const collabId = collaborationId || "N/A";
+    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const emailBody = `Hi ${influencerName},\n\nWe hope you're doing well!\n\nYour collaboration has been successfully initiated with Growwik Media.\n\nBelow is your secure contract signing magic link for Collaboration ID: ${collabId}.\n\nPlease click the link below to open and sign your contract:\n\n${magicLink}\n\nOnce the contract is signed, your onboarding for this collaboration will be completed.\n\nIf you face any issue while accessing the link or signing the contract, feel free to contact us anytime.\n\nProcessed By:\n\n• Name: Deepak kumar\n• Email: deepakkumar.official32@gmail.com\n• Employee Code: GRWK-001\n• Date: ${currentDate}\n\nBest regards,\nGrowwik Media`;
+    const emailSubject = `${companyName} - Contract Sign | ${collabId}`;
     
-    // Open Zoho Mail in new tab
-    // Using setTimeout to ensure it's a direct user action (helps with popup blockers)
-    setTimeout(() => {
-      // Try first format
-      let newWindow = window.open(zohoMailUrl1, '_blank', 'noopener,noreferrer');
-      
-      if (!newWindow) {
-        // Popup blocked, use mailto as fallback
-        window.location.href = mailtoLink;
-        toast({
-          title: "Opening Email Client",
-          description: "Your default email client is opening with the draft email.",
-        });
-      } else {
-        toast({
-          title: "Opening Zoho Mail",
-          description: "Zoho Mail compose window opened. If it shows inbox, the compose window should appear.",
-        });
-      }
-    }, 100);
+    // Store email details and show dialog instead of opening mail directly
+    setEmailDetails({
+      to: influencerEmail,
+      subject: emailSubject,
+      body: emailBody,
+      magicLink: magicLink,
+    });
+    setIsEmailDialogOpen(true);
+    
+    toast({
+      title: "Email Ready",
+      description: "Email details are ready. Click 'Open' in the dialog to open Zoho Mail.",
+    });
   };
 
   return (
@@ -2577,9 +2578,39 @@ const CollaborationAssignment = () => {
                               </div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 shadow-sm">
-                              <p>Email: <span className="font-medium">{influencer.email ?? "Not provided"}</span></p>
+                              <p>
+                                Email:{" "}
+                                {influencer.email ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const email = influencer.email || "";
+                                      const mailtoLink = `mailto:${email}`;
+                                      const zohoMailUrl = `https://mail.zoho.in/zm/comp.do?ct=${encodeURIComponent(mailtoLink)}`;
+                                      window.open(zohoMailUrl, '_blank', 'noopener,noreferrer');
+                                    }}
+                                    className="font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
+                                  >
+                                    {influencer.email}
+                                  </button>
+                                ) : (
+                                  <span className="font-medium">Not provided</span>
+                                )}
+                              </p>
                               <p className="text-xs text-slate-500">
-                                Contact: {influencer.handles.length ? influencer.handles[0].url : "Not available"}
+                                Contact:{" "}
+                                {influencer.handles.length ? (
+                                  <a
+                                    href={influencer.handles[0].url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline cursor-pointer break-all"
+                                  >
+                                    {influencer.handles[0].url}
+                                  </a>
+                                ) : (
+                                  "Not available"
+                                )}
                               </p>
                             </div>
                           </div>
@@ -3679,6 +3710,547 @@ const CollaborationAssignment = () => {
             >
               Save Signature
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Dialog */}
+      <Dialog open={isEmailDialogOpen} onOpenChange={(open) => {
+        setIsEmailDialogOpen(open);
+        if (!open) {
+          setIsEditingEmail(false);
+          setEmailViewMode('simple');
+        }
+      }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Send Contract Email</DialogTitle>
+            <DialogDescription>
+              Email details are ready. Click "Open" to open Zoho Mail with pre-filled details.
+            </DialogDescription>
+          </DialogHeader>
+
+          {emailDetails && (() => {
+            // Convert plain text to HTML format
+            const convertToHtml = (text: string, magicLink: string, influencerName: string, companyName: string, collabId: string, currentDate: string) => {
+              // First, replace values with bold versions
+              let processedText = text;
+              
+              // Bold influencer name
+              if (influencerName) {
+                processedText = processedText.replace(new RegExp(influencerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `<strong style="font-weight: 600;">${influencerName}</strong>`);
+              }
+              
+              // Bold company name
+              if (companyName) {
+                processedText = processedText.replace(new RegExp(companyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `<strong style="font-weight: 600;">${companyName}</strong>`);
+              }
+              
+              // Bold collaboration ID
+              if (collabId) {
+                processedText = processedText.replace(new RegExp(collabId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `<strong style="font-weight: 600;">${collabId}</strong>`);
+              }
+              
+              // Bold current date
+              if (currentDate) {
+                processedText = processedText.replace(new RegExp(currentDate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `<strong style="font-weight: 600;">${currentDate}</strong>`);
+              }
+              
+              // Split by magic link and convert to HTML
+              const parts = processedText.split(magicLink);
+              let htmlContent = '';
+              let inBulletList = false;
+              
+              parts.forEach((part, partIndex) => {
+                const lines = part.split('\n');
+                
+                lines.forEach((line, lineIndex) => {
+                  const trimmed = line.trim();
+                  
+                  // Check for bullet points
+                  if (trimmed.startsWith('•')) {
+                    if (!inBulletList) {
+                      htmlContent += '<ul style="margin: 10px 0; padding-left: 20px; list-style: none;">';
+                      inBulletList = true;
+                    }
+                    htmlContent += `<li style="margin: 5px 0; font-size: 14px; line-height: 1.6; color: #374151;">${trimmed.substring(1).trim()}</li>`;
+                  } else {
+                    // Close bullet list if we were in one
+                    if (inBulletList) {
+                      htmlContent += '</ul>';
+                      inBulletList = false;
+                    }
+                    
+                    // Check for headings (Processed By:, Best regards, etc.)
+                    if (trimmed.endsWith(':') && trimmed.length < 30 && trimmed.length > 0) {
+                      htmlContent += `<p style="margin: 20px 0 10px 0; font-size: 16px; font-weight: 600; color: #111827;">${trimmed}</p>`;
+                    } 
+                    // Check for "Best regards," line
+                    else if (trimmed.toLowerCase().startsWith('best regards')) {
+                      htmlContent += `<p style="margin: 20px 0 5px 0; font-size: 14px; line-height: 1.6; color: #374151;">${trimmed}</p>`;
+                    }
+                    // Regular paragraphs
+                    else if (trimmed) {
+                      htmlContent += `<p style="margin: 0 0 15px 0; font-size: 14px; line-height: 1.6; color: #374151;">${trimmed}</p>`;
+                    }
+                  }
+                });
+                
+                // Close bullet list if still open
+                if (inBulletList) {
+                  htmlContent += '</ul>';
+                  inBulletList = false;
+                }
+                
+                // Add Sign Now button between parts
+                if (partIndex < parts.length - 1) {
+                  htmlContent += `
+                    <div style="margin: 30px 0; text-align: center;">
+                      <a href="${magicLink}" 
+                         style="display: inline-block; padding: 14px 32px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                        Sign Now
+                      </a>
+                    </div>
+                  `;
+                }
+              });
+              
+              return htmlContent;
+            };
+
+            // Extract values from email body for bolding
+            const influencerName = emailDetails.body.match(/Hi (.+?),/)?.[1] || '';
+            const companyName = campaign?.brand || campaign?.name || "Company";
+            const collabId = collaborationId || "N/A";
+            const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+            
+            const htmlBody = convertToHtml(emailDetails.body, emailDetails.magicLink, influencerName, companyName, collabId, currentDate);
+            const signifyLogoUrl = `${window.location.origin}/signature.png`;
+            const growwikLogoUrl = `${window.location.origin}/growiik.png`;
+            
+            const fullHtmlEmail = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${emailDetails.subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f5f5f5;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <!-- Header with Logos -->
+          <tr>
+            <td style="padding: 30px 40px 20px; text-align: center; border-bottom: 2px solid #f0f0f0; background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="padding: 0 15px; vertical-align: middle; text-align: center;">
+                          <img src="${signifyLogoUrl}" alt="Signify Logo" style="height: 35px; width: auto; max-width: 100px; display: block; border: 0;" onerror="this.style.display='none';">
+                        </td>
+                        <td style="padding: 0 8px; vertical-align: middle; text-align: center;">
+                          <span style="font-size: 20px; color: #9ca3af;">•</span>
+                        </td>
+                        <td style="padding: 0 15px; vertical-align: middle;">
+                          <img src="${growwikLogoUrl}" alt="Growwik Media Logo" style="height: 50px; width: auto; max-width: 150px; display: block; border: 0;" onerror="this.style.display='none';">
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 40px;">
+              ${htmlBody}
+            </td>
+          </tr>
+          <!-- Footer with Social Media -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                  <td align="center" style="padding-bottom: 20px;">
+                    <p style="margin: 0; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 15px;">Connect with us</p>
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="padding: 0 8px;">
+                          <a href="https://www.facebook.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #1877f2; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                            <img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" alt="Facebook" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          </a>
+                        </td>
+                        <td style="padding: 0 8px;">
+                          <a href="https://twitter.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #1da1f2; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                            <img src="https://cdn-icons-png.flaticon.com/512/124/124021.png" alt="Twitter" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          </a>
+                        </td>
+                        <td style="padding: 0 8px;">
+                          <a href="https://www.instagram.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                            <img src="https://cdn-icons-png.flaticon.com/512/174/174855.png" alt="Instagram" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          </a>
+                        </td>
+                        <td style="padding: 0 8px;">
+                          <a href="https://www.linkedin.com/company/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #0077b5; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                            <img src="https://cdn-icons-png.flaticon.com/512/174/174857.png" alt="LinkedIn" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                    <p style="margin: 0; font-size: 12px; color: #666; line-height: 1.6;">
+                      <strong style="color: #333;">Growwik Media</strong><br>
+                      Email: <a href="mailto:contact@growwik.com" style="color: #2563eb; text-decoration: none;">contact@growwik.com</a><br>
+                      <span style="color: #999;">© ${new Date().getFullYear()} Growwik Media. All rights reserved.</span>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+            return (
+              <div className="py-4 space-y-3">
+                {isEditingEmail ? (
+                  <Textarea
+                    value={emailDetails.body}
+                    onChange={(e) => {
+                      setEmailDetails({
+                        ...emailDetails,
+                        body: e.target.value,
+                      });
+                    }}
+                    className="min-h-[200px] text-sm"
+                    placeholder="Enter email body..."
+                  />
+                ) : emailViewMode === 'html' ? (
+                  <div className="rounded-md border border-slate-200 bg-white overflow-hidden min-h-[400px] max-h-[600px]">
+                    <iframe
+                      srcDoc={fullHtmlEmail}
+                      className="w-full h-full border-0"
+                      style={{ minHeight: '500px', maxHeight: '600px' }}
+                      title="Email HTML Preview"
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-slate-200 bg-white px-4 py-4 text-sm whitespace-pre-wrap min-h-[200px] max-h-[400px] overflow-y-auto">
+                    {emailDetails.body.split(emailDetails.magicLink).map((part, index, array) => (
+                      <span key={index}>
+                        {part}
+                        {index < array.length - 1 && (
+                          <a
+                            href={emailDetails.magicLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline font-medium"
+                          >
+                            Sign Now
+                          </a>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <div className="flex justify-between items-center">
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsEditingEmail(!isEditingEmail);
+                  if (isEditingEmail && emailDetails) {
+                    // When saving, ensure magic link is preserved
+                    if (!emailDetails.body.includes(emailDetails.magicLink)) {
+                      setEmailDetails({
+                        ...emailDetails,
+                        body: `${emailDetails.body}\n\n${emailDetails.magicLink}`,
+                      });
+                    }
+                  }
+                }}
+              >
+                {isEditingEmail ? "Save" : "Edit"}
+              </Button>
+              {!isEditingEmail && (
+                <Button
+                  variant="outline"
+                  onClick={() => setEmailViewMode(emailViewMode === 'simple' ? 'html' : 'simple')}
+                >
+                  {emailViewMode === 'simple' ? 'HTML View' : 'Simple Mail'}
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (emailDetails) {
+                    try {
+                      let contentToCopy = '';
+                      
+                      if (emailViewMode === 'html') {
+                        // Generate HTML email for copying
+                        const convertToHtml = (text: string, magicLink: string, influencerName: string, companyName: string, collabId: string, currentDate: string) => {
+                          // First, replace values with bold versions
+                          let processedText = text;
+                          
+                          // Bold influencer name
+                          if (influencerName) {
+                            processedText = processedText.replace(new RegExp(influencerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `<strong style="font-weight: 600;">${influencerName}</strong>`);
+                          }
+                          
+                          // Bold company name
+                          if (companyName) {
+                            processedText = processedText.replace(new RegExp(companyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `<strong style="font-weight: 600;">${companyName}</strong>`);
+                          }
+                          
+                          // Bold collaboration ID
+                          if (collabId) {
+                            processedText = processedText.replace(new RegExp(collabId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `<strong style="font-weight: 600;">${collabId}</strong>`);
+                          }
+                          
+                          // Bold current date
+                          if (currentDate) {
+                            processedText = processedText.replace(new RegExp(currentDate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `<strong style="font-weight: 600;">${currentDate}</strong>`);
+                          }
+                          
+                          const parts = processedText.split(magicLink);
+                          let htmlContent = '';
+                          let inBulletList = false;
+                          
+                          parts.forEach((part, partIndex) => {
+                            const lines = part.split('\n');
+                            
+                            lines.forEach((line) => {
+                              const trimmed = line.trim();
+                              
+                              if (trimmed.startsWith('•')) {
+                                if (!inBulletList) {
+                                  htmlContent += '<ul style="margin: 10px 0; padding-left: 20px; list-style: none;">';
+                                  inBulletList = true;
+                                }
+                                htmlContent += `<li style="margin: 5px 0; font-size: 14px; line-height: 1.6; color: #374151;">${trimmed.substring(1).trim()}</li>`;
+                              } else {
+                                if (inBulletList) {
+                                  htmlContent += '</ul>';
+                                  inBulletList = false;
+                                }
+                                
+                                if (trimmed.endsWith(':') && trimmed.length < 30 && trimmed.length > 0) {
+                                  htmlContent += `<p style="margin: 20px 0 10px 0; font-size: 16px; font-weight: 600; color: #111827;">${trimmed}</p>`;
+                                } else if (trimmed.toLowerCase().startsWith('best regards')) {
+                                  htmlContent += `<p style="margin: 20px 0 5px 0; font-size: 14px; line-height: 1.6; color: #374151;">${trimmed}</p>`;
+                                } else if (trimmed) {
+                                  htmlContent += `<p style="margin: 0 0 15px 0; font-size: 14px; line-height: 1.6; color: #374151;">${trimmed}</p>`;
+                                }
+                              }
+                            });
+                            
+                            if (inBulletList) {
+                              htmlContent += '</ul>';
+                              inBulletList = false;
+                            }
+                            
+                            if (partIndex < parts.length - 1) {
+                              htmlContent += `
+                                <div style="margin: 30px 0; text-align: center;">
+                                  <a href="${magicLink}" 
+                                     style="display: inline-block; padding: 14px 32px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                                    Sign Now
+                                  </a>
+                                </div>
+                              `;
+                            }
+                          });
+                          
+                          return htmlContent;
+                        };
+
+                        // Extract values from email body for bolding
+                        const influencerName = emailDetails.body.match(/Hi (.+?),/)?.[1] || '';
+                        const companyName = campaign?.brand || campaign?.name || "Company";
+                        const collabId = collaborationId || "N/A";
+                        const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                        
+                        const htmlBody = convertToHtml(emailDetails.body, emailDetails.magicLink, influencerName, companyName, collabId, currentDate);
+                        const signifyLogoUrl = `${window.location.origin}/signature.png`;
+                        const growwikLogoUrl = `${window.location.origin}/growiik.png`;
+                        
+                        contentToCopy = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${emailDetails.subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f5f5f5;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <!-- Header with Logos -->
+          <tr>
+            <td style="padding: 30px 40px 20px; text-align: center; border-bottom: 2px solid #f0f0f0; background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="padding: 0 15px; vertical-align: middle; text-align: center;">
+                          <img src="${signifyLogoUrl}" alt="Signify Logo" style="height: 35px; width: auto; max-width: 100px; display: block; border: 0;" onerror="this.style.display='none';">
+                        </td>
+                        <td style="padding: 0 8px; vertical-align: middle; text-align: center;">
+                          <span style="font-size: 20px; color: #9ca3af;">•</span>
+                        </td>
+                        <td style="padding: 0 15px; vertical-align: middle;">
+                          <img src="${growwikLogoUrl}" alt="Growwik Media Logo" style="height: 50px; width: auto; max-width: 150px; display: block; border: 0;" onerror="this.style.display='none';">
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 40px;">
+              ${htmlBody}
+            </td>
+          </tr>
+          <!-- Footer with Social Media -->
+          <tr>
+            <td style="padding: 30px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                <tr>
+                  <td align="center" style="padding-bottom: 20px;">
+                    <p style="margin: 0; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 15px;">Connect with us</p>
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="padding: 0 8px;">
+                          <a href="https://www.facebook.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #1877f2; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                            <img src="https://cdn-icons-png.flaticon.com/512/124/124010.png" alt="Facebook" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          </a>
+                        </td>
+                        <td style="padding: 0 8px;">
+                          <a href="https://twitter.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #1da1f2; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                            <img src="https://cdn-icons-png.flaticon.com/512/124/124021.png" alt="Twitter" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          </a>
+                        </td>
+                        <td style="padding: 0 8px;">
+                          <a href="https://www.instagram.com/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                            <img src="https://cdn-icons-png.flaticon.com/512/174/174855.png" alt="Instagram" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          </a>
+                        </td>
+                        <td style="padding: 0 8px;">
+                          <a href="https://www.linkedin.com/company/growwikmedia" target="_blank" style="display: inline-block; width: 44px; height: 44px; background-color: #0077b5; border-radius: 50%; text-align: center; line-height: 44px; text-decoration: none; transition: transform 0.2s;">
+                            <img src="https://cdn-icons-png.flaticon.com/512/174/174857.png" alt="LinkedIn" style="width: 24px; height: 24px; vertical-align: middle; filter: brightness(0) invert(1);" onerror="this.style.display='none';">
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                    <p style="margin: 0; font-size: 12px; color: #666; line-height: 1.6;">
+                      <strong style="color: #333;">Growwik Media</strong><br>
+                      Email: <a href="mailto:contact@growwik.com" style="color: #2563eb; text-decoration: none;">contact@growwik.com</a><br>
+                      <span style="color: #999;">© ${new Date().getFullYear()} Growwik Media. All rights reserved.</span>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+                      } else {
+                        // Plain text format
+                        contentToCopy = `To: ${emailDetails.to}\nSubject: ${emailDetails.subject}\n\n${emailDetails.body}`;
+                      }
+                      
+                      await navigator.clipboard.writeText(contentToCopy);
+                      toast({
+                        title: "Copied",
+                        description: emailViewMode === 'html' 
+                          ? "HTML email copied to clipboard." 
+                          : "Email content copied to clipboard.",
+                      });
+                    } catch (error) {
+                      console.error('Failed to copy:', error);
+                      toast({
+                        title: "Error",
+                        description: "Failed to copy to clipboard.",
+                        variant: "destructive",
+                      });
+                    }
+                  }
+                }}
+              >
+                Copy
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsEmailDialogOpen(false);
+                  setIsEditingEmail(false);
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                className="bg-primary text-white hover:bg-primary/90"
+                onClick={() => {
+                  if (!emailDetails) return;
+
+                  const encodedBody = encodeURIComponent(emailDetails.body);
+                  const encodedSubject = encodeURIComponent(emailDetails.subject);
+                  const encodedTo = encodeURIComponent(emailDetails.to);
+
+                  // Zoho Mail compose URL format
+                  // Format: https://mail.zoho.in/zm/comp.do?ct=mailto:EMAIL?subject=SUBJECT&body=BODY
+                  const mailtoLink = `mailto:${emailDetails.to}?subject=${encodedSubject}&body=${encodedBody}`;
+                  const zohoMailUrl = `https://mail.zoho.in/zm/comp.do?ct=${encodeURIComponent(mailtoLink)}`;
+                  
+                  // Open Zoho Mail compose page in new tab with pre-filled data
+                  window.open(zohoMailUrl, '_blank', 'noopener,noreferrer');
+
+                  toast({
+                    title: "Opening Zoho Mail",
+                    description: "Redirecting to Zoho Mail compose window with all details pre-filled.",
+                  });
+                  
+                  // Close dialog after redirect
+                  setTimeout(() => {
+                    setIsEmailDialogOpen(false);
+                    setIsEditingEmail(false);
+                  }, 100);
+                }}
+              >
+                Send
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

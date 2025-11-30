@@ -36,7 +36,7 @@ const AuthCallback = () => {
                            `${userMetadata.first_name || ''} ${userMetadata.last_name || ''}`.trim() ||
                            session.user.email?.split('@')[0] || 
                            'User';
-
+                           
             try {
               const { error: insertError } = await supabase
                 .from('user_profiles')
