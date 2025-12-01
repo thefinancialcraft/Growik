@@ -29,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Printer, ChevronLeft, ChevronRight, Pen, Type, X, RotateCcw, RefreshCw, Trash2, Mail, CalendarIcon, Plus, Check } from "lucide-react";
+import { Loader2, Printer, ChevronLeft, ChevronRight, Pen, Type, X, RotateCcw, RefreshCw, Trash2, Mail, CalendarIcon, Plus, Check, CheckCircle2 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -146,6 +146,8 @@ const CollaborationAssignment = () => {
   const [currentSignatureEntry, setCurrentSignatureEntry] = useState<string | null>(null);
   const [isSigned, setIsSigned] = useState<boolean>(false);
   const [isContractSent, setIsContractSent] = useState<boolean>(false);
+  const [updatedCollaborationIds, setUpdatedCollaborationIds] = useState<Set<string>>(new Set());
+  const [filledCollaborationIds, setFilledCollaborationIds] = useState<Set<string>>(new Set());
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState<boolean>(false);
   const [isEditingEmail, setIsEditingEmail] = useState<boolean>(false);
   const [emailViewMode, setEmailViewMode] = useState<'simple' | 'html'>('simple');
@@ -1455,8 +1457,10 @@ const CollaborationAssignment = () => {
           });
           
           // Add magic_link to overrideMap if found in column
-          if (loadedMagicLink) {
+          if (loadedMagicLink && collaborationId) {
             overrideMap.set("magic_link", loadedMagicLink);
+            // If magic link exists for this collaboration ID, mark it as updated
+            setUpdatedCollaborationIds(prev => new Set(prev).add(collaborationId));
           }
         } catch (overrideErr) {
           console.error("CollaborationAssignment: failed to load overrides", overrideErr);
@@ -1478,6 +1482,36 @@ const CollaborationAssignment = () => {
         });
 
         setContractVariableEntries(finalEntries);
+        
+        // Check if all variables are filled for this collaboration ID after loading
+        if (collaborationId) {
+          const editableEntries = finalEntries.filter(entry => {
+            const key = entry.originalKey || entry.key || '';
+            if (key === 'magic_link' || key.includes('signature.influencer')) {
+              return false;
+            }
+            return entry.editable;
+          });
+
+          if (editableEntries.length > 0) {
+            const allFilled = editableEntries.every(entry => {
+              const hasInputValue = entry.inputValue && entry.inputValue.trim().length > 0;
+              const hasValue = entry.value && entry.value.trim().length > 0 && entry.value !== '--';
+              const hasRawValues = entry.rawValues && entry.rawValues.length > 0 && entry.rawValues.some(v => v && v.trim().length > 0 && v !== '--');
+              return hasInputValue || hasValue || hasRawValues;
+            });
+
+            if (allFilled) {
+              setFilledCollaborationIds(prev => new Set(prev).add(collaborationId));
+            } else {
+              setFilledCollaborationIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(collaborationId);
+                return newSet;
+              });
+            }
+          }
+        }
       } catch (err: any) {
         console.error("CollaborationAssignment: Error loading contract variables", err);
         setContractVariablesError(err?.message || "Failed to load contract variables.");
@@ -1495,6 +1529,160 @@ const CollaborationAssignment = () => {
       void loadContractVariables(contractMeta.id);
     }
   }, [contractMeta?.id, isVariableSheetOpen, loadContractVariables]);
+
+  // Check if all editable variables are filled for current collaboration ID from Supabase
+  useEffect(() => {
+    const checkVariablesFilled = async () => {
+      if (!collaborationId || !contractMeta?.id) return;
+
+      try {
+        // Get contract variables structure from contracts table
+        const { data: contractData, error: contractError } = await (supabase as any)
+          .from("contracts")
+          .select("variables")
+          .eq("id", contractMeta.id)
+          .maybeSingle();
+
+        if (contractError || !contractData?.variables) {
+          return;
+        }
+
+        const contractVariables = contractData.variables as Record<string, any>;
+        if (!contractVariables || typeof contractVariables !== 'object') {
+          return;
+        }
+
+        // Get saved values from collaboration_variable_overrides
+        const { data: overrideData, error: overrideError } = await (supabase as any)
+          .from(VARIABLE_OVERRIDE_TABLE)
+          .select("value")
+          .eq("collaboration_id", collaborationId)
+          .eq("variable_key", "all_variables")
+          .maybeSingle();
+
+        if (overrideError || !overrideData?.value) {
+          // No saved values, mark as not filled
+          setFilledCollaborationIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(collaborationId);
+            return newSet;
+          });
+          return;
+        }
+
+        // Parse the saved values
+        let savedValues: Record<string, any> = {};
+        try {
+          savedValues = typeof overrideData.value === 'string' 
+            ? JSON.parse(overrideData.value) 
+            : overrideData.value;
+        } catch (e) {
+          console.error("Error parsing saved values", e);
+          return;
+        }
+
+        // Get all variable keys from contract structure (excluding signature.influencer)
+        const requiredVariableKeys = Object.keys(contractVariables).filter(key => {
+          // Exclude signature.influencer from check
+          return key !== 'signature.influencer';
+        });
+
+        if (requiredVariableKeys.length === 0) {
+          return;
+        }
+
+        // Helper function to normalize saved key to match contract key
+        const normalizeSavedKey = (savedKey: string, contractKey: string): string | null => {
+          // Direct match
+          if (savedKey === contractKey) {
+            return savedKey;
+          }
+          
+          // Handle indexed keys (date_0, date_1, etc.) - check if starts with contractKey
+          if (savedKey.startsWith(contractKey + '_')) {
+            return savedKey;
+          }
+          
+          // Handle placeholder format var[{{key}}] - extract the key
+          const placeholderMatch = savedKey.match(/var\[\{\{([^}]+)\}\}\]/);
+          if (placeholderMatch) {
+            const extractedKey = placeholderMatch[1].trim();
+            if (extractedKey === contractKey) {
+              return savedKey;
+            }
+          }
+          
+          return null;
+        };
+
+        // Helper function to find saved value for a contract key
+        const findSavedValue = (contractKey: string): any => {
+          // Try direct match first
+          if (savedValues[contractKey] !== undefined) {
+            return savedValues[contractKey];
+          }
+          
+          // Try to find indexed version (date_0, date_1, etc.)
+          const indexedKeys = Object.keys(savedValues).filter(key => 
+            key.startsWith(contractKey + '_')
+          );
+          if (indexedKeys.length > 0) {
+            // Return the first indexed value found
+            return savedValues[indexedKeys[0]];
+          }
+          
+          // Try placeholder format var[{{key}}]
+          const placeholderKey = `var[{{${contractKey}}}]`;
+          if (savedValues[placeholderKey] !== undefined) {
+            return savedValues[placeholderKey];
+          }
+          
+          return undefined;
+        };
+
+        // Check if all required variables have values in savedValues
+        const allFilled = requiredVariableKeys.every(contractKey => {
+          const savedValue = findSavedValue(contractKey);
+          
+          // Check if value exists and is not null/empty
+          if (savedValue === null || savedValue === undefined) {
+            return false;
+          }
+          
+          // For string values, check if not empty
+          if (typeof savedValue === 'string') {
+            return savedValue.trim().length > 0 && savedValue !== '--';
+          }
+          
+          // For other types, just check if exists
+          return true;
+        });
+
+        // Update filled status for this collaboration ID
+        if (allFilled) {
+          setFilledCollaborationIds(prev => new Set(prev).add(collaborationId));
+        } else {
+          setFilledCollaborationIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(collaborationId);
+            return newSet;
+          });
+        }
+      } catch (err) {
+        console.error("Error checking variables filled status", err);
+      }
+    };
+
+    checkVariablesFilled();
+  }, [collaborationId, contractMeta?.id]);
+
+  // Check if all editable variables are filled for current collaboration ID
+  const areAllVariablesFilled = useMemo(() => {
+    if (!collaborationId) return false;
+    
+    // Check if this collaboration ID is marked as filled
+    return filledCollaborationIds.has(collaborationId);
+  }, [collaborationId, filledCollaborationIds]);
 
   // Contract handling functions
   const handleFillContract = () => {
@@ -2144,31 +2332,47 @@ const CollaborationAssignment = () => {
 </html>`;
 
       // --- Magic Link Generation ---
-      // Check if we already have a magic link token from loaded overrides
-      let magicLinkToken = contractVariableEntries.find(e => e.key === "magic_link")?.value;
-
-      if (!magicLinkToken) {
-        // Try to load existing magic_link from database column
-        try {
-          const { data: existingMagicLink } = await (supabase as any)
-            .from(VARIABLE_OVERRIDE_TABLE)
-            .select("magic_link")
-            .eq("collaboration_id", collaborationId)
-            .not("magic_link", "is", null)
-            .limit(1)
-            .maybeSingle();
-          
-          if (existingMagicLink?.magic_link) {
-            magicLinkToken = existingMagicLink.magic_link;
-          }
-        } catch (err) {
-          console.error("Error loading existing magic_link", err);
+      // Step 1: Check collaboration_variable_overrides table for existing magic_link column for THIS collaboration_id
+      let magicLinkToken: string | null = null;
+      
+      if (!collaborationId) {
+        console.error("[Magic Link] ERROR: collaborationId is required!");
+        throw new Error("collaborationId is required for magic link generation");
+      }
+      
+      // Check Supabase collaboration_variable_overrides table for magic_link column
+      try {
+        console.log(`[Magic Link] Checking collaboration_variable_overrides table for magic_link column for collaboration_id: ${collaborationId}`);
+        
+        const { data: existingRecord, error: queryError } = await (supabase as any)
+          .from(VARIABLE_OVERRIDE_TABLE) // collaboration_variable_overrides
+          .select("magic_link, collaboration_id")
+          .eq("collaboration_id", collaborationId) // Filter by same collaboration_id
+          .not("magic_link", "is", null) // Ensure magic_link is not null
+          .limit(1)
+          .maybeSingle();
+        
+        if (queryError) {
+          console.error(`[Magic Link] Query error for collaboration_id ${collaborationId}:`, queryError);
         }
+        
+        // If magic_link exists in database for this collaboration_id, use it
+        if (existingRecord?.magic_link && existingRecord.collaboration_id === collaborationId) {
+          magicLinkToken = existingRecord.magic_link;
+          console.log(`[Magic Link] ✓ Found existing magic_link in collaboration_variable_overrides for collaboration_id ${collaborationId}: ${magicLinkToken.substring(0, 8)}...`);
+        } else {
+          console.log(`[Magic Link] ✗ No existing magic_link found in collaboration_variable_overrides for collaboration_id ${collaborationId}`);
+        }
+      } catch (err) {
+        console.error("[Magic Link] Error checking collaboration_variable_overrides table:", err);
       }
 
+      // Step 2: If magic_link not present, generate new one
+      const isNewMagicLink = !magicLinkToken;
       if (!magicLinkToken) {
-        // Generate new token if not exists
+        // Generate new unique UUID for this collaboration
         magicLinkToken = crypto.randomUUID();
+        console.log(`[Magic Link] ✓ Generated NEW unique magic_link for collaboration_id ${collaborationId}: ${magicLinkToken.substring(0, 8)}...`);
       }
 
       // Add to variables map to be saved (for backwards compatibility)
@@ -2184,10 +2388,18 @@ const CollaborationAssignment = () => {
           const client = supabase as any;
 
           // Create a single record with all variables, contract_html, and magic_link
+          // CRITICAL: Ensure collaboration_id is set correctly
+          if (!collaborationId) {
+            console.error("[Magic Link] ERROR: Cannot save - collaborationId is missing!");
+            throw new Error("collaborationId is required to save magic_link");
+          }
+          
+          console.log(`[Magic Link] Preparing to save for collaboration_id: ${collaborationId}, magic_link: ${magicLinkToken.substring(0, 8)}...`);
+          
           const contractRecord = {
             campaign_id: resolvedCampaignId,
             influencer_id: resolvedInfluencerId,
-            collaboration_id: collaborationId,
+            collaboration_id: collaborationId, // CRITICAL: This must be unique per collaboration
             variable_key: "all_variables",
             value: JSON.stringify(variablesMap),
             contract_html: completeHtmlDocument,
@@ -2204,12 +2416,32 @@ const CollaborationAssignment = () => {
             console.warn("Failed to delete existing entries, will try to upsert anyway:", deleteErr);
           }
 
-          // Upsert the single contract record with all data
+          // Step 3: Update Supabase collaboration_variable_overrides table with magic_link
+          console.log(`[Magic Link] Updating collaboration_variable_overrides table with magic_link ${magicLinkToken.substring(0, 8)}... for collaboration_id: ${collaborationId}`);
           const { error: contractError } = await (supabase as any)
-            .from(VARIABLE_OVERRIDE_TABLE)
+            .from(VARIABLE_OVERRIDE_TABLE) // collaboration_variable_overrides
             .upsert(contractRecord, { 
               onConflict: 'collaboration_id,variable_key'
             });
+          
+          if (!contractError) {
+            console.log(`[Magic Link] ✓ Successfully updated collaboration_variable_overrides table with magic_link for collaboration_id ${collaborationId}`);
+            
+            // Show toast notification when new magic link is generated
+            if (isNewMagicLink) {
+              toast({
+                title: "Magic Link Generated",
+                description: `A new magic link has been generated and saved to collaboration_variable_overrides.`,
+                variant: "default",
+              });
+            } else {
+              toast({
+                title: "Contract Updated",
+                description: `Contract updated with existing magic link.`,
+                variant: "default",
+              });
+            }
+          }
 
           if (contractError) {
             const errorDetails = contractError;
@@ -2245,6 +2477,90 @@ const CollaborationAssignment = () => {
               }
             );
             console.log("CollaborationAssignment: ✓ Contract and variables saved successfully");
+            // Mark this collaboration ID as updated so Copy Magic Link button can be shown
+            if (collaborationId) {
+              setUpdatedCollaborationIds(prev => new Set(prev).add(collaborationId));
+              
+              // Check if all variables are filled and update filled status
+              if (contractMeta?.id) {
+                try {
+                  // Get contract variables structure from contracts table
+                  const { data: contractData } = await (supabase as any)
+                    .from("contracts")
+                    .select("variables")
+                    .eq("id", contractMeta.id)
+                    .maybeSingle();
+
+                  if (contractData?.variables) {
+                    const contractVariables = contractData.variables as Record<string, any>;
+                    
+                    if (contractVariables && typeof contractVariables === 'object') {
+                      // Get all variable keys from contract structure (excluding signature.influencer)
+                      const requiredVariableKeys = Object.keys(contractVariables).filter(key => {
+                        return key !== 'signature.influencer';
+                      });
+
+                      if (requiredVariableKeys.length > 0) {
+                        // Helper function to find saved value for a contract key
+                        const findSavedValue = (contractKey: string): any => {
+                          // Try direct match first
+                          if (variablesMap[contractKey] !== undefined) {
+                            return variablesMap[contractKey];
+                          }
+                          
+                          // Try to find indexed version (date_0, date_1, etc.)
+                          const indexedKeys = Object.keys(variablesMap).filter(key => 
+                            key.startsWith(contractKey + '_')
+                          );
+                          if (indexedKeys.length > 0) {
+                            return variablesMap[indexedKeys[0]];
+                          }
+                          
+                          // Try placeholder format var[{{key}}]
+                          const placeholderKey = `var[{{${contractKey}}}]`;
+                          if (variablesMap[placeholderKey] !== undefined) {
+                            return variablesMap[placeholderKey];
+                          }
+                          
+                          return undefined;
+                        };
+
+                        // Check if all required variables have values in variablesMap
+                        const allFilled = requiredVariableKeys.every(contractKey => {
+                          const savedValue = findSavedValue(contractKey);
+                          
+                          // Check if value exists and is not null/empty
+                          if (savedValue === null || savedValue === undefined) {
+                            return false;
+                          }
+                          
+                          // For string values, check if not empty
+                          if (typeof savedValue === 'string') {
+                            return savedValue.trim().length > 0 && savedValue !== '--';
+                          }
+                          
+                          // For other types, just check if exists
+                          return true;
+                        });
+
+                        // Update filled status for this collaboration ID
+                        if (allFilled) {
+                          setFilledCollaborationIds(prev => new Set(prev).add(collaborationId));
+                        } else {
+                          setFilledCollaborationIds(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(collaborationId);
+                            return newSet;
+                          });
+                        }
+                      }
+                    }
+                  }
+                } catch (checkErr) {
+                  console.error("Error checking variables filled status after update", checkErr);
+                }
+              }
+            }
           }
         } catch (overrideErr) {
           console.error("CollaborationAssignment: Exception while saving overrides", overrideErr);
@@ -2514,81 +2830,6 @@ const CollaborationAssignment = () => {
     }
   };
 
-  const handleCreateDraftEmail = async () => {
-    if (!influencer) {
-      toast({
-        title: "Error",
-        description: "Influencer information not found.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Get magic link token
-    let magicLinkToken = contractVariableEntries.find(e => e.key === "magic_link")?.value;
-
-    if (!magicLinkToken && collaborationId) {
-      try {
-        const { data: magicLinkData } = await (supabase as any)
-          .from("collaboration_variable_overrides")
-          .select("magic_link")
-          .eq("collaboration_id", collaborationId)
-          .not("magic_link", "is", null)
-          .limit(1)
-          .maybeSingle();
-        
-        if (magicLinkData?.magic_link) {
-          magicLinkToken = magicLinkData.magic_link;
-        }
-      } catch (err) {
-        console.error("Error fetching magic_link from database", err);
-      }
-    }
-
-    if (!magicLinkToken) {
-      toast({
-        title: "Magic Link Not Ready",
-        description: "Please click 'Update Contract' to generate the magic link first.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    const magicLink = `${window.location.origin}/share/contract/${magicLinkToken}`;
-    const influencerName = influencer.name || "Influencer";
-    const influencerEmail = influencer.email || "";
-
-    if (!influencerEmail) {
-      toast({
-        title: "Error",
-        description: "Influencer email not found.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Create email body
-    const companyName = campaign?.brand || campaign?.name || "Company";
-    const collabId = collaborationId || "N/A";
-    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    const emailBody = `Hi ${influencerName},\n\nWe hope you're doing well!\n\nYour collaboration has been successfully initiated with Growwik Media.\n\nBelow is your secure contract signing magic link for Collaboration ID: ${collabId}.\n\nPlease click the link below to open and sign your contract:\n\n${magicLink}\n\nOnce the contract is signed, your onboarding for this collaboration will be completed.\n\nIf you face any issue while accessing the link or signing the contract, feel free to contact us anytime.\n\nProcessed By:\n\n• Name: Deepak kumar\n• Email: deepakkumar.official32@gmail.com\n• Employee Code: GRWK-001\n• Date: ${currentDate}\n\nBest regards,\nGrowwik Media`;
-    const emailSubject = `${companyName} - Contract Sign | ${collabId}`;
-    
-    // Store email details and show dialog instead of opening mail directly
-    setEmailDetails({
-      to: influencerEmail,
-      subject: emailSubject,
-      body: emailBody,
-      magicLink: magicLink,
-    });
-    setIsEmailDialogOpen(true);
-    
-        toast({
-      title: "Email Ready",
-      description: "Email details are ready. Click 'Open' in the dialog to open Zoho Mail.",
-    });
-  };
-
   return (
     <>
       <div className="flex min-h-screen bg-gradient-subtle">
@@ -2841,13 +3082,17 @@ const CollaborationAssignment = () => {
                                     {isContractSent ? "Resend" : "Send Contract"}
                                   </Button>
                                   {!isSigned && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleFillContract}
-                                  >
-                                    Fill Contract
-                                  </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={handleFillContract}
+                                      className={areAllVariablesFilled ? "border-green-500 text-green-700 hover:bg-green-50" : ""}
+                                    >
+                                      {areAllVariablesFilled && (
+                                        <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
+                                      )}
+                                      Fill Contract
+                                    </Button>
                                   )}
                                   <Button
                                     size="sm"
@@ -2885,26 +3130,104 @@ const CollaborationAssignment = () => {
                                     <ChevronLeft className="h-4 w-4 mr-1" />
                                     Previous
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={async () => {
-                                      // Find magic link token from loaded entries
-                                      let magicLinkToken = contractVariableEntries.find(e => e.key === "magic_link")?.value;
+                                  {collaborationId && (updatedCollaborationIds.has(collaborationId) || isSigned || filledCollaborationIds.has(collaborationId)) && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={async () => {
+                                        if (!collaborationId) {
+                                          toast({
+                                            title: "Error",
+                                            description: "Collaboration ID is missing.",
+                                            variant: "destructive"
+                                          });
+                                          return;
+                                        }
 
-                                      // If not found locally, try to fetch from database column
-                                      if (!magicLinkToken && collaborationId) {
+                                        let magicLinkToken: string | null = null;
+
+                                        // Step 1: ALWAYS fetch from Supabase collaboration_variable_overrides table first
                                         try {
-                                          const { data: magicLinkData } = await (supabase as any)
-                                            .from(VARIABLE_OVERRIDE_TABLE)
-                                            .select("magic_link")
+                                          console.log(`[Copy Magic Link] Fetching from collaboration_variable_overrides for collaboration_id: ${collaborationId}`);
+                                          const { data: magicLinkData, error: fetchError } = await (supabase as any)
+                                            .from(VARIABLE_OVERRIDE_TABLE) // collaboration_variable_overrides
+                                            .select("magic_link, collaboration_id")
                                             .eq("collaboration_id", collaborationId)
                                             .not("magic_link", "is", null)
                                             .limit(1)
                                             .maybeSingle();
                                           
-                                          if (magicLinkData?.magic_link) {
+                                          if (fetchError) {
+                                            console.error(`[Copy Magic Link] Error fetching from Supabase:`, fetchError);
+                                          }
+                                          
+                                          // Verify the returned record matches our collaboration_id
+                                          if (magicLinkData?.magic_link && magicLinkData.collaboration_id === collaborationId) {
                                             magicLinkToken = magicLinkData.magic_link;
+                                            console.log(`[Copy Magic Link] ✓ Found magic_link in Supabase for collaboration_id ${collaborationId}: ${magicLinkToken.substring(0, 8)}...`);
+                                            
+                                            // Update local state with latest from Supabase
+                                            setContractVariableEntries(prev => {
+                                              const existing = prev.find(e => e.key === "magic_link");
+                                              if (existing) {
+                                                return prev.map(e => e.key === "magic_link" ? { ...e, value: magicLinkToken } : e);
+                                              }
+                                              return [...prev, {
+                                                key: "magic_link",
+                                                value: magicLinkToken,
+                                                editable: false
+                                              }];
+                                            });
+                                          } else {
+                                            console.log(`[Copy Magic Link] ✗ No magic_link found in Supabase for collaboration_id ${collaborationId}`);
+                                          }
+                                        } catch (err) {
+                                          console.error("[Copy Magic Link] Error fetching magic_link from Supabase:", err);
+                                        }
+
+                                        // Step 2: If not found in Supabase, generate NEW unique link for this collaboration_id
+                                        if (!magicLinkToken) {
+                                          console.log(`[Copy Magic Link] Generating NEW unique magic_link for collaboration_id ${collaborationId}`);
+                                          magicLinkToken = crypto.randomUUID();
+                                          
+                                          // Step 3: Save the new magic_link to Supabase collaboration_variable_overrides
+                                          try {
+                                            // First, get existing record to preserve other data
+                                            const { data: existingRecord } = await (supabase as any)
+                                              .from(VARIABLE_OVERRIDE_TABLE)
+                                              .select("*")
+                                              .eq("collaboration_id", collaborationId)
+                                              .eq("variable_key", "all_variables")
+                                              .maybeSingle();
+
+                                            const recordToSave = {
+                                              collaboration_id: collaborationId,
+                                              variable_key: "all_variables",
+                                              magic_link: magicLinkToken,
+                                              campaign_id: existingRecord?.campaign_id || resolvedCampaignId,
+                                              influencer_id: existingRecord?.influencer_id || resolvedInfluencerId,
+                                              value: existingRecord?.value || JSON.stringify({ magic_link: magicLinkToken }),
+                                              contract_html: existingRecord?.contract_html || null
+                                            };
+
+                                            const { error: saveError } = await (supabase as any)
+                                              .from(VARIABLE_OVERRIDE_TABLE)
+                                              .upsert(recordToSave, {
+                                                onConflict: 'collaboration_id,variable_key'
+                                              });
+
+                                            if (saveError) {
+                                              console.error(`[Copy Magic Link] Error saving new magic_link to Supabase:`, saveError);
+                                              toast({
+                                                title: "Error",
+                                                description: "Failed to save magic link. Please try again.",
+                                                variant: "destructive"
+                                              });
+                                              return;
+                                            }
+
+                                            console.log(`[Copy Magic Link] ✓ Successfully saved NEW magic_link to Supabase for collaboration_id ${collaborationId}`);
+                                            
                                             // Update local state
                                             setContractVariableEntries(prev => {
                                               const existing = prev.find(e => e.key === "magic_link");
@@ -2917,44 +3240,46 @@ const CollaborationAssignment = () => {
                                                 editable: false
                                               }];
                                             });
+
+                                            // Mark this collaboration as updated
+                                            setUpdatedCollaborationIds(prev => new Set(prev).add(collaborationId));
+
+                                            toast({
+                                              title: "Magic Link Generated",
+                                              description: "A new magic link has been generated and saved.",
+                                              variant: "default"
+                                            });
+                                          } catch (err) {
+                                            console.error("[Copy Magic Link] Error saving new magic_link:", err);
+                                            toast({
+                                              title: "Error",
+                                              description: "Failed to save magic link. Please try again.",
+                                              variant: "destructive"
+                                            });
+                                            return;
                                           }
-                                        } catch (err) {
-                                          console.error("Error fetching magic_link from database", err);
                                         }
-                                      }
 
-                                      if (!magicLinkToken) {
-                                        toast({
-                                          title: "Magic Link Not Ready",
-                                          description: "Please click 'Update Contract' to generate the magic link first.",
-                                          variant: "destructive"
-                                        });
-                                        return;
-                                      }
-
-                                      const link = `${window.location.origin}/share/contract/${magicLinkToken}`;
-                                      navigator.clipboard.writeText(link);
-                                      toast({
-                                        title: "Link Copied",
-                                        description: "Magic link copied to clipboard.",
-                                      });
-                                    }}
-                                  >
-                                    Copy Magic Link
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      handleCreateDraftEmail();
-                                    }}
-                                    title="Create draft email in Zoho Mail"
-                                  >
-                                    <Mail className="h-4 w-4 mr-2" />
-                                    Create Draft Email
-                                  </Button>
+                                        // Step 4: Copy the magic link to clipboard
+                                        if (magicLinkToken) {
+                                          const link = `${window.location.origin}/share/contract/${magicLinkToken}`;
+                                          navigator.clipboard.writeText(link);
+                                          toast({
+                                            title: "Link Copied",
+                                            description: "Magic link copied to clipboard.",
+                                          });
+                                        } else {
+                                          toast({
+                                            title: "Error",
+                                            description: "Failed to generate magic link. Please try again.",
+                                            variant: "destructive"
+                                          });
+                                        }
+                                      }}
+                                    >
+                                      Copy Magic Link
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -3628,6 +3953,21 @@ const CollaborationAssignment = () => {
             }
             .contract-preview-container .tiptap-rendered {
               overflow-x: auto !important;
+              white-space: pre-wrap !important; /* Preserve whitespace and line breaks from original contract */
+            }
+            /* Preserve spacing in paragraphs */
+            .contract-preview-container .tiptap-rendered p {
+              white-space: pre-wrap !important;
+              margin: 0 0 14px 0;
+            }
+            /* Preserve spacing in divs */
+            .contract-preview-container .tiptap-rendered div {
+              white-space: pre-wrap !important;
+            }
+            /* Preserve line breaks */
+            .contract-preview-container .tiptap-rendered br {
+              display: block !important;
+              margin: 0 !important;
             }
           `}</style>
           <div className="flex items-start justify-between gap-4 mb-4">

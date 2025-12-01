@@ -36,7 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Printer, ChevronLeft, ChevronRight, FileText, UserCog, Trash2, CheckCircle2, FileCheck, Circle } from "lucide-react";
+import { Loader2, Printer, ChevronLeft, ChevronRight, FileText, UserCog, Trash2, CheckCircle2, FileCheck, Circle, Search, Filter, Download } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -401,6 +401,24 @@ const Collaboration = () => {
     has_contract_html?: boolean;
   }>>([]);
   const [collaborationActionsLoading, setCollaborationActionsLoading] = useState<boolean>(false);
+  const [collabSearch, setCollabSearch] = useState("");
+  const [selectedCollabActions, setSelectedCollabActions] = useState<Set<string>>(new Set());
+  const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
+  const [filters, setFilters] = useState<{
+    company: string;
+    influencer: string;
+    user: string;
+    isSigned: string;
+    campaign: string;
+    contract: string;
+  }>({
+    company: "",
+    influencer: "",
+    user: "",
+    isSigned: "",
+    campaign: "",
+    contract: "",
+  });
   const [viewingContractFromTable, setViewingContractFromTable] = useState<string | null>(null);
   const [contractHtmlFromTable, setContractHtmlFromTable] = useState<string | null>(null);
   const [isLoadingContractFromTable, setIsLoadingContractFromTable] = useState<boolean>(false);
@@ -881,6 +899,168 @@ const Collaboration = () => {
       setCollaborationActionsLoading(false);
     }
   }, []);
+
+  // Get unique filter values from collaboration actions
+  const filterOptions = useMemo(() => {
+    const companies = new Set<string>();
+    const influencers = new Set<string>();
+    const users = new Set<string>();
+    const campaigns = new Set<string>();
+    const contracts = new Set<string>();
+
+    collaborationActions.forEach((action) => {
+      if (action.company_name) companies.add(action.company_name);
+      if (action.influencer_name) influencers.add(action.influencer_name);
+      if (action.user_name) users.add(action.user_name);
+      if (action.campaign_name) campaigns.add(action.campaign_name);
+      if (action.contract_name) contracts.add(action.contract_name);
+    });
+
+    return {
+      companies: Array.from(companies).sort(),
+      influencers: Array.from(influencers).sort(),
+      users: Array.from(users).sort(),
+      campaigns: Array.from(campaigns).sort(),
+      contracts: Array.from(contracts).sort(),
+    };
+  }, [collaborationActions]);
+
+  // Filter collaboration actions based on search and filters
+  const filteredCollaborationActions = useMemo(() => {
+    let filtered = collaborationActions;
+
+    // Apply search filter
+    if (collabSearch.trim()) {
+      const query = collabSearch.toLowerCase();
+      filtered = filtered.filter((action) => {
+        return (
+          (action.campaign_name || "").toLowerCase().includes(query) ||
+          (action.company_name || "").toLowerCase().includes(query) ||
+          (action.contract_name || "").toLowerCase().includes(query) ||
+          (action.influencer_name || "").toLowerCase().includes(query) ||
+          (action.user_name || "").toLowerCase().includes(query) ||
+          (action.action || "").toLowerCase().includes(query) ||
+          (action.collaboration_id || "").toLowerCase().includes(query) ||
+          (action.remark || "").toLowerCase().includes(query)
+        );
+      });
+    }
+
+    // Apply filters
+    if (filters.company && filters.company !== "all") {
+      filtered = filtered.filter((action) => action.company_name === filters.company);
+    }
+    if (filters.influencer && filters.influencer !== "all") {
+      filtered = filtered.filter((action) => action.influencer_name === filters.influencer);
+    }
+    if (filters.user && filters.user !== "all") {
+      filtered = filtered.filter((action) => action.user_name === filters.user);
+    }
+    if (filters.isSigned && filters.isSigned !== "all") {
+      const isSigned = filters.isSigned === "true";
+      filtered = filtered.filter((action) => Boolean(action.is_signed) === isSigned);
+    }
+    if (filters.campaign && filters.campaign !== "all") {
+      filtered = filtered.filter((action) => action.campaign_name === filters.campaign);
+    }
+    if (filters.contract && filters.contract !== "all") {
+      filtered = filtered.filter((action) => action.contract_name === filters.contract);
+    }
+
+    return filtered;
+  }, [collaborationActions, collabSearch, filters]);
+
+  // Handle select all checkbox
+  const handleSelectAllCollab = (checked: boolean) => {
+    if (checked) {
+      setSelectedCollabActions(new Set(filteredCollaborationActions.map((action) => action.id)));
+    } else {
+      setSelectedCollabActions(new Set());
+    }
+  };
+
+  // Handle individual checkbox
+  const handleSelectCollab = (actionId: string, checked: boolean) => {
+    const newSelected = new Set(selectedCollabActions);
+    if (checked) {
+      newSelected.add(actionId);
+    } else {
+      newSelected.delete(actionId);
+    }
+    setSelectedCollabActions(newSelected);
+  };
+
+  // Export collaboration actions to CSV
+  const handleExportCollab = () => {
+    if (selectedCollabActions.size === 0) {
+      toast({
+        title: "No items selected",
+        description: "Please select collaboration actions to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const dataToExport = filteredCollaborationActions.filter((action) =>
+      selectedCollabActions.has(action.id)
+    );
+
+    if (dataToExport.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "Selected items not found in filtered results.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Create CSV content
+    const headers = [
+      "Campaign",
+      "Company",
+      "Contract",
+      "Influencer",
+      "Action",
+      "Collaboration ID",
+      "User Name",
+      "Date & Time",
+      "Status",
+      "Remark",
+    ];
+    const rows = dataToExport.map((action) => [
+      action.campaign_name || "",
+      action.company_name || "",
+      action.contract_name || "",
+      action.influencer_name || "",
+      action.action || "",
+      action.collaboration_id || "",
+      action.user_name || "",
+      new Date(action.occurred_at).toLocaleString(),
+      action.is_signed ? "Signed" : "Pending",
+      action.remark || "",
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `collaborations_${new Date().toISOString().split("T")[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Export successful",
+      description: `Exported ${dataToExport.length} collaboration action(s) to CSV.`,
+    });
+  };
 
   // Fetch timeline entries when collaborationId is available
   useEffect(() => {
@@ -3223,20 +3403,75 @@ const Collaboration = () => {
               {/* Collaboration Actions Table */}
               <Card className="border-none bg-gradient-to-br from-white/95 to-slate-100">
                 <div className="p-6 space-y-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900">Collaboration Actions</h2>
-                    <p className="text-sm text-slate-500">All actions recorded in collaboration_actions table.</p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-900">Collaboration Actions</h2>
+                      <p className="text-sm text-slate-500">All actions recorded in collaboration_actions table.</p>
+                    </div>
                   </div>
+
+                  {/* Search, Filter, Export Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="relative w-full md:max-w-xs">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input
+                        value={collabSearch}
+                        onChange={(event) => setCollabSearch(event.target.value)}
+                        placeholder="Search collaborations..."
+                        className="pl-9 bg-white"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 gap-2"
+                        onClick={() => setIsFilterDialogOpen(true)}
+                      >
+                        <Filter className="h-4 w-4" />
+                        Filters
+                        {(filters.company || filters.influencer || filters.user || filters.isSigned || filters.campaign || filters.contract) && (
+                          <span className="ml-1 h-5 w-5 rounded-full bg-primary text-xs text-primary-foreground flex items-center justify-center">
+                            {[filters.company, filters.influencer, filters.user, filters.isSigned, filters.campaign, filters.contract].filter(Boolean).length}
+                          </span>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 gap-2"
+                        onClick={handleExportCollab}
+                        disabled={filteredCollaborationActions.length === 0}
+                      >
+                        <Download className="h-4 w-4" />
+                        Export
+                      </Button>
+                    </div>
+                  </div>
+
                     {collaborationActionsLoading ? (
                       <div className="flex items-center justify-center py-8">
                         <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
                           </div>
-                    ) : collaborationActions.length > 0 ? (
+                    ) : filteredCollaborationActions.length > 0 ? (
                       <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead className="bg-slate-50 border-b border-slate-200">
                               <tr>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700 w-12">
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      filteredCollaborationActions.length > 0 &&
+                                      filteredCollaborationActions.every((action) =>
+                                        selectedCollabActions.has(action.id)
+                                      )
+                                    }
+                                    onChange={(e) => handleSelectAllCollab(e.target.checked)}
+                                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                                  />
+                                </th>
                                 <th className="px-4 py-3 text-left font-semibold text-slate-700">Campaign</th>
                                 <th className="px-4 py-3 text-left font-semibold text-slate-700">Company</th>
                                 <th className="px-4 py-3 text-left font-semibold text-slate-700">Contract</th>
@@ -3249,11 +3484,19 @@ const Collaboration = () => {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200">
-                              {collaborationActions.map((action) => (
+                              {filteredCollaborationActions.map((action) => (
                                 <tr 
                                   key={action.id} 
                                   className="hover:bg-slate-50 transition-colors"
                                 >
+                                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedCollabActions.has(action.id)}
+                                      onChange={(e) => handleSelectCollab(action.id, e.target.checked)}
+                                      className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                                    />
+                                  </td>
                                   <td 
                                     className="px-4 py-3 text-slate-700 font-medium cursor-pointer"
                                     onClick={() => handleRowClick(action)}
@@ -3411,7 +3654,9 @@ const Collaboration = () => {
                   </div>
                     ) : (
                       <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-8 text-center text-xs text-slate-400">
-                        No collaboration actions recorded yet.
+                        {collabSearch.trim()
+                          ? "No collaboration actions match your search."
+                          : "No collaboration actions recorded yet."}
                 </div>
                     )}
             </div>
@@ -3706,6 +3951,154 @@ const Collaboration = () => {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    {/* Filter Dialog */}
+    <Dialog open={isFilterDialogOpen} onOpenChange={setIsFilterDialogOpen}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Filter Collaboration Actions</DialogTitle>
+          <DialogDescription>
+            Filter collaboration actions by different criteria. Only available values are shown.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Campaign</label>
+            <Select
+              value={filters.campaign || "all"}
+              onValueChange={(value) => setFilters((prev) => ({ ...prev, campaign: value === "all" ? "" : value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Campaigns" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Campaigns</SelectItem>
+                {filterOptions.campaigns.map((campaign) => (
+                  <SelectItem key={campaign} value={campaign}>
+                    {campaign}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Company</label>
+            <Select
+              value={filters.company || "all"}
+              onValueChange={(value) => setFilters((prev) => ({ ...prev, company: value === "all" ? "" : value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Companies" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Companies</SelectItem>
+                {filterOptions.companies.map((company) => (
+                  <SelectItem key={company} value={company}>
+                    {company}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Contract</label>
+            <Select
+              value={filters.contract || "all"}
+              onValueChange={(value) => setFilters((prev) => ({ ...prev, contract: value === "all" ? "" : value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Contracts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Contracts</SelectItem>
+                {filterOptions.contracts.map((contract) => (
+                  <SelectItem key={contract} value={contract}>
+                    {contract}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Influencer</label>
+            <Select
+              value={filters.influencer || "all"}
+              onValueChange={(value) => setFilters((prev) => ({ ...prev, influencer: value === "all" ? "" : value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Influencers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Influencers</SelectItem>
+                {filterOptions.influencers.map((influencer) => (
+                  <SelectItem key={influencer} value={influencer}>
+                    {influencer}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">User</label>
+            <Select
+              value={filters.user || "all"}
+              onValueChange={(value) => setFilters((prev) => ({ ...prev, user: value === "all" ? "" : value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Users" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Users</SelectItem>
+                {filterOptions.users.map((user) => (
+                  <SelectItem key={user} value={user}>
+                    {user}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Signed Status</label>
+            <Select
+              value={filters.isSigned || "all"}
+              onValueChange={(value) => setFilters((prev) => ({ ...prev, isSigned: value === "all" ? "" : value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="true">Signed</SelectItem>
+                <SelectItem value="false">Pending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setFilters({
+                company: "",
+                influencer: "",
+                user: "",
+                isSigned: "",
+                campaign: "",
+                contract: "",
+              });
+            }}
+          >
+            Clear All
+          </Button>
+          <Button onClick={() => setIsFilterDialogOpen(false)}>Apply Filters</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </>
   );
 };

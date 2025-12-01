@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
@@ -9,6 +9,15 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import {
@@ -35,6 +44,11 @@ import {
   UserPlus,
   Users,
   Clock,
+  UserCog,
+  Trash2,
+  Circle,
+  Download,
+  Checkbox,
 } from "lucide-react";
 import {
   Table,
@@ -261,6 +275,46 @@ const CampaignDetail = () => {
     pending: number;
   }>({ total: 0, signed: 0, pending: 0 });
   const [loadingStats, setLoadingStats] = useState<boolean>(false);
+  const [collaboratorTab, setCollaboratorTab] = useState<"users" | "influencers" | "collab">("influencers");
+  const [collaboratorDisplay, setCollaboratorDisplay] = useState<"tile" | "list">("tile");
+  const [collaboratorSearch, setCollaboratorSearch] = useState("");
+  const [collabSearch, setCollabSearch] = useState("");
+  const [selectedCollabActions, setSelectedCollabActions] = useState<Set<string>>(new Set());
+  const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
+  const [filters, setFilters] = useState<{
+    company: string;
+    influencer: string;
+    user: string;
+    isSigned: string;
+    campaign: string;
+    contract: string;
+  }>({
+    company: "",
+    influencer: "",
+    user: "",
+    isSigned: "",
+    campaign: "",
+    contract: "",
+  });
+  const [collaborationActions, setCollaborationActions] = useState<Array<{
+    id: string;
+    campaign_id: string | null;
+    influencer_id: string | null;
+    user_id: string | null;
+    action: string | null;
+    remark: string | null;
+    occurred_at: string;
+    collaboration_id: string;
+    campaign_name?: string | null;
+    company_name?: string | null;
+    contract_name?: string | null;
+    contract_id?: string | null;
+    user_name?: string | null;
+    influencer_name?: string | null;
+    is_signed?: boolean | null;
+    has_contract_html?: boolean;
+  }>>([]);
+  const [collaborationActionsLoading, setCollaborationActionsLoading] = useState<boolean>(false);
 
   // Helper to normalize campaign_id the same way as CollaborationAssignment
   const isUuid = (value: string | undefined | null): value is string =>
@@ -368,7 +422,138 @@ const CampaignDetail = () => {
     };
 
     fetchCollabStats();
-  }, [campaign?.id]);
+  }, [resolvedCampaignIdForStats]);
+
+  // Fetch collaboration actions for the campaign
+  const fetchCollaborationActions = useCallback(async () => {
+    if (!resolvedCampaignIdForStats) return;
+
+    setCollaborationActionsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("collaboration_actions")
+        .select("id, campaign_id, influencer_id, user_id, action, remark, occurred_at, collaboration_id, contract_id, is_signed")
+        .eq("campaign_id", resolvedCampaignIdForStats)
+        .order("occurred_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      // Enrich actions with campaign, contract names, user names, and influencer names
+      const enrichedActions = await Promise.all(
+        (data || []).map(async (action: any) => {
+          let campaignName: string | null = null;
+          let companyName: string | null = null;
+          let contractName: string | null = null;
+          let userName: string | null = null;
+          let influencerName: string | null = null;
+
+          // Check if contract HTML exists (contract is filled)
+          let hasContractHtml = false;
+          if (action.collaboration_id) {
+            try {
+              const { data: overrideData } = await supabase
+                .from("collaboration_variable_overrides")
+                .select("contract_html")
+                .eq("collaboration_id", action.collaboration_id)
+                .maybeSingle();
+
+              if (overrideData && (overrideData as any).contract_html) {
+                hasContractHtml = true;
+              }
+            } catch (overrideErr) {
+              // Ignore error, contract not filled
+            }
+          }
+          
+          // Fetch user name if user_id exists
+          if (action.user_id) {
+            try {
+              const { data: userData } = await supabase
+                .from("user_profiles")
+                .select("user_name")
+                .eq("user_id", action.user_id)
+                .maybeSingle();
+
+              if (userData) {
+                userName = (userData as any).user_name || null;
+              }
+            } catch (userErr) {
+              console.error("CampaignDetail: Error fetching user name", userErr);
+            }
+          }
+          
+          // Fetch influencer name if influencer_id exists
+          if (action.influencer_id) {
+            try {
+              const { data: influencerData } = await supabase
+                .from("influencers")
+                .select("name")
+                .eq("id", action.influencer_id)
+                .maybeSingle();
+
+              if (influencerData) {
+                influencerName = (influencerData as any).name || null;
+              }
+            } catch (influencerErr) {
+              console.error("CampaignDetail: Error fetching influencer name", influencerErr);
+            }
+          }
+          
+          // Use campaign data from state if available
+          if (campaign && campaign.name) {
+            campaignName = campaign.name;
+            companyName = campaign.brand || null;
+            
+            if (campaign.contract && campaign.contract.name) {
+              contractName = campaign.contract.name;
+            }
+          }
+
+          return {
+            id: action.id,
+            campaign_id: action.campaign_id,
+            influencer_id: action.influencer_id,
+            user_id: action.user_id,
+            action: action.action,
+            remark: action.remark,
+            occurred_at: action.occurred_at,
+            collaboration_id: action.collaboration_id,
+            contract_id: action.contract_id,
+            is_signed: action.is_signed,
+            campaign_name: campaignName,
+            company_name: companyName,
+            contract_name: contractName,
+            user_name: userName,
+            influencer_name: influencerName,
+            has_contract_html: hasContractHtml,
+          } as typeof collaborationActions[0];
+        })
+      );
+
+      setCollaborationActions(enrichedActions as typeof collaborationActions);
+    } catch (err) {
+      console.error("CampaignDetail: Failed to fetch collaboration actions", err);
+      setCollaborationActions([]);
+      toast({
+        title: "Error loading collaborations",
+        description: "Failed to load collaboration actions. Please refresh the page.",
+        variant: "destructive",
+      });
+    } finally {
+      setCollaborationActionsLoading(false);
+    }
+  }, [resolvedCampaignIdForStats, campaign, toast]);
+
+  // Fetch collaboration actions when tab is "collab" and campaign is loaded
+  useEffect(() => {
+    if (collaboratorTab === "collab" && resolvedCampaignIdForStats) {
+      fetchCollaborationActions().catch((err) => {
+        console.error("CampaignDetail: Error fetching collaboration actions", err);
+      });
+    }
+  }, [collaboratorTab, resolvedCampaignIdForStats, fetchCollaborationActions]);
 
   const startDisplay = useMemo(
     () => formatDateForDisplay(campaign?.startDate),
@@ -383,10 +568,6 @@ const CampaignDetail = () => {
     if (!campaign) return 0;
     return campaign.users.length + campaign.influencers.length;
   }, [campaign]);
-
-  const [collaboratorTab, setCollaboratorTab] = useState<"users" | "influencers">("influencers");
-  const [collaboratorDisplay, setCollaboratorDisplay] = useState<"tile" | "list">("tile");
-  const [collaboratorSearch, setCollaboratorSearch] = useState("");
 
   const heroStats = useMemo(() => {
     if (!campaign) return [];
@@ -470,7 +651,165 @@ const CampaignDetail = () => {
   }, [campaign, collaboratorSearch]);
 
   const isUserTab = collaboratorTab === "users";
+  const isInfluencerTab = collaboratorTab === "influencers";
+  const isCollabTab = collaboratorTab === "collab";
   const activeCollaborators = isUserTab ? filteredUsers : filteredInfluencers;
+
+  // Get unique filter values from collaboration actions
+  const filterOptions = useMemo(() => {
+    const companies = new Set<string>();
+    const influencers = new Set<string>();
+    const users = new Set<string>();
+    const campaigns = new Set<string>();
+    const contracts = new Set<string>();
+
+    collaborationActions.forEach((action) => {
+      if (action.company_name) companies.add(action.company_name);
+      if (action.influencer_name) influencers.add(action.influencer_name);
+      if (action.user_name) users.add(action.user_name);
+      if (action.campaign_name) campaigns.add(action.campaign_name);
+      if (action.contract_name) contracts.add(action.contract_name);
+    });
+
+    return {
+      companies: Array.from(companies).sort(),
+      influencers: Array.from(influencers).sort(),
+      users: Array.from(users).sort(),
+      campaigns: Array.from(campaigns).sort(),
+      contracts: Array.from(contracts).sort(),
+    };
+  }, [collaborationActions]);
+
+  // Filter collaboration actions based on search and filters
+  const filteredCollaborationActions = useMemo(() => {
+    let filtered = collaborationActions;
+
+    // Apply search filter
+    if (collabSearch.trim()) {
+      const query = collabSearch.toLowerCase();
+      filtered = filtered.filter((action) => {
+        return (
+          (action.contract_name || "").toLowerCase().includes(query) ||
+          (action.influencer_name || "").toLowerCase().includes(query) ||
+          (action.user_name || "").toLowerCase().includes(query) ||
+          (action.action || "").toLowerCase().includes(query) ||
+          (action.collaboration_id || "").toLowerCase().includes(query) ||
+          (action.remark || "").toLowerCase().includes(query)
+        );
+      });
+    }
+
+    // Apply filters
+    if (filters.company && filters.company !== "all") {
+      filtered = filtered.filter((action) => action.company_name === filters.company);
+    }
+    if (filters.influencer && filters.influencer !== "all") {
+      filtered = filtered.filter((action) => action.influencer_name === filters.influencer);
+    }
+    if (filters.user && filters.user !== "all") {
+      filtered = filtered.filter((action) => action.user_name === filters.user);
+    }
+    if (filters.isSigned && filters.isSigned !== "all") {
+      const isSigned = filters.isSigned === "true";
+      filtered = filtered.filter((action) => Boolean(action.is_signed) === isSigned);
+    }
+    if (filters.campaign && filters.campaign !== "all") {
+      filtered = filtered.filter((action) => action.campaign_name === filters.campaign);
+    }
+    if (filters.contract && filters.contract !== "all") {
+      filtered = filtered.filter((action) => action.contract_name === filters.contract);
+    }
+
+    return filtered;
+  }, [collaborationActions, collabSearch, filters]);
+
+  // Handle select all checkbox
+  const handleSelectAllCollab = (checked: boolean) => {
+    if (checked) {
+      setSelectedCollabActions(new Set(filteredCollaborationActions.map((action) => action.id)));
+    } else {
+      setSelectedCollabActions(new Set());
+    }
+  };
+
+  // Handle individual checkbox
+  const handleSelectCollab = (actionId: string, checked: boolean) => {
+    const newSelected = new Set(selectedCollabActions);
+    if (checked) {
+      newSelected.add(actionId);
+    } else {
+      newSelected.delete(actionId);
+    }
+    setSelectedCollabActions(newSelected);
+  };
+
+  // Export collaboration actions to CSV
+  const handleExportCollab = () => {
+    if (selectedCollabActions.size === 0) {
+      toast({
+        title: "No items selected",
+        description: "Please select collaboration actions to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const dataToExport = filteredCollaborationActions.filter((action) =>
+      selectedCollabActions.has(action.id)
+    );
+
+    if (dataToExport.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "Selected items not found in filtered results.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Create CSV content
+    const headers = [
+      "Contract",
+      "Influencer",
+      "Action",
+      "Collaboration ID",
+      "User Name",
+      "Date & Time",
+      "Status",
+      "Remark",
+    ];
+    const rows = dataToExport.map((action) => [
+      action.contract_name || "",
+      action.influencer_name || "",
+      action.action || "",
+      action.collaboration_id || "",
+      action.user_name || "",
+      new Date(action.occurred_at).toLocaleString(),
+      action.is_signed ? "Signed" : "Pending",
+      action.remark || "",
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `collaborations_${new Date().toISOString().split("T")[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Export successful",
+      description: `Exported ${dataToExport.length} collaboration action(s) to CSV.`,
+    });
+  };
 
   return (
     <div className="flex min-h-screen bg-gradient-subtle">
@@ -739,7 +1078,7 @@ const CampaignDetail = () => {
                         <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 gap-4">
                         {/* Total Collaborations */}
                         <div className="flex flex-col justify-between h-full rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2">
                           <div className="flex items-center justify-between mb-1">
@@ -795,11 +1134,19 @@ const CampaignDetail = () => {
                       </Button>
                       <Button
                         type="button"
-                        variant={!isUserTab ? "default" : "ghost"}
+                        variant={isInfluencerTab ? "default" : "ghost"}
                         className="h-9 px-4 text-sm"
                         onClick={() => setCollaboratorTab("influencers")}
                       >
                         Influencers ({filteredInfluencers.length})
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={isCollabTab ? "default" : "ghost"}
+                        className="h-9 px-4 text-sm"
+                        onClick={() => setCollaboratorTab("collab")}
+                      >
+                        Collab ({collabStats.total})
                       </Button>
                     </div>
                   </div>
@@ -808,43 +1155,171 @@ const CampaignDetail = () => {
                     <div className="relative w-full md:max-w-xs">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                       <Input
-                        value={collaboratorSearch}
-                        onChange={(event) => setCollaboratorSearch(event.target.value)}
-                        placeholder={`Search ${isUserTab ? "users" : "influencers"}...`}
+                        value={isCollabTab ? collabSearch : collaboratorSearch}
+                        onChange={(event) => {
+                          if (isCollabTab) {
+                            setCollabSearch(event.target.value);
+                          } else {
+                            setCollaboratorSearch(event.target.value);
+                          }
+                        }}
+                        placeholder={`Search ${isUserTab ? "users" : isInfluencerTab ? "influencers" : "collaborations"}...`}
                         className="pl-9 bg-white"
                       />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+                    {isCollabTab ? (
+                      <div className="flex items-center gap-2">
                         <Button
                           type="button"
-                          variant={collaboratorDisplay === "tile" ? "default" : "ghost"}
-                          size="icon"
-                          className="h-9 w-9"
-                          onClick={() => setCollaboratorDisplay("tile")}
-                          title="Tile view"
+                          variant="outline"
+                          className="h-9 gap-2"
+                          onClick={() => setIsFilterDialogOpen(true)}
                         >
-                          <LayoutGrid className="h-4 w-4" />
+                          <Filter className="h-4 w-4" />
+                          Filters
+                          {(filters.company || filters.influencer || filters.user || filters.isSigned || filters.campaign || filters.contract) && (
+                            <span className="ml-1 h-5 w-5 rounded-full bg-primary text-xs text-primary-foreground flex items-center justify-center">
+                              {[filters.company, filters.influencer, filters.user, filters.isSigned, filters.campaign, filters.contract].filter(Boolean).length}
+                            </span>
+                          )}
                         </Button>
                         <Button
                           type="button"
-                          variant={collaboratorDisplay === "list" ? "default" : "ghost"}
-                          size="icon"
-                          className="h-9 w-9"
-                          onClick={() => setCollaboratorDisplay("list")}
-                          title="List view"
+                          variant="outline"
+                          className="h-9 gap-2"
+                          onClick={handleExportCollab}
+                          disabled={filteredCollaborationActions.length === 0}
                         >
-                          <List className="h-4 w-4" />
+                          <Download className="h-4 w-4" />
+                          Export
                         </Button>
                       </div>
-                      <Button type="button" variant="outline" className="h-9 gap-2">
-                        <Filter className="h-4 w-4" />
-                        Filters
-                      </Button>
-                    </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+                          <Button
+                            type="button"
+                            variant={collaboratorDisplay === "tile" ? "default" : "ghost"}
+                            size="icon"
+                            className="h-9 w-9"
+                            onClick={() => setCollaboratorDisplay("tile")}
+                            title="Tile view"
+                          >
+                            <LayoutGrid className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={collaboratorDisplay === "list" ? "default" : "ghost"}
+                            size="icon"
+                            className="h-9 w-9"
+                            onClick={() => setCollaboratorDisplay("list")}
+                            title="List view"
+                          >
+                            <List className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <Button type="button" variant="outline" className="h-9 gap-2">
+                          <Filter className="h-4 w-4" />
+                          Filters
+                        </Button>
+                      </div>
+                    )}
                   </div>
 
-                  {collaboratorDisplay === "tile" ? (
+                  {isCollabTab ? (
+                    collaborationActionsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                      </div>
+                    ) : filteredCollaborationActions.length > 0 ? (
+                      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader className="bg-slate-50/80">
+                              <TableRow>
+                                <TableHead className="w-12">
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      filteredCollaborationActions.length > 0 &&
+                                      filteredCollaborationActions.every((action) =>
+                                        selectedCollabActions.has(action.id)
+                                      )
+                                    }
+                                    onChange={(e) => handleSelectAllCollab(e.target.checked)}
+                                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                                  />
+                                </TableHead>
+                                <TableHead className="text-slate-500">Contract</TableHead>
+                                <TableHead className="text-slate-500">Influencer</TableHead>
+                                <TableHead className="text-slate-500">Action</TableHead>
+                                <TableHead className="text-slate-500">Collaboration ID</TableHead>
+                                <TableHead className="text-slate-500">User Name</TableHead>
+                                <TableHead className="text-slate-500">Date & Time</TableHead>
+                                <TableHead className="text-slate-500">Status</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filteredCollaborationActions.map((action) => (
+                                <TableRow 
+                                  key={action.id} 
+                                  className="hover:bg-slate-50 transition-colors"
+                                >
+                                  <TableCell>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedCollabActions.has(action.id)}
+                                      onChange={(e) => handleSelectCollab(action.id, e.target.checked)}
+                                      className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                                    />
+                                  </TableCell>
+                                  <TableCell className="text-slate-600">
+                                    {action.contract_name || <span className="text-slate-400">—</span>}
+                                  </TableCell>
+                                  <TableCell className="text-slate-600">
+                                    {action.influencer_name || <span className="text-slate-400">—</span>}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline" className="capitalize">
+                                      {action.action ? action.action.replace('_', ' ') : '—'}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-slate-600 font-mono text-xs">
+                                    {action.collaboration_id}
+                                  </TableCell>
+                                  <TableCell className="text-slate-600">
+                                    {action.user_name || <span className="text-slate-400">—</span>}
+                                  </TableCell>
+                                  <TableCell className="text-slate-600">
+                                    {new Date(action.occurred_at).toLocaleString()}
+                                  </TableCell>
+                                  <TableCell>
+                                    {action.is_signed ? (
+                                      <div className="inline-flex items-center justify-center">
+                                        <div className="h-4 w-4 rounded-full bg-green-600 flex items-center justify-center">
+                                          <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M9 12l2 2 4-4" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                                          </svg>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <Circle className="h-4 w-4 text-slate-400" />
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-8 text-center text-xs text-slate-400">
+                        {collabSearch.trim()
+                          ? "No collaboration actions match your search."
+                          : "No collaboration actions recorded yet for this campaign."}
+                      </div>
+                    )
+                  ) : collaboratorDisplay === "tile" ? (
                     activeCollaborators.length ? (
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         {isUserTab
@@ -896,6 +1371,154 @@ const CampaignDetail = () => {
           ) : null}
         </main>
       </div>
+
+      {/* Filter Dialog */}
+      <Dialog open={isFilterDialogOpen} onOpenChange={setIsFilterDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Filter Collaboration Actions</DialogTitle>
+            <DialogDescription>
+              Filter collaboration actions by different criteria. Only available values are shown.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Campaign</label>
+              <Select
+                value={filters.campaign || "all"}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, campaign: value === "all" ? "" : value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Campaigns" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Campaigns</SelectItem>
+                  {filterOptions.campaigns.map((campaign) => (
+                    <SelectItem key={campaign} value={campaign}>
+                      {campaign}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Company</label>
+              <Select
+                value={filters.company || "all"}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, company: value === "all" ? "" : value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Companies" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Companies</SelectItem>
+                  {filterOptions.companies.map((company) => (
+                    <SelectItem key={company} value={company}>
+                      {company}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Contract</label>
+              <Select
+                value={filters.contract || "all"}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, contract: value === "all" ? "" : value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Contracts" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Contracts</SelectItem>
+                  {filterOptions.contracts.map((contract) => (
+                    <SelectItem key={contract} value={contract}>
+                      {contract}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Influencer</label>
+              <Select
+                value={filters.influencer || "all"}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, influencer: value === "all" ? "" : value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Influencers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Influencers</SelectItem>
+                  {filterOptions.influencers.map((influencer) => (
+                    <SelectItem key={influencer} value={influencer}>
+                      {influencer}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">User</label>
+              <Select
+                value={filters.user || "all"}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, user: value === "all" ? "" : value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Users" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Users</SelectItem>
+                  {filterOptions.users.map((user) => (
+                    <SelectItem key={user} value={user}>
+                      {user}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Signed Status</label>
+              <Select
+                value={filters.isSigned || "all"}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, isSigned: value === "all" ? "" : value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="true">Signed</SelectItem>
+                  <SelectItem value="false">Pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setFilters({
+                  company: "",
+                  influencer: "",
+                  user: "",
+                  isSigned: "",
+                  campaign: "",
+                  contract: "",
+                });
+              }}
+            >
+              Clear All
+            </Button>
+            <Button onClick={() => setIsFilterDialogOpen(false)}>Apply Filters</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

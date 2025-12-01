@@ -89,6 +89,7 @@ const PublicContractSigning = () => {
     const [dbCampaignId, setDbCampaignId] = useState<string | null>(null);
     const [dbInfluencerId, setDbInfluencerId] = useState<string | null>(null);
     const [isSigned, setIsSigned] = useState<boolean>(false);
+    const [showSignedOverlay, setShowSignedOverlay] = useState<boolean>(true); // Show overlay by default when signed
     
     // Email Verification State
     const [isEmailVerified, setIsEmailVerified] = useState<boolean>(false);
@@ -103,6 +104,17 @@ const PublicContractSigning = () => {
     const [signatureFont, setSignatureFont] = useState('Dancing Script');
     const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
+
+    // Helper function to escape HTML
+    const escapeHtml = (value: string): string =>
+        value
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+
+    const VARIABLE_OVERRIDE_TABLE = "collaboration_variable_overrides";
 
     // Fetch Data
     useEffect(() => {
@@ -302,7 +314,12 @@ const PublicContractSigning = () => {
                     .maybeSingle();
 
                 if (!error && data) {
-                    setIsSigned(data.is_signed === true);
+                    const signedStatus = data.is_signed === true;
+                    setIsSigned(signedStatus);
+                    // Show overlay when contract is signed
+                    if (signedStatus) {
+                        setShowSignedOverlay(true);
+                    }
                 }
             } catch (err) {
                 console.error("Error fetching signed status:", err);
@@ -395,8 +412,8 @@ const PublicContractSigning = () => {
                     // Replace clickable spans
                     const existingSpanRegex = new RegExp(`<span[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>.*?</span>`, "gi");
                     html = html.replace(existingSpanRegex, replacement);
-                } else if (entry.editable) {
-                    // Make it look like a proper signature box & clickable for the signer
+                } else if (entry.editable && !isSigned) {
+                    // Make it look like a proper signature box & clickable for the signer (only if not signed)
                     const replacement = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${entry.key}" style="cursor: pointer; transition: all 0.2s;">--</span>`;
                     // Replace placeholder with clickable signature box
                     html = html.replace(regex, replacement);
@@ -421,6 +438,18 @@ const PublicContractSigning = () => {
                         "gi"
                     );
                     html = html.replace(existingSpanRegexEditable, replacement);
+                } else if (entry.editable && isSigned) {
+                    // If signed, make signature box non-clickable
+                    const replacement = `<span class="signature-box" data-signature="true" data-signature-key="${entry.key}" style="cursor: not-allowed; opacity: 0.6;">--</span>`;
+                    html = html.replace(regex, replacement);
+                    // Remove clickable classes from existing boxes
+                    const existingSpanRegexEditable = new RegExp(
+                        `<span[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}"[^>]*>[\\s\\S]*?<\\/span>`,
+                        "gi"
+                    );
+                    html = html.replace(existingSpanRegexEditable, (match) => {
+                        return match.replace(/signature-box-clickable/g, '').replace(/cursor:\s*pointer/g, 'cursor: not-allowed').replace(/opacity:\s*1/g, 'opacity: 0.6');
+                    });
                 } else {
                     // Non-editable signature, use value if available
                     const val = entry.value;
@@ -440,7 +469,7 @@ const PublicContractSigning = () => {
 
         setContractPreviewHtml(html);
 
-    }, [originalContractContent, contractContent, contractVariableEntries]);
+    }, [originalContractContent, contractContent, contractVariableEntries, isSigned]);
 
 
     // Handle Click on Signature in Preview
@@ -449,7 +478,8 @@ const PublicContractSigning = () => {
 
     useEffect(() => {
         // Only attach handler after email verification and when contract preview is available
-        if (!isEmailVerified || !contractPreviewHtml) return;
+        // DISABLE if contract is already signed
+        if (!isEmailVerified || !contractPreviewHtml || isSigned) return;
 
         const container = previewRef.current;
         if (!container) return;
@@ -495,7 +525,7 @@ const PublicContractSigning = () => {
             clearTimeout(timer);
             container.removeEventListener("click", handleSignatureClick, true);
         };
-    }, [contractPreviewHtml, isEmailVerified]);
+    }, [contractPreviewHtml, isEmailVerified, isSigned]);
 
     // Initialize canvas when signature dialog opens or mode changes
     useEffect(() => {
@@ -763,148 +793,328 @@ const PublicContractSigning = () => {
                 
                 console.log("Base HTML for signature replacement, length:", completeHtml.length);
                 
-                // Update signatures in the HTML - replace both placeholders and signature boxes
-                updatedEntries.forEach(entry => {
-                    if (entry.key.includes("signature")) {
-                        const val = entry.inputValue || entry.value;
-                        if (val && val.startsWith("data:image")) {
-                            const replacement = `<img src="${val}" alt="Signature" data-signature-key="${entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
-                            const escapedKey = entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                            
-                            // 1. Replace var[{{signature.key}}] placeholders
-                            const placeholder = `var[{{${entry.key}}}]`;
-                            const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                            const placeholderRegex = new RegExp(escapedPlaceholder, "g");
-                            completeHtml = completeHtml.replace(placeholderRegex, replacement);
-                            
-                            // 2. Replace existing signature images
-                            const existingImgRegex = new RegExp(`<img[^>]*data-signature-key=["']${escapedKey}["'][^>]*>`, "gi");
-                            completeHtml = completeHtml.replace(existingImgRegex, replacement);
-                            
-                            // 3. FIRST: Replace nested signature boxes (parent span containing signature box) - most specific case
-                            // This handles: <span style="..."><span class="signature-box" data-signature-key="...">--</span></span>
-                            const nestedParentSpanPattern = new RegExp(`<span[^>]*>[\\s\\S]*?<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>[\\s\\S]*?<\\/span>`, "gi");
-                            completeHtml = completeHtml.replace(nestedParentSpanPattern, (match) => {
-                                if (match.includes(`data-signature-key="${entry.key}"`)) {
-                                    // Check if the match contains our signature key
-                                    const innerBoxMatch = match.match(new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "i"));
-                                    if (innerBoxMatch) {
-                                        // Replace the entire nested structure with the signature image
-                                        return replacement;
-                                    }
-                                }
-                                return match;
-                            });
-                            
-                            // 4. Replace signature boxes with class="signature-box" AND data-signature-key
-                            // This handles: <span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer">--</span>
-                            const signatureBoxWithClassRegex = new RegExp(`<span[^>]*class=["'][^"']*signature-box[^"']*["'][^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi");
-                            completeHtml = completeHtml.replace(signatureBoxWithClassRegex, replacement);
-                            
-                            // 5. Replace signature boxes with data-signature="true" AND data-signature-key
-                            const signatureBoxWithDataAttr = new RegExp(`<span[^>]*data-signature=["']true["'][^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi");
-                            completeHtml = completeHtml.replace(signatureBoxWithDataAttr, replacement);
-                            
-                            // 6. Replace signature boxes with data-signature-key (general case) - do this after nested structures
-                            const signatureBoxRegex = new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi");
-                            completeHtml = completeHtml.replace(signatureBoxRegex, replacement);
-                            
-                            // 7. Additional pass: Replace any remaining nested structures with multiple passes
-                            let previousHtml = '';
-                            let passCount = 0;
-                            while (completeHtml !== previousHtml && passCount < 3) {
-                                previousHtml = completeHtml;
-                                passCount++;
-                                
-                                // Try to find and replace any remaining nested structures
-                                const nestedPattern = new RegExp(`<span[^>]*>[\\s\\S]*?<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>[\\s\\S]*?<\\/span>`, "gi");
-                                completeHtml = completeHtml.replace(nestedPattern, (match) => {
-                                    if (match.includes(`data-signature-key="${entry.key}"`)) {
-                                        // Replace inner signature box
-                                        const innerReplaced = match.replace(new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi"), replacement);
-                                        // Check remaining content
-                                        const remainingContent = innerReplaced.replace(/^<span[^>]*>/, '').replace(/<\/span>$/, '').replace(/&nbsp;/g, ' ').trim();
-                                        if (!remainingContent || remainingContent === replacement.trim() || remainingContent.length < 20) {
-                                            return replacement;
-                                        }
-                                        return innerReplaced;
-                                    }
-                                    return match;
-                                });
-                            }
-                            
-                            // 7. Replace old signature data URLs if they exist
-                            if (entry.value && entry.value.startsWith("data:image")) {
-                                const escapedOldSrc = entry.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                                const existingImgRegex2 = new RegExp(`<img[^>]*src=["']${escapedOldSrc}["'][^>]*>`, "gi");
-                                completeHtml = completeHtml.replace(existingImgRegex2, replacement);
-                            }
-                            
-                            // Debug: Log what we're replacing
-                            console.log(`Replacing signature for key: ${entry.key}`, {
-                                hasValue: !!val,
-                                valueLength: val ? val.length : 0,
-                                htmlContainsKey: completeHtml.includes(entry.key),
-                                htmlContainsSignatureBox: completeHtml.includes('signature-box'),
-                                htmlContainsDataSignatureKey: completeHtml.includes(`data-signature-key="${entry.key}"`),
-                                beforeReplace: completeHtml.includes(`data-signature-key="${entry.key}"`)
-                            });
-                            
-                            // Final check: if signature box still exists, try one more aggressive replacement
-                            if (completeHtml.includes(`data-signature-key="${entry.key}"`) && !completeHtml.includes(`<img[^>]*data-signature-key="${entry.key}"`)) {
-                                console.warn(`Signature box still exists for ${entry.key}, attempting aggressive replacement`);
-                                
-                                // Try a very specific pattern for the user's format
-                                // <span style="..."><span class="signature-box" data-signature="true" data-signature-key="...">--</span></span>
-                                const specificNestedPattern = new RegExp(`<span[^>]*style=["'][^"']*font-size:[^"']*["'][^>]*>[\\s\\S]*?<span[^>]*class=["'][^"']*signature-box[^"']*["'][^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>[\\s\\S]*?<\\/span>`, "gi");
-                                completeHtml = completeHtml.replace(specificNestedPattern, replacement);
-                                
-                                // Also try replacing any parent span that ONLY contains a signature box with this key
-                                // Match: <span ...><span ... data-signature-key="...">...</span> </span>
-                                const parentSpanOnlyPattern = new RegExp(`<span[^>]*>[\\s\\S]*?<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>[\\s\\S]*?<\\/span>`, "gi");
-                                completeHtml = completeHtml.replace(parentSpanOnlyPattern, (match) => {
-                                    if (match.includes(`data-signature-key="${entry.key}"`)) {
-                                        // Check if outer span only contains the signature box (and maybe whitespace)
-                                        const innerBox = match.match(new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "i"));
-                                        if (innerBox) {
-                                            const remaining = match.replace(/^<span[^>]*>/, '').replace(/<\/span>$/, '').trim();
-                                            const cleanedRemaining = remaining.replace(/&nbsp;/g, ' ').replace(innerBox[0], '').trim();
-                                            // If only whitespace remains after removing the signature box, replace entire structure
-                                            if (!cleanedRemaining || cleanedRemaining.length < 5) {
-                                                return replacement;
-                                            }
-                                        }
-                                    }
-                                    return match;
-                                });
-                                
-                                // Also try replacing any remaining signature boxes with this key
-                                const aggressiveRegex = new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi");
-                                completeHtml = completeHtml.replace(aggressiveRegex, replacement);
-                            }
-                            
-                            // Clean up: Remove empty parent spans that might remain after replacement
-                            // Pattern: <span ...> </span> or <span ...>\n</span> (only whitespace)
-                            completeHtml = completeHtml.replace(/<span[^>]*>\s*<\/span>/gi, '');
+                // Process signature entries separately - same logic as CollaborationAssignment.tsx
+                // First, remove existing signature boxes and replace them with placeholders
+                completeHtml = completeHtml
+                    // Restore signature.user placeholders from existing images/spans
+                    .replace(/<img[^>]*data-signature-key=["']signature\.user["'][^>]*>/gi, 'var[{{signature.user}}]')
+                    .replace(/<span[^>]*data-signature-key=["']signature\.user["'][^>]*>.*?<\/span>/gi, 'var[{{signature.user}}]')
+                    // Restore signature.influencer placeholders from existing images/spans
+                    .replace(/<img[^>]*data-signature-key=["']signature\.influencer["'][^>]*>/gi, 'var[{{signature.influencer}}]')
+                    .replace(/<span[^>]*data-signature-key=["']signature\.influencer["'][^>]*>.*?<\/span>/gi, 'var[{{signature.influencer}}]')
+                    // Remove existing signature images (generic fallback)
+                    .replace(/<img[^>]*alt=["']Signature["'][^>]*>/gi, 'var[{{signature}}]')
+                    // Remove existing signature text spans (with signature fonts)
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Dancing Script['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Great Vibes['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Allura['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Brush Script MT['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Lucida Handwriting['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Pacifico['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Satisfy['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Kalam['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Caveat['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    .replace(/<span[^>]*style[^>]*font-family[^>]*['"]Permanent Marker['"][^>]*>.*?<\/span>/gi, 'var[{{signature}}]')
+                    // Remove existing signature box containers (keep only the placeholder)
+                    .replace(/<span[^>]*class=["'][^"']*signature-box[^"']*["'][^>]*>(.*?)<\/span>/gi, (match, content) => {
+                        if (content.match(/signature\.user/i)) return 'var[{{signature.user}}]';
+                        if (content.match(/signature\.influencer/i)) return 'var[{{signature.influencer}}]';
+                        return 'var[{{signature}}]';
+                    })
+                    .replace(/<span[^>]*data-signature=["']true["'][^>]*>(.*?)<\/span>/gi, (match, content) => {
+                        if (content.match(/signature\.user/i)) return 'var[{{signature.user}}]';
+                        if (content.match(/signature\.influencer/i)) return 'var[{{signature.influencer}}]';
+                        return 'var[{{signature}}]';
+                    });
+
+                // Handle signature.user and signature.influencer placeholders separately
+                // First, handle signature.user
+                const signatureUserEntries = updatedEntries.filter(
+                    e => (e.key === 'signature.user') && !e.key.startsWith("plain_text_")
+                );
+
+                if (signatureUserEntries.length > 0) {
+                    // Use flexible regex to match var[{{signature.user}}] with optional spaces
+                    const regex = /var\[\s*\{\{\s*signature\.user\s*\}\}\s*\]/gi;
+
+                    completeHtml = completeHtml.replace(regex, (match) => {
+                        const entry = signatureUserEntries[0];
+                        let signatureValue: string | null = null;
+
+                        if (entry.editable) {
+                            signatureValue = entry.inputValue?.trim() ?? null;
+                        } else if (entry.rawValues && entry.rawValues.length) {
+                            signatureValue = entry.rawValues[0];
+                        } else if (entry.value) {
+                            signatureValue = entry.value;
                         }
-                    } else {
-                        // For non-signature variables, replace placeholders
+
+                        let displayHtml = "";
+
+                        if (signatureValue && signatureValue !== "--") {
+                            if (signatureValue.startsWith("data:image")) {
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="signature.user" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                            } else {
+                                const sanitizedText = escapeHtml(signatureValue);
+                                displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
+                            }
+                        } else {
+                            // Make clickable placeholder with data attribute
+                            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user}}]</span>`;
+                        }
+
+                        const storedValue = entry.editable
+                            ? entry.inputValue?.trim() ?? null
+                            : entry.rawValues && entry.rawValues.length
+                                ? entry.rawValues.join("\n")
+                                : entry.value ?? null;
+
+                        if (entry.key) {
+                            variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
+                        }
+
+                        return displayHtml;
+                    });
+                } else {
+                    // If no entry exists, make placeholder clickable
+                    const placeholder = "var[{{signature.user}}]";
+                    const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    const regex = new RegExp(escapedPlaceholder, "g");
+                    completeHtml = completeHtml.replace(regex, () => {
+                        return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user}}]</span>`;
+                    });
+                }
+
+                // Handle signature.influencer
+                const signatureInfluencerEntries = updatedEntries.filter(
+                    e => (e.key === 'signature.influencer') && !e.key.startsWith("plain_text_")
+                );
+
+                if (signatureInfluencerEntries.length > 0) {
+                    const placeholder = "var[{{signature.influencer}}]";
+                    const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    const regex = new RegExp(escapedPlaceholder, "g");
+
+                    completeHtml = completeHtml.replace(regex, (match) => {
+                        const entry = signatureInfluencerEntries[0];
+                        let signatureValue: string | null = null;
+
+                        if (entry.editable) {
+                            signatureValue = entry.inputValue?.trim() ?? null;
+                        } else if (entry.rawValues && entry.rawValues.length) {
+                            signatureValue = entry.rawValues[0];
+                        } else if (entry.value) {
+                            signatureValue = entry.value;
+                        }
+
+                        let displayHtml = "";
+
+                        if (signatureValue && signatureValue !== "--") {
+                            if (signatureValue.startsWith("data:image")) {
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="signature.influencer" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                            } else {
+                                const sanitizedText = escapeHtml(signatureValue);
+                                displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
+                            }
+                        } else {
+                            // Make clickable placeholder with data attribute
+                            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer}}]</span>`;
+                        }
+
+                        const storedValue = entry.editable
+                            ? entry.inputValue?.trim() ?? null
+                            : entry.rawValues && entry.rawValues.length
+                                ? entry.rawValues.join("\n")
+                                : entry.value ?? null;
+
+                        if (entry.key) {
+                            variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
+                        }
+
+                        return displayHtml;
+                    });
+                } else {
+                    // If no entry exists, make placeholder clickable
+                    const placeholder = "var[{{signature.influencer}}]";
+                    const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    const regex = new RegExp(escapedPlaceholder, "g");
+                    completeHtml = completeHtml.replace(regex, () => {
+                        return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer}}]</span>`;
+                    });
+                }
+
+                // Sort signature entries by index for sequential replacement (legacy signature_0, signature_1, etc.)
+                const signatureEntries = updatedEntries
+                    .filter(e => (e.key.startsWith("signature_") || (e.key.includes("signature") && !e.key.includes("signature.user") && !e.key.includes("signature.influencer"))) && !e.key.startsWith("plain_text_"))
+                    .sort((a, b) => {
+                        // Sort by index: signature_0, signature_1, etc.
+                        const aIndex = a.key.startsWith("signature_")
+                            ? parseInt(a.key.replace("signature_", "") || "0", 10)
+                            : 0;
+                        const bIndex = b.key.startsWith("signature_")
+                            ? parseInt(b.key.replace("signature_", "") || "0", 10)
+                            : 0;
+                        return aIndex - bIndex;
+                    });
+
+                if (signatureEntries.length > 0) {
+                    const placeholder = "var[{{signature}}]";
+                    const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    const regex = new RegExp(escapedPlaceholder, "g");
+                    let occurrenceIndex = 0;
+
+                    // Replace each signature occurrence sequentially
+                    completeHtml = completeHtml.replace(regex, () => {
+                        const entry = signatureEntries[occurrenceIndex] || signatureEntries[0];
+                        occurrenceIndex++;
+
+                        let signatureValue: string | null = null;
+
+                        if (entry.editable) {
+                            signatureValue = entry.inputValue?.trim() ?? null;
+                        } else if (entry.rawValues && entry.rawValues.length) {
+                            signatureValue = entry.rawValues[0];
+                        } else if (entry.value) {
+                            signatureValue = entry.value;
+                        }
+
+                        let displayHtml = "";
+
+                        if (signatureValue && signatureValue !== "--") {
+                            // Check if it's an image data URL (drawn signature)
+                            if (signatureValue.startsWith("data:image")) {
+                                // Display as image
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                            } else {
+                                // Display as text with signature font styling
+                                const sanitizedText = escapeHtml(signatureValue);
+                                displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
+                            }
+                        } else {
+                            // Show placeholder box with signature box styling - keep var[{{signature}}] as is
+                            displayHtml = `<span class="signature-box" data-signature="true">var[{{signature}}]</span>`;
+                        }
+
+                        // Store variable value for saving
+                        const storedValue = entry.editable
+                            ? entry.inputValue?.trim() ?? null
+                            : entry.rawValues && entry.rawValues.length
+                                ? entry.rawValues.join("\n")
+                                : entry.value ?? null;
+
+                        if (entry.key) {
+                            variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
+                        }
+
+                        return displayHtml;
+                    });
+                }
+
+                // Process other entries (non-signature)
+                updatedEntries.forEach(entry => {
+                    if (!entry.key.includes("signature")) {
                         const placeholder = `var[{{${entry.key}}}]`;
-                        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                        const regex = new RegExp(escapedPlaceholder, "g");
-                        const replacement = entry.inputValue || entry.value || placeholder;
-                        completeHtml = completeHtml.replace(regex, replacement);
+                        let values: string[] = [];
+
+                        if (entry.inputValue) {
+                            values = [entry.inputValue];
+                        } else if (entry.rawValues && entry.rawValues.length) {
+                            values = entry.rawValues;
+                        } else if (entry.value) {
+                            values = [entry.value];
+                        }
+
+                        // If multiple values exist, replace occurrences sequentially
+                        if (values.length > 1) {
+                            const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                            const regex = new RegExp(escapedPlaceholder, "g");
+                            let occurrenceIndex = 0;
+
+                            completeHtml = completeHtml.replace(regex, () => {
+                                const valueIndex = occurrenceIndex % values.length;
+                                const selectedValue = values[valueIndex];
+                                occurrenceIndex++;
+                                return escapeHtml(selectedValue).replace(/\r?\n/g, "<br />");
+                            });
+                        } else {
+                            // Single value: replace all occurrences with the same value
+                            const displayValue = values.length ? values[0] : "";
+                            const sanitizedValue = displayValue
+                                ? escapeHtml(displayValue).replace(/\r?\n/g, "<br />")
+                                : "--";
+
+                            const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                            completeHtml = completeHtml.replace(new RegExp(escapedPlaceholder, "g"), sanitizedValue);
+                        }
+
+                        // Store variable value for saving (all values joined)
+                        const storedValue = entry.inputValue
+                            ? entry.inputValue.trim()
+                            : entry.rawValues && entry.rawValues.length
+                                ? entry.rawValues.join("\n")
+                                : entry.value ?? null;
+
+                        if (storedValue) {
+                            variablesMap[entry.key] = storedValue;
+                        }
                     }
                 });
 
-                // Wrap in complete HTML document (similar to CollaborationAssignment)
+                // Replace remaining placeholders with --, but keep signature placeholders as var[{{signature}}]
+                completeHtml = completeHtml.replace(/var\[\s*\{\{([^}]+)\}\}\s*\]/g, (match, variableName) => {
+                    // Keep signature placeholders as is
+                    if (variableName.trim() === "signature" || variableName.trim().includes("signature")) {
+                        return match; // Keep var[{{signature}}] as is
+                    }
+                    // Replace other placeholders with --
+                    return "--";
+                });
+
+                // Extract all existing styles and links from the original contract content
+                let extractedStyles = "";
+                let extractedLinks = "";
+                let cleanedHtml = completeHtml;
+
+                // Use original contract content to extract all styles (before extraction)
+                const sourceContent = originalContractContent || contractContent || "";
+
+                // Extract <style> tags from original content
+                const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
+                let styleMatch;
+                const styleMatches: string[] = [];
+                while ((styleMatch = styleRegex.exec(sourceContent)) !== null) {
+                    styleMatches.push(styleMatch[0]);
+                    extractedStyles += styleMatch[0] + "\n";
+                }
+
+                // Extract <link> tags for stylesheets
+                const linkRegex = /<link[^>]*rel=["']stylesheet["'][^>]*>/gi;
+                let linkMatch;
+                while ((linkMatch = linkRegex.exec(sourceContent)) !== null) {
+                    extractedLinks += linkMatch[0] + "\n";
+                }
+
+                // Extract <style> tags from completeHtml as well (in case they were preserved)
+                const previewStyleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
+                let previewStyleMatch;
+                const previewStyles: string[] = [];
+                while ((previewStyleMatch = previewStyleRegex.exec(completeHtml)) !== null) {
+                    previewStyles.push(previewStyleMatch[0]);
+                    cleanedHtml = cleanedHtml.replace(previewStyleMatch[0], "");
+                }
+
+                // Combine all extracted styles (avoid duplicates)
+                const allStylesSet = new Set([...styleMatches, ...previewStyles]);
+                const allStyles = Array.from(allStylesSet).join("\n");
+
+                // Wrap HTML in complete document structure with all original styles preserved
                 const completeHtmlDocument = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Contract Document</title>
-  
+  ${extractedLinks}
   <style>
     /* Base fallback styles */
     body {
@@ -914,8 +1124,8 @@ const PublicContractSigning = () => {
       color: #111827;
       word-break: break-word;
       padding: 20px;
-      max-width: 100%;
-      margin: 0;
+      max-width: 800px;
+      margin: 0 auto;
       background: #ffffff;
     }
     
@@ -925,8 +1135,6 @@ const PublicContractSigning = () => {
       border: 1px solid #e2e8f0;
       padding: 24px;
       box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
-      width: 100%;
-      max-width: 100%;
     }
     
     .contract-preview-container .tiptap-rendered {
@@ -935,15 +1143,105 @@ const PublicContractSigning = () => {
       line-height: 1.7;
       color: #111827;
       word-break: break-word;
-      width: 100%;
-      max-width: 100%;
+      white-space: pre-wrap !important; /* Preserve whitespace and line breaks from original contract */
+    }
+    /* Preserve spacing in paragraphs */
+    .contract-preview-container .tiptap-rendered p {
+      white-space: pre-wrap !important;
+      margin: 0 0 14px 0;
+    }
+    /* Preserve spacing in divs */
+    .contract-preview-container .tiptap-rendered div {
+      white-space: pre-wrap !important;
+    }
+    /* Preserve line breaks */
+    .contract-preview-container .tiptap-rendered br {
+      display: block !important;
+      margin: 0 !important;
+    }
+    
+    /* Prevent signature boxes from wrapping to new line - match editor styling */
+    .contract-preview-container .tiptap-rendered .signature-box,
+    .contract-preview-container .tiptap-rendered [data-signature="true"] {
+      display: inline-block !important;
+      width: 200px !important;
+      height: 140px !important;
+      border: 1px solid #9ca3af !important;
+      background-color: transparent !important;
+      border-radius: 3px !important;
+      padding: 2px !important;
+      text-align: center !important;
+      vertical-align: middle !important;
+      line-height: 136px !important;
+      font-size: 10px !important;
+      color: #6b7280 !important;
+      box-sizing: border-box !important;
+      margin-top: 20px !important;
+      margin-bottom: 20px !important;
+      margin-left: 25px !important;
+      margin-right: 25px !important;
+      min-width: 200px !important;
+      white-space: nowrap !important;
+      flex-shrink: 0 !important;
+    }
+    
+    /* Ensure spacing between adjacent signature boxes */
+    .contract-preview-container .tiptap-rendered .signature-box + .signature-box,
+    .contract-preview-container .tiptap-rendered [data-signature="true"] + [data-signature="true"] {
+      margin-left: 50px !important;
+    }
+    
+    /* Prevent parent containers from wrapping signature boxes - allow inline flow */
+    .contract-preview-container .tiptap-rendered p {
+      white-space: pre-wrap !important;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+    }
+    
+    /* Force signature boxes to stay on same line by preventing wrapping */
+    .contract-preview-container .tiptap-rendered span.signature-box,
+    .contract-preview-container .tiptap-rendered span[data-signature="true"] {
+      float: none !important;
+      clear: none !important;
+      display: inline-block !important;
+    }
+    
+    /* Ensure parent paragraphs with signature boxes don't wrap them */
+    .contract-preview-container .tiptap-rendered p {
+      display: block !important;
+      line-height: 1.7 !important;
+    }
+    
+    /* Prevent wrapping of signature boxes - use nowrap on parent when it contains signature boxes */
+    .contract-preview-container .tiptap-rendered span:has(.signature-box),
+    .contract-preview-container .tiptap-rendered span:has([data-signature="true"]) {
+      white-space: nowrap !important;
+      display: inline-block !important;
+    }
+    
+    /* Alternative: prevent wrapping by ensuring parent span doesn't break */
+    .contract-preview-container .tiptap-rendered span[style*="font-size: 10px"] {
+      white-space: nowrap !important;
+      display: inline-block !important;
+    }
+    
+    /* Ensure signature boxes don't wrap by making parent container wider if needed */
+    .contract-preview-container {
+      min-width: 0 !important;
+      overflow-x: auto !important;
+    }
+    
+    /* Ensure parent divs don't break signature boxes */
+    .contract-preview-container .tiptap-rendered div {
+      white-space: normal !important;
     }
   </style>
+  ${allStyles}
 </head>
 <body>
   <div class="contract-preview-container">
     <div class="tiptap-rendered">
-      ${completeHtml}
+      ${cleanedHtml}
     </div>
   </div>
 </body>
@@ -961,6 +1259,16 @@ const PublicContractSigning = () => {
                     return;
                 }
 
+                // First, delete any existing rows for this collaboration_id to avoid duplicates
+                try {
+                    await (supabase as any)
+                        .from(VARIABLE_OVERRIDE_TABLE)
+                        .delete()
+                        .eq("collaboration_id", collaborationId);
+                } catch (deleteErr) {
+                    console.warn("Failed to delete existing entries, will try to upsert anyway:", deleteErr);
+                }
+
                 // Prepare the update object, preserving magic_link if it exists
                 const updateData: any = {
                     collaboration_id: collaborationId,
@@ -976,8 +1284,9 @@ const PublicContractSigning = () => {
                     updateData.magic_link = existingMagicLink;
                 }
 
+                // Upsert the single contract record with all data
                 const { error } = await (supabase as any)
-                    .from("collaboration_variable_overrides")
+                    .from(VARIABLE_OVERRIDE_TABLE)
                     .upsert(updateData, {
                         onConflict: 'collaboration_id,variable_key'
                     });
@@ -1016,6 +1325,7 @@ const PublicContractSigning = () => {
                     } else {
                         // Update local state to reflect signed status
                         setIsSigned(true);
+                        setShowSignedOverlay(true); // Show overlay when contract is signed
                     }
 
                     toast({
@@ -1348,6 +1658,15 @@ const PublicContractSigning = () => {
                       background-color: rgba(59, 130, 246, 0.1) !important;
                       border-color: #3b82f6 !important;
                     }
+                    ${isSigned ? `
+                    .contract-preview-container .tiptap-rendered .signature-box,
+                    .contract-preview-container .tiptap-rendered [data-signature="true"],
+                    .contract-preview-container .tiptap-rendered .signature-box-clickable {
+                      cursor: not-allowed !important;
+                      pointer-events: none !important;
+                      opacity: 0.7 !important;
+                    }
+                    ` : ''}
                     .contract-preview-container {
                       background: rgba(255, 255, 255, 0.95);
                       border-radius: 24px;
@@ -1361,13 +1680,67 @@ const PublicContractSigning = () => {
                       line-height: 1.7;
                       color: #111827;
                       word-break: break-word;
+                      white-space: pre-wrap !important; /* Preserve whitespace and line breaks */
+                    }
+                    /* Preserve spacing in paragraphs */
+                    .contract-preview-container .tiptap-rendered p {
+                      white-space: pre-wrap !important;
+                      margin: 0 0 14px 0;
+                    }
+                    /* Preserve spacing in divs */
+                    .contract-preview-container .tiptap-rendered div {
+                      white-space: pre-wrap !important;
+                    }
+                    /* Preserve spacing in spans (except signature boxes) */
+                    .contract-preview-container .tiptap-rendered span:not(.signature-box):not([data-signature="true"]) {
+                      white-space: pre-wrap !important;
+                    }
+                    /* Preserve line breaks and spacing */
+                    .contract-preview-container .tiptap-rendered br {
+                      display: block !important;
+                      margin: 0 !important;
+                      content: "" !important;
                     }
                 `}</style>
-                <div className="contract-preview-container rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-inner min-h-[60vh] w-full" style={{ width: '100%', maxWidth: '100%' }}>
+                <div 
+                    className="contract-preview-container rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-inner min-h-[60vh] w-full relative" 
+                    style={{ width: '100%', maxWidth: '100%' }}
+                >
+                    {isSigned && showSignedOverlay && (
+                        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-3xl">
+                            <div className="bg-green-50 border-2 border-green-200 rounded-lg px-6 py-4 shadow-lg max-w-md">
+                                <div className="flex flex-col items-center gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div className="text-center">
+                                            <p className="text-lg font-semibold text-green-800">Contract Already Signed</p>
+                                            <p className="text-sm text-green-600">This contract has been signed and is now read-only.</p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        onClick={() => {
+                                            setShowSignedOverlay(false);
+                                        }}
+                                        className="bg-green-600 hover:bg-green-700 text-white"
+                                    >
+                                        OK
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <div
                         ref={previewRef}
                         className="tiptap-rendered w-full"
-                        style={{ maxWidth: '100%', width: '100%' }}
+                        style={{ 
+                            maxWidth: '100%', 
+                            width: '100%',
+                            pointerEvents: isSigned ? 'none' : 'auto',
+                            userSelect: isSigned ? 'none' : 'auto',
+                            opacity: isSigned ? 0.6 : 1
+                        }}
                         dangerouslySetInnerHTML={{ 
                             __html: (() => {
                                 // Extract clean content from nested HTML structure if present
@@ -1411,6 +1784,13 @@ const PublicContractSigning = () => {
                             })()
                         }}
                         onClick={(e) => {
+                            // Disable all clicks if contract is signed
+                            if (isSigned) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
+                            }
+                            
                             // Fallback click handler using React events
                             const target = e.target as HTMLElement;
                             let key = target.getAttribute("data-signature-key");
