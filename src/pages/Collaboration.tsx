@@ -392,6 +392,7 @@ const Collaboration = () => {
     occurred_at: string;
     collaboration_id: string;
     campaign_name?: string | null;
+    company_name?: string | null;
     contract_name?: string | null;
     contract_id?: string | null;
     user_name?: string | null;
@@ -758,6 +759,7 @@ const Collaboration = () => {
       const enrichedActions = await Promise.all(
         (data || []).map(async (action: any) => {
           let campaignName: string | null = null;
+          let companyName: string | null = null;
           let contractName: string | null = null;
           let userName: string | null = null;
           let influencerName: string | null = null;
@@ -819,15 +821,16 @@ const Collaboration = () => {
           
           if (campaignKey) {
             try {
-              // Fetch campaign name
+              // Fetch campaign name and company (brand)
               const { data: campaignData } = await supabase
                 .from("campaigns")
-                .select("name, contract_id")
+                .select("name, brand, contract_id")
                 .eq("id", campaignKey)
                 .maybeSingle();
 
               if (campaignData) {
                 campaignName = (campaignData as any).name || null;
+                companyName = (campaignData as any).brand || null;
                 const campaignContractId = (campaignData as any).contract_id;
                 
                 // Fetch contract name if contract_id exists
@@ -861,6 +864,7 @@ const Collaboration = () => {
             contract_id: action.contract_id,
             is_signed: action.is_signed,
             campaign_name: campaignName,
+            company_name: companyName,
             contract_name: contractName,
             user_name: userName,
             influencer_name: influencerName,
@@ -3234,6 +3238,7 @@ const Collaboration = () => {
                             <thead className="bg-slate-50 border-b border-slate-200">
                               <tr>
                                 <th className="px-4 py-3 text-left font-semibold text-slate-700">Campaign</th>
+                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Company</th>
                                 <th className="px-4 py-3 text-left font-semibold text-slate-700">Contract</th>
                                 <th className="px-4 py-3 text-left font-semibold text-slate-700">Influencer</th>
                                 <th className="px-4 py-3 text-left font-semibold text-slate-700">Action</th>
@@ -3254,6 +3259,12 @@ const Collaboration = () => {
                                     onClick={() => handleRowClick(action)}
                                   >
                                     {action.campaign_name || <span className="text-slate-400">—</span>}
+                                  </td>
+                                  <td 
+                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    onClick={() => handleRowClick(action)}
+                                  >
+                                    {action.company_name || <span className="text-slate-400">—</span>}
                                   </td>
                                   <td 
                                     className="px-4 py-3 text-slate-600 cursor-pointer"

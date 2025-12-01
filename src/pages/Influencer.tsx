@@ -25,6 +25,7 @@ import { supabase, supabaseAdmin } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Layers, Users, Activity, Filter, Plus, LayoutGrid, List, Loader2, Pencil, Trash2, Power, Upload, Download } from "lucide-react";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 type SocialHandle = {
   platform: string;
@@ -193,6 +194,9 @@ type InfluencerFormState = {
 
 const Influencer = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [platformFilter, setPlatformFilter] = useState<string>("All");
@@ -242,6 +246,35 @@ const Influencer = () => {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState<boolean>(false);
   const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
   const [isImporting, setIsImporting] = useState<boolean>(false);
+
+  // Fetch user profile to check role
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (!user?.id) return;
+
+      try {
+        const { data: profileData, error } = await supabase
+          .from('user_profiles')
+          .select('role, super_admin')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.error('Error fetching user profile:', error);
+          return;
+        }
+
+        if (profileData) {
+          setUserRole(profileData.role || null);
+          setIsSuperAdmin(profileData.super_admin === true);
+        }
+      } catch (err) {
+        console.error('Error fetching user profile:', err);
+      }
+    };
+
+    fetchUserProfile();
+  }, [user?.id]);
 
   const fetchNextPidValue = useCallback(async (): Promise<string> => {
     try {
@@ -1257,16 +1290,18 @@ const Influencer = () => {
                   <Upload className="h-4 w-4 mr-2" />
                   Import
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 px-4 rounded-lg border-border/60"
-                  onClick={handleExportClick}
-                  disabled={!influencers.length}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </Button>
+                {(userRole === 'admin' || userRole === 'super_admin' || isSuperAdmin) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 px-4 rounded-lg border-border/60"
+                    onClick={handleExportClick}
+                    disabled={!influencers.length}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                )}
                 <Dialog
                   open={isAddDialogOpen}
                   onOpenChange={(open) => {

@@ -15,6 +15,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "re
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 type ProductRecord = {
   id: string;
@@ -49,6 +50,9 @@ type ProductFormState = {
 const Product = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
@@ -955,16 +959,18 @@ const Product = () => {
                         <Upload className="h-4 w-4 mr-2" />
                         Import
                       </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-10 px-4"
-                        onClick={handleExportClick}
-                        disabled={!products.length}
-                      >
-                        <Download className="h-4 w-4 mr-2" />
-                        Export
-                      </Button>
+                      {(userRole === 'admin' || userRole === 'super_admin' || isSuperAdmin) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 px-4"
+                          onClick={handleExportClick}
+                          disabled={!products.length}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Export
+                        </Button>
+                      )}
                       <Dialog
                         open={isAddDialogOpen}
                         onOpenChange={(open) => {

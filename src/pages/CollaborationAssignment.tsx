@@ -29,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Printer, ChevronLeft, ChevronRight, Pen, Type, X, RotateCcw, RefreshCw, Trash2, Mail, CalendarIcon } from "lucide-react";
+import { Loader2, Printer, ChevronLeft, ChevronRight, Pen, Type, X, RotateCcw, RefreshCw, Trash2, Mail, CalendarIcon, Plus, Check } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -155,6 +155,13 @@ const CollaborationAssignment = () => {
     body: string;
     magicLink: string;
   } | null>(null);
+  
+  // Product Selection State
+  const [isProductDialogOpen, setIsProductDialogOpen] = useState<boolean>(false);
+  const [currentProductVariableKey, setCurrentProductVariableKey] = useState<string | null>(null);
+  const [availableProducts, setAvailableProducts] = useState<Array<{ id: string; name: string; company: string | null }>>([]);
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(false);
 
   // Initialize and reset canvas when dialog opens/closes
   useEffect(() => {
@@ -1351,7 +1358,9 @@ const CollaborationAssignment = () => {
             const isSignature = key === "signature" || key.startsWith("signature_") || key === "signature.user" || key === "signature.influencer";
             // Check if this is a date variable
             const isDate = isDateVariable(key);
-            const isEditable = isPlainText || isSignature || isDate;
+            // Check if this is a product variable
+            const isProduct = key === "product" || key.startsWith("product_");
+            const isEditable = isPlainText || isSignature || isDate || isProduct;
 
             // Normalize key for placeholder (remove index suffix)
             let placeholderKey = key;
@@ -1361,6 +1370,8 @@ const CollaborationAssignment = () => {
               placeholderKey = "signature";
             } else if (key.startsWith("date_")) {
               placeholderKey = "date";
+            } else if (key.startsWith("product_")) {
+              placeholderKey = "product";
             }
 
             return {
@@ -1605,8 +1616,45 @@ const CollaborationAssignment = () => {
       const otherEntries = contractVariableEntries.filter(e =>
         !e.originalKey?.startsWith("plain_text_") && 
         !e.originalKey?.startsWith("date_") && 
-        !e.key.includes("signature")
+        !e.key.includes("signature") &&
+        !(e.originalKey || e.key).toLowerCase().includes('product')
       );
+      
+      // Process product entries
+      const productEntries = contractVariableEntries.filter(e =>
+        (e.originalKey || e.key).toLowerCase().includes('product')
+      );
+      
+      if (productEntries.length > 0) {
+        const placeholder = "var[{{product}}]";
+        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escapedPlaceholder, "g");
+        
+        // Get the first product entry value (or combine all if multiple)
+        const productValue = productEntries[0]?.inputValue?.trim() ?? "";
+        
+        // Format products as bullet list if multiple products exist
+        let sanitizedValue = "--";
+        if (productValue) {
+          const products = productValue.split(',').map(p => p.trim()).filter(Boolean);
+          if (products.length > 0) {
+            // Format as HTML bullet list
+            sanitizedValue = products.map(product => {
+              const escapedProduct = escapeHtml(product);
+              return `• ${escapedProduct}`;
+            }).join('<br />');
+          }
+        }
+        
+        // Replace all occurrences of var[{{product}}] with the selected products
+        previewHtml = previewHtml.replace(regex, sanitizedValue);
+        
+        // Store in variables map
+        productEntries.forEach((entry) => {
+          const input = entry.inputValue?.trim() ?? "";
+          variablesMap[entry.originalKey || entry.key] = input || null;
+        });
+      }
 
       // Process plain_text entries sequentially - replace each occurrence with its corresponding value
       if (plainTextEntries.length > 0) {
@@ -2235,32 +2283,92 @@ const CollaborationAssignment = () => {
     setIsViewContractOpen(true);
     try {
       // Query with variable_key filter to get the record with "all_variables"
+      // Also fetch value field which contains signature data URLs
       const { data, error } = await (supabase as any)
         .from("collaboration_variable_overrides")
-        .select("contract_html")
+        .select("contract_html, value")
         .eq("collaboration_id", collaborationId)
         .eq("variable_key", "all_variables")
         .maybeSingle();
 
       if (error) {
+        console.error("Error fetching contract with all_variables:", error);
         throw error;
       }
 
-      const overrideData = data as { contract_html?: string | null } | null;
+      const overrideData = data as { contract_html?: string | null; value?: string | null } | null;
       if (overrideData?.contract_html) {
-        setSavedContractHtml(overrideData.contract_html);
+        console.log("Found contract_html with all_variables");
+        let html = overrideData.contract_html;
+        
+        // If we have the value field with signature data, ensure signatures are properly embedded
+        if (overrideData.value) {
+          try {
+            const variablesObj = typeof overrideData.value === 'string' 
+              ? JSON.parse(overrideData.value) 
+              : overrideData.value;
+            
+            // Check if there are any signatures in the variables
+            Object.entries(variablesObj).forEach(([key, val]) => {
+              if (key.includes('signature') && val && String(val).startsWith('data:image')) {
+                const signatureDataUrl = String(val);
+                const placeholder = `var[{{${key}}}]`;
+                
+                // Check if signature is already in HTML, if not add it
+                if (!html.includes(signatureDataUrl.substring(0, 50))) {
+                  // Replace placeholder with signature image
+                  const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                  const regex = new RegExp(escapedPlaceholder, "g");
+                  const replacement = `<img src="${signatureDataUrl}" alt="Signature" data-signature-key="${key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                  html = html.replace(regex, replacement);
+                }
+              }
+            });
+          } catch (parseErr) {
+            console.error("Error parsing value field:", parseErr);
+          }
+        }
+        
+        setSavedContractHtml(html);
       } else {
+        console.log("No contract_html found with all_variables, trying fallback...");
         // Fallback: Try to get any record with contract_html for this collaboration_id
         const { data: fallbackData, error: fallbackError } = await (supabase as any)
           .from("collaboration_variable_overrides")
-          .select("contract_html")
+          .select("contract_html, value")
           .eq("collaboration_id", collaborationId)
           .not("contract_html", "is", null)
           .maybeSingle();
 
         if (!fallbackError && fallbackData?.contract_html) {
-          setSavedContractHtml(fallbackData.contract_html);
+          console.log("Found contract_html in fallback query");
+          let html = fallbackData.contract_html;
+          
+          // Also check for signatures in fallback data
+          if (fallbackData.value) {
+            try {
+              const variablesObj = typeof fallbackData.value === 'string' 
+                ? JSON.parse(fallbackData.value) 
+                : fallbackData.value;
+              
+              Object.entries(variablesObj).forEach(([key, val]) => {
+                if (key.includes('signature') && val && String(val).startsWith('data:image')) {
+                  const signatureDataUrl = String(val);
+                  const placeholder = `var[{{${key}}}]`;
+                  const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                  const regex = new RegExp(escapedPlaceholder, "g");
+                  const replacement = `<img src="${signatureDataUrl}" alt="Signature" data-signature-key="${key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                  html = html.replace(regex, replacement);
+                }
+              });
+            } catch (parseErr) {
+              console.error("Error parsing value field in fallback:", parseErr);
+            }
+          }
+          
+          setSavedContractHtml(html);
         } else {
+          console.error("No contract_html found:", { fallbackError, fallbackData });
           setSavedContractHtml(null);
           toast({
             title: "No saved contract",
@@ -2271,6 +2379,7 @@ const CollaborationAssignment = () => {
       }
     } catch (err: any) {
       console.error("CollaborationAssignment: Error fetching saved contract", err);
+      console.error("Error details:", JSON.stringify(err, null, 2));
       toast({
         title: "Unable to load contract",
         description: err?.message || "Please try again.",
@@ -2391,7 +2500,7 @@ const CollaborationAssignment = () => {
       });
       setIsEmailDialogOpen(true);
       
-      toast({
+          toast({
         title: "Email Ready",
         description: "Email details are ready. Click 'Open' in the dialog to open Zoho Mail.",
       });
@@ -2474,7 +2583,7 @@ const CollaborationAssignment = () => {
     });
     setIsEmailDialogOpen(true);
     
-    toast({
+        toast({
       title: "Email Ready",
       description: "Email details are ready. Click 'Open' in the dialog to open Zoho Mail.",
     });
@@ -2731,13 +2840,15 @@ const CollaborationAssignment = () => {
                                   >
                                     {isContractSent ? "Resend" : "Send Contract"}
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleFillContract}
-                                  >
-                                    Fill Contract
-                                  </Button>
+                                  {!isSigned && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={handleFillContract}
+                                    >
+                                      Fill Contract
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -2996,8 +3107,14 @@ const CollaborationAssignment = () => {
                 </p>
                 {!contractVariablesLoading && (
                   <p className="text-xs text-slate-500">
-                    Found {contractVariableEntries.length} placeholder
-                    {contractVariableEntries.length === 1 ? "" : "s"}.
+                    Found {contractVariableEntries.filter((item) => {
+                      const key = item.originalKey || item.key || '';
+                      return !key.includes('signature.influencer');
+                    }).length} placeholder
+                    {contractVariableEntries.filter((item) => {
+                      const key = item.originalKey || item.key || '';
+                      return !key.includes('signature.influencer');
+                    }).length === 1 ? "" : "s"}.
                   </p>
                 )}
               </div>
@@ -3020,7 +3137,13 @@ const CollaborationAssignment = () => {
                       {contractVariablesError}
                     </div>
                   ) : contractVariableEntries.length ? (
-                    contractVariableEntries.map((item, idx) => {
+                    contractVariableEntries
+                      .filter((item) => {
+                        // Filter out signature.influencer from the dialog
+                        const key = item.originalKey || item.key || '';
+                        return !key.includes('signature.influencer');
+                      })
+                      .map((item, idx) => {
                       const uniqueKey = item.originalKey || item.key || `var-${idx}`;
                       return (
                         <div key={uniqueKey} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm space-y-1">
@@ -3069,8 +3192,8 @@ const CollaborationAssignment = () => {
                               </div>
                             ) : (() => {
                               // Check if this is a date variable
-                              const normalizedKey = (item.originalKey || item.key).toLowerCase();
-                              const isDate = normalizedKey === "date" || normalizedKey.includes("date") || normalizedKey.includes("_date");
+                              const dateKey = (item.originalKey || item.key).toLowerCase();
+                              const isDate = dateKey === "date" || dateKey.includes("date") || dateKey.includes("_date");
                               
                               if (isDate) {
                                 // Parse the date value if it exists
@@ -3142,24 +3265,99 @@ const CollaborationAssignment = () => {
                                 );
                               }
                               
-                              return (
-                                <Input
-                                  placeholder="Enter replacement text"
-                                  value={item.inputValue ?? ""}
-                                  onChange={(event) => {
-                                    const value = event.target.value;
-                                    setContractVariableEntries((prev) =>
-                                      prev.map((entry) =>
-                                        (entry.originalKey || entry.key) === uniqueKey
-                                          ? {
-                                              ...entry,
-                                              inputValue: value,
+                              // Check if this is a product variable
+                              const itemKey = item.originalKey || item.key || '';
+                              const productKey = itemKey.toLowerCase();
+                              const isProduct = productKey === 'product' || productKey.includes('product') || itemKey.includes('var[{{product}}]');
+                              
+                              if (isProduct) {
+                                const currentSelected = item.inputValue ? item.inputValue.split(',').filter(Boolean) : [];
+                                return (
+                                  <div className="space-y-2">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      className="w-full justify-start"
+                                      onClick={async () => {
+                                        setCurrentProductVariableKey(uniqueKey);
+                                        setSelectedProducts(currentSelected);
+                                        
+                                        // Fetch products for the company
+                                        const companyName = campaign?.brand || campaign?.name || "";
+                                        if (companyName) {
+                                          setIsLoadingProducts(true);
+                                          try {
+                                            const { data: productsData, error: productsError } = await supabase
+                                              .from('products')
+                                              .select('id, name, company')
+                                              .eq('company', companyName)
+                                              .eq('status', 'active')
+                                              .order('name', { ascending: true });
+                                            
+                                            if (productsError) {
+                                              throw productsError;
                                             }
-                                          : entry
-                                      )
-                                    );
-                                  }}
-                                />
+                                            
+                                            setAvailableProducts(productsData || []);
+                                          } catch (err: any) {
+                                            toast({
+                                              title: "Error",
+                                              description: err?.message || "Failed to load products.",
+                                              variant: "destructive",
+                                            });
+                                          } finally {
+                                            setIsLoadingProducts(false);
+                                          }
+                                        } else {
+                                          toast({
+                                            title: "Error",
+                                            description: "Company name not found.",
+                                            variant: "destructive",
+                                          });
+                                        }
+                                        
+                                        setIsProductDialogOpen(true);
+                                      }}
+                                    >
+                                      <Plus className="mr-2 h-4 w-4" />
+                                      {currentSelected.length > 0 
+                                        ? `${currentSelected.length} product${currentSelected.length > 1 ? 's' : ''} selected`
+                                        : 'Select Products'}
+                                    </Button>
+                                    {currentSelected.length > 0 && (
+                                      <div className="text-xs text-slate-500 space-y-1">
+                                        <p className="font-medium">Selected:</p>
+                                        <div className="space-y-0.5">
+                                          {currentSelected.map((product, idx) => (
+                                            <div key={idx} className="pl-2">
+                                              • {product.trim()}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              
+                              return (
+                              <Input
+                                placeholder="Enter replacement text"
+                                value={item.inputValue ?? ""}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setContractVariableEntries((prev) =>
+                                    prev.map((entry) =>
+                                      (entry.originalKey || entry.key) === uniqueKey
+                                        ? {
+                                          ...entry,
+                                          inputValue: value,
+                                        }
+                                        : entry
+                                    )
+                                  );
+                                }}
+                              />
                               );
                             })()
                           ) : (
@@ -3198,6 +3396,106 @@ const CollaborationAssignment = () => {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Product Selection Dialog */}
+      <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Select Products</DialogTitle>
+            <DialogDescription>
+              Select products for {campaign?.brand || campaign?.name || "this company"}. You can select multiple products.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {isLoadingProducts ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : availableProducts.length === 0 ? (
+            <div className="py-8 text-center text-slate-500">
+              No products found for this company.
+            </div>
+          ) : (
+            <ScrollArea className="max-h-[400px] pr-4">
+              <div className="space-y-2">
+                {availableProducts.map((product) => {
+                  const isSelected = selectedProducts.includes(product.id);
+                  return (
+                    <div
+                      key={product.id}
+                      className={`flex items-center space-x-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                        isSelected 
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedProducts(selectedProducts.filter(id => id !== product.id));
+                        } else {
+                          setSelectedProducts([...selectedProducts, product.id]);
+                        }
+                      }}
+                    >
+                      <div className={`flex h-5 w-5 items-center justify-center rounded border ${
+                        isSelected 
+                          ? 'border-primary bg-primary' 
+                          : 'border-slate-300'
+                      }`}>
+                        {isSelected && <Check className="h-3 w-3 text-white" />}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-slate-900">{product.name}</p>
+                        {product.company && (
+                          <p className="text-xs text-slate-500">{product.company}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          )}
+          
+          <div className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsProductDialogOpen(false);
+                setSelectedProducts([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (currentProductVariableKey) {
+                  // Get product names from selected IDs
+                  const selectedProductNames = availableProducts
+                    .filter(p => selectedProducts.includes(p.id))
+                    .map(p => p.name)
+                    .join(', ');
+                  
+                  setContractVariableEntries((prev) =>
+                    prev.map((entry) =>
+                      (entry.originalKey || entry.key) === currentProductVariableKey
+                        ? {
+                            ...entry,
+                            inputValue: selectedProductNames,
+                          }
+                        : entry
+                    )
+                  );
+                }
+                setIsProductDialogOpen(false);
+                setSelectedProducts([]);
+                setCurrentProductVariableKey(null);
+              }}
+            >
+              Save
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isPreviewOpen}
@@ -3451,9 +3749,54 @@ const CollaborationAssignment = () => {
               <div
                 className="tiptap-rendered"
                 dangerouslySetInnerHTML={{
-                  __html: savedContractHtml.includes('<body>')
-                    ? savedContractHtml.split('<body>')[1]?.split('</body>')[0] || savedContractHtml
-                    : savedContractHtml
+                  __html: (() => {
+                    let html = savedContractHtml || '';
+                    console.log("Extracting HTML, original length:", html.length);
+                    
+                    // Extract content from body tag if it's a full HTML document
+                    // Use greedy matching to preserve all content including signature images
+                    if (html.includes('<body')) {
+                      const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                      if (bodyMatch && bodyMatch[1]) {
+                        html = bodyMatch[1].trim();
+                        console.log("Extracted from body, length:", html.length, "Contains signature:", html.includes('data:image'));
+                      }
+                    }
+                    
+                    // Extract content from .tiptap-rendered if present (this is the actual content)
+                    // Use greedy matching to preserve signature images
+                    if (html.includes('tiptap-rendered')) {
+                      // Try greedy match first to get all content including signatures
+                      const tiptapMatch = html.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                      if (tiptapMatch && tiptapMatch[1]) {
+                        html = tiptapMatch[1].trim();
+                        console.log("Extracted from tiptap-rendered (greedy), length:", html.length, "Contains signature:", html.includes('data:image'));
+                      }
+                    }
+                    
+                    // Extract content from .contract-preview-container if tiptap-rendered not found
+                    if (html.includes('contract-preview-container') && !html.includes('tiptap-rendered')) {
+                      const containerMatch = html.match(/<div[^>]*class=["'][^"']*contract-preview-container[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+                      if (containerMatch && containerMatch[1]) {
+                        html = containerMatch[1].trim();
+                        console.log("Extracted from contract-preview-container, length:", html.length);
+                      }
+                    }
+                    
+                    // If still no content found, try to extract any div content
+                    if (html.length < 50 && savedContractHtml) {
+                      console.warn("HTML extraction may have failed, trying direct content");
+                      // Try to get content between body tags more aggressively
+                      const bodyContent = savedContractHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                      if (bodyContent && bodyContent[1]) {
+                        html = bodyContent[1].trim();
+                        console.log("Fallback extraction, length:", html.length);
+                      }
+                    }
+                    
+                    console.log("Final HTML to render, length:", html.length);
+                    return html || savedContractHtml || '';
+                  })()
                 }}
               />
             </ScrollArea>
@@ -3466,6 +3809,106 @@ const CollaborationAssignment = () => {
       </Dialog>
 
       {/* Signature Dialog */}
+      {/* Product Selection Dialog */}
+      <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Select Products</DialogTitle>
+            <DialogDescription>
+              Select products for {campaign?.brand || campaign?.name || "this company"}. You can select multiple products.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {isLoadingProducts ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : availableProducts.length === 0 ? (
+            <div className="py-8 text-center text-slate-500">
+              No products found for this company.
+            </div>
+          ) : (
+            <ScrollArea className="max-h-[400px] pr-4">
+              <div className="space-y-2">
+                {availableProducts.map((product) => {
+                  const isSelected = selectedProducts.includes(product.id);
+                  return (
+                    <div
+                      key={product.id}
+                      className={`flex items-center space-x-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                        isSelected 
+                          ? 'border-primary bg-primary/5' 
+                          : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedProducts(selectedProducts.filter(id => id !== product.id));
+                        } else {
+                          setSelectedProducts([...selectedProducts, product.id]);
+                        }
+                      }}
+                    >
+                      <div className={`flex h-5 w-5 items-center justify-center rounded border ${
+                        isSelected 
+                          ? 'border-primary bg-primary' 
+                          : 'border-slate-300'
+                      }`}>
+                        {isSelected && <Check className="h-3 w-3 text-white" />}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-slate-900">{product.name}</p>
+                        {product.company && (
+                          <p className="text-xs text-slate-500">{product.company}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          )}
+          
+          <div className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsProductDialogOpen(false);
+                setSelectedProducts([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (currentProductVariableKey) {
+                  // Get product names from selected IDs
+                  const selectedProductNames = availableProducts
+                    .filter(p => selectedProducts.includes(p.id))
+                    .map(p => p.name)
+                    .join(', ');
+                  
+                  setContractVariableEntries((prev) =>
+                    prev.map((entry) =>
+                      (entry.originalKey || entry.key) === currentProductVariableKey
+                        ? {
+                            ...entry,
+                            inputValue: selectedProductNames,
+                          }
+                        : entry
+                    )
+                  );
+                }
+                setIsProductDialogOpen(false);
+                setSelectedProducts([]);
+                setCurrentProductVariableKey(null);
+              }}
+            >
+              Save
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isSignatureDialogOpen} onOpenChange={setIsSignatureDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

@@ -213,8 +213,37 @@ const PublicContractSigning = () => {
                             setVariablesLoadedFromDb(true); // Mark that variables are loaded from database
                             
                             // Extract original contract content from the rendered HTML by replacing signatures back to placeholders
-                            // This is a workaround - ideally we should store original content separately
+                            // First, extract the actual content from nested HTML structure if present
                             let originalContent = contract_html;
+                            
+                            // If HTML has nested structure, extract the inner content recursively
+                            // Handle multiple levels of nesting (HTML inside HTML)
+                            let extractionDepth = 0;
+                            while ((originalContent.includes('<!DOCTYPE html>') || (originalContent.includes('<html') && originalContent.includes('</html>'))) && extractionDepth < 3) {
+                                extractionDepth++;
+                                // Extract from body tag (use greedy match to get all content)
+                                const bodyMatch = originalContent.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                                if (bodyMatch && bodyMatch[1]) {
+                                    let bodyContent = bodyMatch[1];
+                                    // Extract from tiptap-rendered div (use greedy match)
+                                    const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                    if (tiptapMatch && tiptapMatch[1]) {
+                                        originalContent = tiptapMatch[1];
+                                    } else {
+                                        // Try to extract from contract-preview-container
+                                        const containerMatch = bodyContent.match(/<div[^>]*class=["'][^"']*contract-preview-container[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                        if (containerMatch && containerMatch[1]) {
+                                            originalContent = containerMatch[1];
+                                        } else {
+                                            originalContent = bodyContent;
+                                        }
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                            
+                            // Replace signature images back to placeholders
                             Object.entries(variablesObj).forEach(([key, val]) => {
                                 if (key.includes('signature') && String(val).startsWith('data:image')) {
                                     const signatureDataUrl = String(val);
@@ -224,10 +253,11 @@ const PublicContractSigning = () => {
                                     originalContent = originalContent.replace(imgRegex1, `var[{{${key}}}]`);
                                     // Pattern 2: Image with the exact data URL src
                                     const escapedDataUrl = signatureDataUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                                    const imgRegex2 = new RegExp(`<img[^>]*src="${escapedDataUrl}"[^>]*>`, 'gi');
+                                    const imgRegex2 = new RegExp(`<img[^>]*src=["']${escapedDataUrl}["'][^>]*>`, 'gi');
                                     originalContent = originalContent.replace(imgRegex2, `var[{{${key}}}]`);
                                 }
                             });
+                            
                             setOriginalContractContent(originalContent);
                             setContractContent(originalContent);
                         } catch (e) {
@@ -405,55 +435,140 @@ const PublicContractSigning = () => {
     const previewRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        // Only attach handler after email verification and when contract preview is available
+        if (!isEmailVerified || !contractPreviewHtml) return;
+
         const container = previewRef.current;
         if (!container) return;
 
         const handleSignatureClick = (e: Event) => {
+            e.preventDefault();
+            e.stopPropagation();
             const target = e.target as HTMLElement;
-            const key = target.getAttribute("data-signature-key");
+            
+            // Check if clicked element or its parent has the signature key
+            let key = target.getAttribute("data-signature-key");
+            if (!key) {
+                const parent = target.closest("[data-signature-key]");
+                if (parent) {
+                    key = parent.getAttribute("data-signature-key");
+                }
+            }
+            
+            // Also check for signature-box-clickable class
+            if (!key) {
+                const clickableElement = target.closest(".signature-box-clickable");
+                if (clickableElement) {
+                    key = clickableElement.getAttribute("data-signature-key");
+                }
+            }
+            
             if (key) {
+                console.log("Signature box clicked, key:", key);
                 setCurrentSignatureEntry(key);
                 setIsSignatureDialogOpen(true);
+                setSignatureMode('draw'); // Default to draw mode
             }
         };
 
-        const elements = container.querySelectorAll(".signature-box-clickable");
-        elements.forEach(el => el.addEventListener("click", handleSignatureClick));
+        // Use event delegation on the container for better reliability
+        // Add a small delay to ensure DOM is fully rendered
+        const timer = setTimeout(() => {
+            container.addEventListener("click", handleSignatureClick, true); // Use capture phase
+            console.log("Signature click handler attached");
+        }, 100);
 
         return () => {
-            elements.forEach(el => el.removeEventListener("click", handleSignatureClick));
+            clearTimeout(timer);
+            container.removeEventListener("click", handleSignatureClick, true);
         };
-    }, [contractPreviewHtml]);
+    }, [contractPreviewHtml, isEmailVerified]);
 
     // Initialize canvas when signature dialog opens or mode changes
     useEffect(() => {
         if (isSignatureDialogOpen && signatureMode === 'draw') {
-            // Small delay to ensure canvas is rendered
-            const timer = setTimeout(() => {
+            // Use multiple delays to ensure dialog and canvas are fully rendered
+            const initCanvas = () => {
                 const canvas = signatureCanvasRef.current;
-                if (!canvas) return;
+                if (!canvas) {
+                    console.log("Canvas ref is null, retrying...");
+                    // Retry with a longer delay
+                    setTimeout(() => {
+                        requestAnimationFrame(initCanvas);
+                    }, 50);
+                    return;
+                }
+                
                 const ctx = canvas.getContext('2d');
-                if (!ctx) return;
+                if (!ctx) {
+                    console.warn("Could not get 2d context");
+                    return;
+                }
                 
                 // Set canvas dimensions based on container
                 const container = canvas.parentElement;
                 if (container) {
+                    // Force a reflow to get accurate dimensions
+                    void container.offsetHeight;
                     const rect = container.getBoundingClientRect();
-                    canvas.width = rect.width;
-                    canvas.height = 200; // Fixed height as per container style
+                    // Ensure minimum dimensions - use container width or fallback
+                    const width = Math.max(rect.width || 500, 400);
+                    const height = 200;
+                    
+                    // Set canvas internal dimensions (for drawing)
+                    canvas.width = width;
+                    canvas.height = height;
+                    
+                    // Set CSS dimensions (for display)
+                    canvas.style.width = `${width}px`;
+                    canvas.style.height = `${height}px`;
+                    
+                    console.log("Canvas initialized with dimensions:", width, height);
                 } else {
-                    canvas.width = 800;
-                    canvas.height = 200;
+                    // Fallback dimensions
+                    const width = 500;
+                    const height = 200;
+                    canvas.width = width;
+                    canvas.height = height;
+                    canvas.style.width = `${width}px`;
+                    canvas.style.height = `${height}px`;
+                    console.log("Canvas initialized with fallback dimensions:", width, height);
                 }
+                
+                // Fill canvas with white background first
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
                 // Configure drawing style
                 ctx.lineWidth = 2;
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
                 ctx.strokeStyle = '#000000';
-            }, 100);
+                
+                // Ensure canvas is visible and properly positioned
+                canvas.style.display = 'block';
+                canvas.style.visibility = 'visible';
+                canvas.style.position = 'absolute';
+                canvas.style.top = '0';
+                canvas.style.left = '0';
+                canvas.style.zIndex = '1';
+                canvas.style.backgroundColor = '#ffffff';
+                canvas.style.opacity = '1';
+                
+                // Force a reflow to ensure rendering
+                void canvas.offsetHeight;
+            };
             
-            return () => clearTimeout(timer);
+            // Multiple delays to ensure dialog is fully rendered
+            const timer1 = setTimeout(() => {
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        initCanvas();
+                    });
+                });
+            }, 200);
+            
+            return () => clearTimeout(timer1);
         } else if (isSignatureDialogOpen && signatureMode === 'type') {
             // Clear canvas when switching to type mode
             const canvas = signatureCanvasRef.current;
@@ -523,6 +638,23 @@ const PublicContractSigning = () => {
         // Save to database
         if (collaborationId) {
             try {
+                // First, fetch existing magic_link to preserve it
+                let existingMagicLink: string | null = null;
+                try {
+                    const { data: existingData } = await (supabase as any)
+                        .from("collaboration_variable_overrides")
+                        .select("magic_link")
+                        .eq("collaboration_id", collaborationId)
+                        .eq("variable_key", "all_variables")
+                        .maybeSingle();
+                    
+                    if (existingData?.magic_link) {
+                        existingMagicLink = existingData.magic_link;
+                    }
+                } catch (fetchErr) {
+                    console.warn("Could not fetch existing magic_link:", fetchErr);
+                }
+
                 // Generate updated variables map
                 const variablesMap: Record<string, string> = {};
                 updatedEntries.forEach(entry => {
@@ -533,27 +665,163 @@ const PublicContractSigning = () => {
                 });
 
                 // Generate complete HTML with all variables filled
+                // Start with original contract content (clean, without nested HTML structure)
+                // Don't use contractPreviewHtml as it might have nested structure
                 let completeHtml = originalContractContent || contractContent;
+                
+                // Ensure we're working with clean content (not nested HTML)
+                if (completeHtml.includes('<!DOCTYPE html>') || (completeHtml.includes('<html') && completeHtml.includes('</html>'))) {
+                    // Extract content from nested HTML structure
+                    const bodyMatch = completeHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                    if (bodyMatch && bodyMatch[1]) {
+                        let bodyContent = bodyMatch[1];
+                        // Extract from tiptap-rendered div
+                        const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                        if (tiptapMatch && tiptapMatch[1]) {
+                            completeHtml = tiptapMatch[1];
+                        } else {
+                            // Try contract-preview-container
+                            const containerMatch = bodyContent.match(/<div[^>]*class=["'][^"']*contract-preview-container[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                            if (containerMatch && containerMatch[1]) {
+                                completeHtml = containerMatch[1];
+                            } else {
+                                completeHtml = bodyContent;
+                            }
+                        }
+                    }
+                }
+                
+                console.log("Base HTML for signature replacement, length:", completeHtml.length);
+                
+                // Update signatures in the HTML - replace both placeholders and signature boxes
                 updatedEntries.forEach(entry => {
-                    const placeholder = `var[{{${entry.key}}}]`;
-                    const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                    const regex = new RegExp(escapedPlaceholder, "g");
-
                     if (entry.key.includes("signature")) {
                         const val = entry.inputValue || entry.value;
                         if (val && val.startsWith("data:image")) {
                             const replacement = `<img src="${val}" alt="Signature" data-signature-key="${entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
-                            completeHtml = completeHtml.replace(regex, replacement);
-                            // Also replace existing images
-                            const existingImgRegex = new RegExp(`<img[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>`, "gi");
+                            const escapedKey = entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                            
+                            // 1. Replace var[{{signature.key}}] placeholders
+                            const placeholder = `var[{{${entry.key}}}]`;
+                            const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                            const placeholderRegex = new RegExp(escapedPlaceholder, "g");
+                            completeHtml = completeHtml.replace(placeholderRegex, replacement);
+                            
+                            // 2. Replace existing signature images
+                            const existingImgRegex = new RegExp(`<img[^>]*data-signature-key=["']${escapedKey}["'][^>]*>`, "gi");
                             completeHtml = completeHtml.replace(existingImgRegex, replacement);
+                            
+                            // 3. FIRST: Replace nested signature boxes (parent span containing signature box) - most specific case
+                            // This handles: <span style="..."><span class="signature-box" data-signature-key="...">--</span></span>
+                            const nestedParentSpanPattern = new RegExp(`<span[^>]*>[\\s\\S]*?<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>[\\s\\S]*?<\\/span>`, "gi");
+                            completeHtml = completeHtml.replace(nestedParentSpanPattern, (match) => {
+                                if (match.includes(`data-signature-key="${entry.key}"`)) {
+                                    // Check if the match contains our signature key
+                                    const innerBoxMatch = match.match(new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "i"));
+                                    if (innerBoxMatch) {
+                                        // Replace the entire nested structure with the signature image
+                                        return replacement;
+                                    }
+                                }
+                                return match;
+                            });
+                            
+                            // 4. Replace signature boxes with class="signature-box" AND data-signature-key
+                            // This handles: <span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer">--</span>
+                            const signatureBoxWithClassRegex = new RegExp(`<span[^>]*class=["'][^"']*signature-box[^"']*["'][^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi");
+                            completeHtml = completeHtml.replace(signatureBoxWithClassRegex, replacement);
+                            
+                            // 5. Replace signature boxes with data-signature="true" AND data-signature-key
+                            const signatureBoxWithDataAttr = new RegExp(`<span[^>]*data-signature=["']true["'][^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi");
+                            completeHtml = completeHtml.replace(signatureBoxWithDataAttr, replacement);
+                            
+                            // 6. Replace signature boxes with data-signature-key (general case) - do this after nested structures
+                            const signatureBoxRegex = new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi");
+                            completeHtml = completeHtml.replace(signatureBoxRegex, replacement);
+                            
+                            // 7. Additional pass: Replace any remaining nested structures with multiple passes
+                            let previousHtml = '';
+                            let passCount = 0;
+                            while (completeHtml !== previousHtml && passCount < 3) {
+                                previousHtml = completeHtml;
+                                passCount++;
+                                
+                                // Try to find and replace any remaining nested structures
+                                const nestedPattern = new RegExp(`<span[^>]*>[\\s\\S]*?<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>[\\s\\S]*?<\\/span>`, "gi");
+                                completeHtml = completeHtml.replace(nestedPattern, (match) => {
+                                    if (match.includes(`data-signature-key="${entry.key}"`)) {
+                                        // Replace inner signature box
+                                        const innerReplaced = match.replace(new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi"), replacement);
+                                        // Check remaining content
+                                        const remainingContent = innerReplaced.replace(/^<span[^>]*>/, '').replace(/<\/span>$/, '').replace(/&nbsp;/g, ' ').trim();
+                                        if (!remainingContent || remainingContent === replacement.trim() || remainingContent.length < 20) {
+                                            return replacement;
+                                        }
+                                        return innerReplaced;
+                                    }
+                                    return match;
+                                });
+                            }
+                            
+                            // 7. Replace old signature data URLs if they exist
                             if (entry.value && entry.value.startsWith("data:image")) {
                                 const escapedOldSrc = entry.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                                const existingImgRegex2 = new RegExp(`<img[^>]*src="${escapedOldSrc}"[^>]*>`, "gi");
+                                const existingImgRegex2 = new RegExp(`<img[^>]*src=["']${escapedOldSrc}["'][^>]*>`, "gi");
                                 completeHtml = completeHtml.replace(existingImgRegex2, replacement);
                             }
+                            
+                            // Debug: Log what we're replacing
+                            console.log(`Replacing signature for key: ${entry.key}`, {
+                                hasValue: !!val,
+                                valueLength: val ? val.length : 0,
+                                htmlContainsKey: completeHtml.includes(entry.key),
+                                htmlContainsSignatureBox: completeHtml.includes('signature-box'),
+                                htmlContainsDataSignatureKey: completeHtml.includes(`data-signature-key="${entry.key}"`),
+                                beforeReplace: completeHtml.includes(`data-signature-key="${entry.key}"`)
+                            });
+                            
+                            // Final check: if signature box still exists, try one more aggressive replacement
+                            if (completeHtml.includes(`data-signature-key="${entry.key}"`) && !completeHtml.includes(`<img[^>]*data-signature-key="${entry.key}"`)) {
+                                console.warn(`Signature box still exists for ${entry.key}, attempting aggressive replacement`);
+                                
+                                // Try a very specific pattern for the user's format
+                                // <span style="..."><span class="signature-box" data-signature="true" data-signature-key="...">--</span></span>
+                                const specificNestedPattern = new RegExp(`<span[^>]*style=["'][^"']*font-size:[^"']*["'][^>]*>[\\s\\S]*?<span[^>]*class=["'][^"']*signature-box[^"']*["'][^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>[\\s\\S]*?<\\/span>`, "gi");
+                                completeHtml = completeHtml.replace(specificNestedPattern, replacement);
+                                
+                                // Also try replacing any parent span that ONLY contains a signature box with this key
+                                // Match: <span ...><span ... data-signature-key="...">...</span> </span>
+                                const parentSpanOnlyPattern = new RegExp(`<span[^>]*>[\\s\\S]*?<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>[\\s\\S]*?<\\/span>`, "gi");
+                                completeHtml = completeHtml.replace(parentSpanOnlyPattern, (match) => {
+                                    if (match.includes(`data-signature-key="${entry.key}"`)) {
+                                        // Check if outer span only contains the signature box (and maybe whitespace)
+                                        const innerBox = match.match(new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "i"));
+                                        if (innerBox) {
+                                            const remaining = match.replace(/^<span[^>]*>/, '').replace(/<\/span>$/, '').trim();
+                                            const cleanedRemaining = remaining.replace(/&nbsp;/g, ' ').replace(innerBox[0], '').trim();
+                                            // If only whitespace remains after removing the signature box, replace entire structure
+                                            if (!cleanedRemaining || cleanedRemaining.length < 5) {
+                                                return replacement;
+                                            }
+                                        }
+                                    }
+                                    return match;
+                                });
+                                
+                                // Also try replacing any remaining signature boxes with this key
+                                const aggressiveRegex = new RegExp(`<span[^>]*data-signature-key=["']${escapedKey}["'][^>]*>[\\s\\S]*?<\\/span>`, "gi");
+                                completeHtml = completeHtml.replace(aggressiveRegex, replacement);
+                            }
+                            
+                            // Clean up: Remove empty parent spans that might remain after replacement
+                            // Pattern: <span ...> </span> or <span ...>\n</span> (only whitespace)
+                            completeHtml = completeHtml.replace(/<span[^>]*>\s*<\/span>/gi, '');
                         }
                     } else {
+                        // For non-signature variables, replace placeholders
+                        const placeholder = `var[{{${entry.key}}}]`;
+                        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                        const regex = new RegExp(escapedPlaceholder, "g");
                         const replacement = entry.inputValue || entry.value || placeholder;
                         completeHtml = completeHtml.replace(regex, replacement);
                     }
@@ -623,28 +891,39 @@ const PublicContractSigning = () => {
                     return;
                 }
 
+                // Prepare the update object, preserving magic_link if it exists
+                const updateData: any = {
+                    collaboration_id: collaborationId,
+                    variable_key: "all_variables",
+                    contract_html: completeHtmlDocument,
+                    value: JSON.stringify(variablesMap),
+                    campaign_id: dbCampaignId,
+                    influencer_id: dbInfluencerId
+                };
+
+                // Preserve magic_link if it exists
+                if (existingMagicLink) {
+                    updateData.magic_link = existingMagicLink;
+                }
+
                 const { error } = await (supabase as any)
                     .from("collaboration_variable_overrides")
-                    .upsert({
-                        collaboration_id: collaborationId,
-                        variable_key: "all_variables",
-                        contract_html: completeHtmlDocument,
-                        value: JSON.stringify(variablesMap),
-                        campaign_id: dbCampaignId,
-                        influencer_id: dbInfluencerId
-                    }, {
+                    .upsert(updateData, {
                         onConflict: 'collaboration_id,variable_key'
                     });
 
                 if (error) {
                     console.error("Error saving contract HTML:", error);
                     console.error("Error details:", JSON.stringify(error, null, 2));
+                    console.error("Update data:", JSON.stringify(updateData, null, 2));
                     toast({
                         title: "Warning",
                         description: `Signature saved but failed to update contract HTML: ${error.message || "Unknown error"}`,
                         variant: "destructive",
                     });
                 } else {
+                    console.log("Successfully saved signature to database");
+                    console.log("Variables map:", variablesMap);
                     // Update is_signed in collaboration_actions table
                     // Use upsert to handle both update and insert cases
                     const { error: actionError } = await (supabase as any)
@@ -792,7 +1071,12 @@ const PublicContractSigning = () => {
                 <div className="mb-6 flex items-center justify-between">
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900">Contract Agreement</h1>
-                        <p className="text-sm text-slate-500">
+                        {collaborationId && (
+                            <p className="text-sm font-medium text-slate-700 mt-1">
+                                Collaboration ID: {collaborationId}
+                            </p>
+                        )}
+                        <p className="text-sm text-slate-500 mt-2">
                             {isSigned ? "Contract has been signed." : "Please review and sign the contract below."}
                         </p>
                     </div>
@@ -961,6 +1245,31 @@ const PublicContractSigning = () => {
                         className="prose prose-lg max-w-none w-full"
                         style={{ maxWidth: '100%', width: '100%' }}
                         dangerouslySetInnerHTML={{ __html: contractPreviewHtml }}
+                        onClick={(e) => {
+                            // Fallback click handler using React events
+                            const target = e.target as HTMLElement;
+                            let key = target.getAttribute("data-signature-key");
+                            if (!key) {
+                                const parent = target.closest("[data-signature-key]");
+                                if (parent) {
+                                    key = parent.getAttribute("data-signature-key");
+                                }
+                            }
+                            if (!key) {
+                                const clickableElement = target.closest(".signature-box-clickable");
+                                if (clickableElement) {
+                                    key = clickableElement.getAttribute("data-signature-key");
+                                }
+                            }
+                            if (key) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                console.log("Signature box clicked (React handler), key:", key);
+                                setCurrentSignatureEntry(key);
+                                setIsSignatureDialogOpen(true);
+                                setSignatureMode('draw');
+                            }
+                        }}
                     />
                 </div>
             </Card>
@@ -976,16 +1285,53 @@ const PublicContractSigning = () => {
                     </DialogHeader>
 
                     <div className="flex items-center justify-center gap-4 py-4">
-                        <Button variant={signatureMode === 'draw' ? 'default' : 'outline'} onClick={() => setSignatureMode('draw')}>Draw</Button>
+                        <Button variant={signatureMode === 'draw' ? 'default' : 'outline'} onClick={() => {
+                            setSignatureMode('draw');
+                            // Force canvas re-initialization when switching to draw mode
+                            setTimeout(() => {
+                                const canvas = signatureCanvasRef.current;
+                                if (canvas) {
+                                    const ctx = canvas.getContext('2d');
+                                    if (ctx && canvas.width > 0 && canvas.height > 0) {
+                                        ctx.fillStyle = '#ffffff';
+                                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                                    }
+                                }
+                            }, 100);
+                        }}>Draw</Button>
                         <Button variant={signatureMode === 'type' ? 'default' : 'outline'} onClick={() => setSignatureMode('type')}>Type</Button>
                     </div>
 
                     {signatureMode === 'draw' ? (
                         <div className="space-y-3">
-                            <div className="relative border-2 border-slate-300 rounded-lg bg-white" style={{ height: '200px' }}>
+                            <div 
+                                className="relative border-2 border-slate-300 rounded-lg bg-white overflow-hidden" 
+                                style={{ 
+                                    height: '200px', 
+                                    width: '100%', 
+                                    minWidth: '400px', 
+                                    position: 'relative',
+                                    backgroundColor: '#ffffff'
+                                }}
+                            >
                                 <canvas
                                     ref={signatureCanvasRef}
+                                    width={500}
+                                    height={200}
                                     className="absolute inset-0 w-full h-full cursor-crosshair touch-none"
+                                    style={{ 
+                                        display: 'block', 
+                                        visibility: 'visible',
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        zIndex: 1,
+                                        backgroundColor: '#ffffff',
+                                        touchAction: 'none',
+                                        opacity: 1
+                                    }}
                                     onMouseDown={(e) => {
                                         e.preventDefault();
                                         const canvas = signatureCanvasRef.current;

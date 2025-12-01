@@ -34,6 +34,7 @@ import {
   Search,
   UserPlus,
   Users,
+  Clock,
 } from "lucide-react";
 import {
   Table,
@@ -254,6 +255,12 @@ const CampaignDetail = () => {
   const [campaign, setCampaign] = useState<CampaignRecord | null>(state.campaign ?? null);
   const [loading, setLoading] = useState<boolean>(!state.campaign);
   const [error, setError] = useState<string | null>(null);
+  const [collabStats, setCollabStats] = useState<{
+    total: number;
+    signed: number;
+    pending: number;
+  }>({ total: 0, signed: 0, pending: 0 });
+  const [loadingStats, setLoadingStats] = useState<boolean>(false);
 
   useEffect(() => {
     if (campaign || !id) {
@@ -298,6 +305,43 @@ const CampaignDetail = () => {
 
     fetchCampaign();
   }, [campaign, id, toast]);
+
+  // Fetch collaboration statistics
+  useEffect(() => {
+    const fetchCollabStats = async () => {
+      if (!campaign?.id) return;
+
+      setLoadingStats(true);
+      try {
+        // Extract campaign key from campaign ID
+        const campaignKey = campaign.id;
+        
+        // Fetch all collaboration actions for this campaign
+        const { data, error: statsError } = await supabase
+          .from("collaboration_actions")
+          .select("is_signed, collaboration_id")
+          .eq("campaign_id", campaignKey);
+
+        if (statsError) {
+          console.error("Error fetching collaboration stats:", statsError);
+          return;
+        }
+
+        // Count statistics
+        const total = data?.length || 0;
+        const signed = data?.filter((item: any) => item.is_signed === true).length || 0;
+        const pending = total - signed;
+
+        setCollabStats({ total, signed, pending });
+      } catch (err) {
+        console.error("Error fetching collaboration stats:", err);
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+
+    fetchCollabStats();
+  }, [campaign?.id]);
 
   const startDisplay = useMemo(
     () => formatDateForDisplay(campaign?.startDate),
@@ -658,60 +702,48 @@ const CampaignDetail = () => {
                 <Card className="border-none bg-white/95 backdrop-blur">
                   <div className="p-5 sm:p-6 space-y-5">
                     <div className="space-y-1">
-                      <h2 className="text-lg font-semibold text-slate-900">Quick Actions</h2>
+                      <h2 className="text-lg font-semibold text-slate-900">Collaboration Statistics</h2>
                       <p className="text-sm text-slate-500">
-                        Move between planning, sourcing, and legal coordination flows.
+                        Overview of collaboration status for this campaign.
                       </p>
                     </div>
-                    <div className="flex flex-col gap-3">
-                      <Button
-                        variant="outline"
-                        className="justify-between gap-3 rounded-xl border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-indigo-50/90 hover:text-indigo-600"
-                        onClick={() => navigate("/campaign")}
-                      >
-                        <span className="flex items-center gap-2">
-                          <Users className="h-4 w-4" />
-                          Manage campaign roster
-                        </span>
-                        <ArrowRight className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="justify-between gap-3 rounded-xl border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-indigo-50/90 hover:text-indigo-600"
-                        onClick={() => navigate("/influencer")}
-                      >
-                        <span className="flex items-center gap-2">
-                          <Megaphone className="h-4 w-4" />
-                          Review influencer roster
-                        </span>
-                        <ArrowRight className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="justify-between gap-3 rounded-xl border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-indigo-50/90 hover:text-indigo-600"
-                        onClick={() => navigate("/contract")}
-                      >
-                        <span className="flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          View contract library
-                        </span>
-                        <ArrowRight className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="justify-between gap-3 rounded-xl border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-indigo-50/90 hover:text-indigo-600"
-                        onClick={() => navigate("/users")}
-                      >
-                        <span className="flex items-center gap-2">
-                          <UserPlus className="h-4 w-4" />
-                          Invite internal collaborators
-                        </span>
-                        <ArrowRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600">
-                      Keep campaign notes updated so teammates can take over approvals without losing context.
-                    </div>
+                    {loadingStats ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        {/* Total Collaborations */}
+                        <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-slate-600">Total Collaborations</p>
+                            <Users className="h-5 w-5 text-slate-400" />
+                          </div>
+                          <p className="text-3xl font-bold text-slate-900">{collabStats.total}</p>
+                          <p className="text-xs text-slate-500">All collaborations</p>
+                        </div>
+
+                        {/* Signed Collaborations */}
+                        <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-emerald-700">Signed</p>
+                            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                          </div>
+                          <p className="text-3xl font-bold text-emerald-700">{collabStats.signed}</p>
+                          <p className="text-xs text-emerald-600">Contracts signed</p>
+                        </div>
+
+                        {/* Pending Collaborations */}
+                        <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-amber-700">Pending</p>
+                            <Clock className="h-5 w-5 text-amber-500" />
+                          </div>
+                          <p className="text-3xl font-bold text-amber-700">{collabStats.pending}</p>
+                          <p className="text-xs text-amber-600">Awaiting signature</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </Card>
               </div>
