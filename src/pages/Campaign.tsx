@@ -135,6 +135,8 @@ const Campaign = () => {
   const [campaignActionLoading, setCampaignActionLoading] = useState<Record<string, boolean>>({});
   const [campaignToDelete, setCampaignToDelete] = useState<CampaignRecord | null>(null);
   const [isDeletingCampaign, setIsDeletingCampaign] = useState<boolean>(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const handleNavigateToCampaign = (campaign: CampaignRecord) => {
     navigate(`/campaign/${encodeURIComponent(campaign.id)}`, { state: { campaign } });
   };
@@ -360,6 +362,45 @@ const Campaign = () => {
     fetchCampaigns();
   }, [toast]);
 
+  // Fetch current user role and user ID
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      try {
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setCurrentUserId(user.id);
+
+          // First try to get from localStorage
+          const cachedRole = localStorage.getItem('currentUserRole');
+          if (cachedRole && (cachedRole === 'admin' || cachedRole === 'super_admin' || cachedRole === 'user')) {
+            setUserRole(cachedRole);
+            return;
+          }
+
+          // If not in localStorage, fetch from Supabase
+          const { data, error } = await supabase
+            .from("user_profiles")
+            .select("role")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (!error && data) {
+            const role = (data as any).role;
+            if (role) {
+              setUserRole(role);
+              localStorage.setItem('currentUserRole', role);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Campaign: Error fetching user role", err);
+      }
+    };
+
+    fetchUserRole();
+  }, []);
+
   const resetCreateForm = () => {
     setNewCampaignName("");
     setNewBrandName("");
@@ -550,6 +591,10 @@ const Campaign = () => {
   ): Promise<boolean> => {
     setCampaignLoadingState(campaign.id, true);
     try {
+      // Find newly added influencers (those in updatedInfluencers but not in campaign.influencers)
+      const existingInfluencerIds = new Set(campaign.influencers.map(inf => inf.id));
+      const newlyAddedInfluencers = updatedInfluencers.filter(inf => !existingInfluencerIds.has(inf.id));
+
       // Update the campaign with new influencers array
       const { data, error } = await (supabase as any)
         .from("campaigns")
@@ -564,6 +609,83 @@ const Campaign = () => {
 
       if (!Array.isArray(data) || data.length === 0) {
         throw new Error("Campaign not found or could not be updated.");
+      }
+
+      // Create collaboration actions for newly added influencers, distributed equally among users
+      if (newlyAddedInfluencers.length > 0 && campaign.users.length > 0) {
+        try {
+          const isUuid = (value: string | undefined | null): value is string =>
+            Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
+
+          const toDeterministicUuid = (input: string): string => {
+            const hash = input.split("").reduce((acc, char) => {
+              const hash = ((acc << 5) - acc) + char.charCodeAt(0);
+              return hash & hash;
+            }, 0);
+            const hex = Math.abs(hash).toString(16).padStart(32, "0");
+            return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((Math.abs(hash) % 4) + 8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+          };
+
+          const campaignKey = campaign.id;
+          const resolvedCampaignId = isUuid(campaignKey) 
+            ? campaignKey 
+            : toDeterministicUuid(`campaign:${campaignKey}`);
+          
+          // Get contract_id from campaign
+          const contractId = campaign.contract?.id ?? null;
+          const contractPid = campaign.contract?.pid ?? "none";
+          
+          // Distribute newly added influencers equally among users
+          const numUsers = campaign.users.length;
+          const numNewInfluencers = newlyAddedInfluencers.length;
+          const influencersPerUser = Math.floor(numNewInfluencers / numUsers);
+          const remainder = numNewInfluencers % numUsers;
+          
+          const collaborationActions: any[] = [];
+          let influencerIndex = 0;
+          
+          campaign.users.forEach((user, userIndex) => {
+            // Calculate how many influencers this user should get
+            // Distribute remainder to first few users
+            const countForThisUser = influencersPerUser + (userIndex < remainder ? 1 : 0);
+            
+            // Assign influencers to this user
+            for (let i = 0; i < countForThisUser && influencerIndex < numNewInfluencers; i++) {
+              const influencer = newlyAddedInfluencers[influencerIndex];
+              const influencerKey = influencer.pid ?? influencer.id ?? "none";
+              const collaborationId = `${campaignKey}-${influencerKey}-${contractPid}`;
+              
+              collaborationActions.push({
+                campaign_id: resolvedCampaignId,
+                influencer_id: influencer.id,
+                collaboration_id: collaborationId,
+                user_id: user.id, // Assign to this user
+                action: "", // Empty string since action is required (NOT NULL)
+                remark: null,
+                contract_id: contractId,
+              });
+              
+              influencerIndex++;
+            }
+          });
+
+          // Insert all collaboration actions
+          if (collaborationActions.length > 0) {
+            const { error: actionsError } = await supabase
+              .from("collaboration_actions")
+              .insert(collaborationActions as any);
+
+            if (actionsError) {
+              console.error("Campaign: Error creating collaboration actions", actionsError);
+              // Don't fail the update if actions fail
+            } else {
+              console.log(`Campaign: Created ${collaborationActions.length} collaboration action entries for newly added influencers`);
+            }
+          }
+        } catch (actionsErr: any) {
+          console.error("Campaign: Exception creating collaboration actions", actionsErr);
+          // Don't fail the update if actions fail
+        }
       }
 
       // Refetch the updated campaign to get the latest data
@@ -600,7 +722,7 @@ const Campaign = () => {
         title: "Influencers updated",
         description: `"${campaign.name}" now has ${updatedInfluencers.length} assigned ${
           updatedInfluencers.length === 1 ? "influencer" : "influencers"
-        }.`,
+        }${newlyAddedInfluencers.length > 0 && campaign.users.length > 0 ? ` with ${newlyAddedInfluencers.length} newly added influencer${newlyAddedInfluencers.length !== 1 ? 's' : ''} equally distributed among ${campaign.users.length} user${campaign.users.length !== 1 ? 's' : ''}.` : '.'}`,
       });
       return true;
     } catch (error: any) {
@@ -863,8 +985,8 @@ const Campaign = () => {
       const inserted = mapCampaignRow(data);
       setCampaigns((prev) => [inserted, ...prev.filter((campaign) => campaign.id !== inserted.id)]);
 
-      // Create collaboration_action entries for all influencers
-      if (selectedInfluencers.length > 0) {
+      // Create collaboration_action entries for all influencers, equally distributed among users
+      if (selectedInfluencers.length > 0 && selectedUsers.length > 0) {
         try {
           const isUuid = (value: string | undefined | null): value is string =>
             Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
@@ -885,20 +1007,38 @@ const Campaign = () => {
           
           const contractPid = selectedContract?.pid ?? "none";
           
-          // Create collaboration_action entries for each influencer
-          const collaborationActions = selectedInfluencers.map((influencer) => {
-            const influencerKey = influencer.pid ?? influencer.id ?? "none";
-            const collaborationId = `${campaignKey}-${influencerKey}-${contractPid}`;
+          // Distribute influencers equally among users
+          const numUsers = selectedUsers.length;
+          const numInfluencers = selectedInfluencers.length;
+          const influencersPerUser = Math.floor(numInfluencers / numUsers);
+          const remainder = numInfluencers % numUsers;
+          
+          const collaborationActions: any[] = [];
+          let influencerIndex = 0;
+          
+          selectedUsers.forEach((user, userIndex) => {
+            // Calculate how many influencers this user should get
+            // Distribute remainder to first few users
+            const countForThisUser = influencersPerUser + (userIndex < remainder ? 1 : 0);
             
-            return {
-              campaign_id: resolvedCampaignId,
-              influencer_id: influencer.id, // This should be a UUID
-              collaboration_id: collaborationId,
-              user_id: null, // Blank as requested
-              action: "", // Empty string since action is required (NOT NULL)
-              remark: null,
-              contract_id: selectedContract?.id ?? null,
-            };
+            // Assign influencers to this user
+            for (let i = 0; i < countForThisUser && influencerIndex < numInfluencers; i++) {
+              const influencer = selectedInfluencers[influencerIndex];
+              const influencerKey = influencer.pid ?? influencer.id ?? "none";
+              const collaborationId = `${campaignKey}-${influencerKey}-${contractPid}`;
+              
+              collaborationActions.push({
+                campaign_id: resolvedCampaignId,
+                influencer_id: influencer.id, // This should be a UUID
+                collaboration_id: collaborationId,
+                user_id: user.id, // Assign to this user
+                action: "", // Empty string since action is required (NOT NULL)
+                remark: null,
+                contract_id: selectedContract?.id ?? null,
+              });
+              
+              influencerIndex++;
+            }
           });
 
           // Insert all collaboration actions
@@ -920,7 +1060,7 @@ const Campaign = () => {
 
       toast({
         title: "Campaign Created",
-        description: `"${inserted.name}" has been saved${selectedInfluencers.length > 0 ? ` with ${selectedInfluencers.length} collaboration action${selectedInfluencers.length !== 1 ? 's' : ''} created.` : '.'}`,
+        description: `"${inserted.name}" has been saved${selectedInfluencers.length > 0 && selectedUsers.length > 0 ? ` with ${selectedInfluencers.length} collaboration action${selectedInfluencers.length !== 1 ? 's' : ''} created and influencers equally distributed among ${selectedUsers.length} user${selectedUsers.length !== 1 ? 's' : ''}.` : selectedInfluencers.length > 0 ? ` with ${selectedInfluencers.length} collaboration action${selectedInfluencers.length !== 1 ? 's' : ''} created.` : '.'}`,
       });
 
       resetCreateForm();
@@ -938,9 +1078,23 @@ const Campaign = () => {
   };
 
   const filteredCampaigns = useMemo(() => {
-    if (!searchTerm.trim()) return campaigns;
+    let filtered = campaigns;
+
+    // If user role is "user", only show active campaigns where user is assigned
+    if (userRole === 'user' && currentUserId) {
+      filtered = filtered.filter((campaign) => {
+        // Only show active (live) campaigns
+        const isActive = campaign.status === 'live';
+        // Only show campaigns where user is assigned
+        const isAssigned = campaign.users.some((user) => user.id === currentUserId);
+        return isActive && isAssigned;
+      });
+    }
+
+    // Apply search filter
+    if (!searchTerm.trim()) return filtered;
     const query = searchTerm.toLowerCase();
-    return campaigns.filter((campaign) => {
+    return filtered.filter((campaign) => {
       if (
         campaign.name.toLowerCase().includes(query) ||
         campaign.brand.toLowerCase().includes(query) ||
@@ -976,7 +1130,7 @@ const Campaign = () => {
         )
       );
     });
-  }, [campaigns, searchTerm]);
+  }, [campaigns, searchTerm, userRole, currentUserId]);
 
   const liveCount = useMemo(() => campaigns.filter((c) => c.status === "live").length, [campaigns]);
   const scheduledCount = useMemo(() => campaigns.filter((c) => c.status === "scheduled").length, [campaigns]);
@@ -1470,17 +1624,18 @@ const Campaign = () => {
                         >
                           View Brief
                         </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              size="sm"
-                              className="h-8 px-3 text-xs bg-primary text-white hover:bg-primary/90 focus-visible:ring-primary"
-                              disabled={isCampaignBusy}
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              Manage
-                            </Button>
-                          </DropdownMenuTrigger>
+                        {(userRole === 'admin' || userRole === 'super_admin') && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="sm"
+                                className="h-8 px-3 text-xs bg-primary text-white hover:bg-primary/90 focus-visible:ring-primary"
+                                disabled={isCampaignBusy}
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                Manage
+                              </Button>
+                            </DropdownMenuTrigger>
                           <DropdownMenuContent 
                             align="end" 
                             className="w-56"
@@ -1557,6 +1712,7 @@ const Campaign = () => {
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                        )}
                       </div>
                     </div>
                   </div>

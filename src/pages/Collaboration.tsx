@@ -426,6 +426,8 @@ const Collaboration = () => {
   const [deletingAction, setDeletingAction] = useState<string | null>(null);
   const [usersForPicker, setUsersForPicker] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const [loadingCampaignUsers, setLoadingCampaignUsers] = useState<boolean>(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [assignedCampaignIds, setAssignedCampaignIds] = useState<Set<string>>(new Set());
   const injectedStyleLinksRef = useRef<HTMLLinkElement[]>([]);
 
   // Inject stylesheet links into document head when viewing saved contract
@@ -624,6 +626,71 @@ const Collaboration = () => {
       try {
         const { data } = await supabase.auth.getUser();
         setCurrentUserId(data?.user?.id ?? null);
+
+        // Fetch user role and assigned campaigns
+        if (data?.user?.id) {
+          try {
+            // Get role from localStorage first
+            let finalRole: string | null = null;
+            const cachedRole = localStorage.getItem('currentUserRole');
+            if (cachedRole && (cachedRole === 'admin' || cachedRole === 'super_admin' || cachedRole === 'user')) {
+              finalRole = cachedRole;
+              setUserRole(cachedRole);
+            } else {
+              // Fetch from Supabase
+              const { data: profileData, error: profileError } = await supabase
+                .from("user_profiles")
+                .select("role")
+                .eq("user_id", data.user.id)
+                .maybeSingle();
+
+              if (!profileError && profileData) {
+                const role = (profileData as any).role;
+                if (role) {
+                  finalRole = role;
+                  setUserRole(role);
+                  localStorage.setItem('currentUserRole', role);
+                }
+              }
+            }
+
+            // If role is "user", fetch assigned and active campaigns only
+            if (finalRole === 'user') {
+              // Fetch all campaigns where user is assigned and status is "live" (active)
+              const { data: campaignsData, error: campaignsError } = await supabase
+                .from("campaigns")
+                .select("id, users, status")
+                .eq("status", "live")
+                .order("created_at", { ascending: false });
+
+              if (!campaignsError && campaignsData) {
+                const assignedIds = new Set<string>();
+                campaignsData.forEach((campaign: any) => {
+                  const users = campaign.users;
+                  if (Array.isArray(users)) {
+                    const isAssigned = users.some((user: any) => 
+                      user.id === data.user.id || user.user_id === data.user.id
+                    );
+                    // Only add if user is assigned AND campaign is active (status === "live")
+                    if (isAssigned && campaign.status === "live") {
+                      // Store both the campaign ID and the resolved UUID if needed
+                      assignedIds.add(campaign.id);
+                      // Also add resolved UUID if it's not a UUID
+                      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(campaign.id);
+                      if (!isUuid) {
+                        const resolvedId = toDeterministicUuid(`campaign:${campaign.id}`);
+                        assignedIds.add(resolvedId);
+                      }
+                    }
+                  }
+                });
+                setAssignedCampaignIds(assignedIds);
+              }
+            }
+          } catch (err) {
+            console.error("Collaboration: Error fetching user role/assigned campaigns", err);
+          }
+        }
       } catch (error) {
         console.error("Collaboration: Unable to fetch current user", error);
         setCurrentUserId(null);
@@ -929,6 +996,65 @@ const Collaboration = () => {
   const filteredCollaborationActions = useMemo(() => {
     let filtered = collaborationActions;
 
+    // If user role is "user", only show actions assigned to this user
+    if (userRole === 'user' && currentUserId) {
+      filtered = filtered.filter((action) => {
+        // First check if user_id matches current user
+        if (action.user_id && action.user_id === currentUserId) {
+          // Also verify campaign is assigned (additional check)
+          if (assignedCampaignIds.size > 0) {
+            // Check if campaign_id matches any assigned campaign
+            if (action.campaign_id && assignedCampaignIds.has(action.campaign_id)) {
+              return true;
+            }
+            // Also check collaboration_id format: extract campaign key (e.g., "CAM001-0001-CON0001" -> "CAM001")
+            if (action.collaboration_id) {
+              const campaignKey = action.collaboration_id.split("-")[0];
+              if (campaignKey && assignedCampaignIds.has(campaignKey)) {
+                return true;
+              }
+              // Also check resolved UUID
+              const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(campaignKey);
+              if (!isUuid) {
+                const resolvedId = toDeterministicUuid(`campaign:${campaignKey}`);
+                if (assignedCampaignIds.has(resolvedId)) {
+                  return true;
+                }
+              }
+            }
+          } else {
+            // If no assigned campaigns, still show if user_id matches
+            return true;
+          }
+        }
+        return false;
+      });
+    } else if (userRole === 'user' && assignedCampaignIds.size > 0) {
+      // Fallback: if no currentUserId but has assigned campaigns, filter by campaigns only
+      filtered = filtered.filter((action) => {
+        // Check if campaign_id matches any assigned campaign
+        if (action.campaign_id && assignedCampaignIds.has(action.campaign_id)) {
+          return true;
+        }
+        // Also check collaboration_id format: extract campaign key (e.g., "CAM001-0001-CON0001" -> "CAM001")
+        if (action.collaboration_id) {
+          const campaignKey = action.collaboration_id.split("-")[0];
+          if (campaignKey && assignedCampaignIds.has(campaignKey)) {
+            return true;
+          }
+          // Also check resolved UUID
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(campaignKey);
+          if (!isUuid) {
+            const resolvedId = toDeterministicUuid(`campaign:${campaignKey}`);
+            if (assignedCampaignIds.has(resolvedId)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      });
+    }
+
     // Apply search filter
     if (collabSearch.trim()) {
       const query = collabSearch.toLowerCase();
@@ -968,7 +1094,7 @@ const Collaboration = () => {
     }
 
     return filtered;
-  }, [collaborationActions, collabSearch, filters]);
+  }, [collaborationActions, collabSearch, filters, userRole, assignedCampaignIds, currentUserId]);
 
   // Handle select all checkbox
   const handleSelectAllCollab = (checked: boolean) => {

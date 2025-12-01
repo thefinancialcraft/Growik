@@ -1026,8 +1026,8 @@ const PublicContractSigning = () => {
 
                         // If multiple values exist, replace occurrences sequentially
                         if (values.length > 1) {
-                            const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                            const regex = new RegExp(escapedPlaceholder, "g");
+                        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                        const regex = new RegExp(escapedPlaceholder, "g");
                             let occurrenceIndex = 0;
 
                             completeHtml = completeHtml.replace(regex, () => {

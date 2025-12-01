@@ -53,6 +53,7 @@ const Product = () => {
   const { user } = useAuth();
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
+  const [assignedCampaignCompanies, setAssignedCampaignCompanies] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
@@ -145,24 +146,105 @@ const Product = () => {
     fetchData();
   }, [toast]);
 
+  // Fetch user role and assigned campaign companies
+  useEffect(() => {
+    const fetchUserRoleAndCompanies = async () => {
+      try {
+        if (!user?.id) return;
+
+        // Get role from localStorage first
+        let finalRole: string | null = null;
+        const cachedRole = localStorage.getItem('currentUserRole');
+        if (cachedRole && (cachedRole === 'admin' || cachedRole === 'super_admin' || cachedRole === 'user')) {
+          finalRole = cachedRole;
+          setUserRole(cachedRole);
+        } else {
+          // Fetch from Supabase
+          const { data: profileData, error: profileError } = await supabase
+            .from("user_profiles")
+            .select("role, super_admin")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (!profileError && profileData) {
+            const role = (profileData as any).role;
+            if (role) {
+              finalRole = role;
+              setUserRole(role);
+              localStorage.setItem('currentUserRole', role);
+            }
+            if ((profileData as any).super_admin === true) {
+              setIsSuperAdmin(true);
+            }
+          }
+        }
+
+        // If role is "user", fetch companies from assigned active campaigns
+        if (finalRole === 'user') {
+          // Fetch all campaigns where user is assigned and status is "live" (active)
+          const { data: campaignsData, error: campaignsError } = await supabase
+            .from("campaigns")
+            .select("id, users, status, brand")
+            .eq("status", "live")
+            .order("created_at", { ascending: false });
+
+          if (!campaignsError && campaignsData) {
+            const companyNames = new Set<string>();
+            campaignsData.forEach((campaign: any) => {
+              const users = campaign.users;
+              if (Array.isArray(users)) {
+                const isAssigned = users.some((userItem: any) => 
+                  userItem.id === user.id || userItem.user_id === user.id
+                );
+                // Only add company if user is assigned AND campaign is active
+                if (isAssigned && campaign.status === "live" && campaign.brand) {
+                  companyNames.add(campaign.brand);
+                }
+              }
+            });
+            setAssignedCampaignCompanies(companyNames);
+          }
+        }
+      } catch (err) {
+        console.error("Product: Error fetching user role/assigned companies", err);
+      }
+    };
+
+    if (user?.id) {
+      fetchUserRoleAndCompanies();
+    }
+  }, [user?.id]);
+
+  // Filter products based on user role for counts
+  const productsForCounts = useMemo(() => {
+    // If user role is "user", only count products from companies in assigned active campaigns
+    if (userRole === 'user' && assignedCampaignCompanies.size > 0) {
+      return products.filter((prod) => {
+        return prod.company && assignedCampaignCompanies.has(prod.company);
+      });
+    }
+    // For admin/super_admin, use all products
+    return products;
+  }, [products, userRole, assignedCampaignCompanies]);
+
   const categoryCount = useMemo(() => {
     const set = new Set<string>();
-    products.forEach((prod) => {
+    productsForCounts.forEach((prod) => {
       if (prod.category) set.add(prod.category);
     });
     return set.size;
-  }, [products]);
+  }, [productsForCounts]);
 
-  const activeCount = useMemo(() => products.filter((prod) => prod.status === 'active').length, [products]);
-  const inactiveCount = useMemo(() => products.filter((prod) => prod.status === 'inactive').length, [products]);
+  const activeCount = useMemo(() => productsForCounts.filter((prod) => prod.status === 'active').length, [productsForCounts]);
+  const inactiveCount = useMemo(() => productsForCounts.filter((prod) => prod.status === 'inactive').length, [productsForCounts]);
   
   const companyCount = useMemo(() => {
     const set = new Set<string>();
-    products.forEach((prod) => {
+    productsForCounts.forEach((prod) => {
       if (prod.company) set.add(prod.company);
     });
     return set.size;
-  }, [products]);
+  }, [productsForCounts]);
 
   const companyList = useMemo(() => {
     const set = new Set<string>();
@@ -194,7 +276,7 @@ const Product = () => {
     {
       id: "products",
       title: "Total Products",
-      value: products.length,
+      value: productsForCounts.length,
       subtext: `${activeCount} active, ${inactiveCount} inactive`,
       trend: "Product catalog",
       icon: ShoppingCart,
@@ -211,9 +293,19 @@ const Product = () => {
   }, [products]);
 
   const filteredProducts = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    let filtered = products;
 
-    return products.filter((prod) => {
+    // If user role is "user", only show products from companies in assigned active campaigns
+    if (userRole === 'user' && assignedCampaignCompanies.size > 0) {
+      filtered = filtered.filter((prod) => {
+        // Only show products if company matches assigned campaign companies
+        return prod.company && assignedCampaignCompanies.has(prod.company);
+      });
+    }
+
+    // Apply search filter
+    const term = searchTerm.trim().toLowerCase();
+    filtered = filtered.filter((prod) => {
       const matchesSearch =
         term.length === 0 ||
         (prod.name ?? '').toLowerCase().includes(term) ||
@@ -226,7 +318,9 @@ const Product = () => {
 
       return matchesSearch && matchesCategory;
     });
-  }, [products, searchTerm, categoryFilter]);
+
+    return filtered;
+  }, [products, searchTerm, categoryFilter, userRole, assignedCampaignCompanies]);
 
   const resetForm = () => {
     setFormData({

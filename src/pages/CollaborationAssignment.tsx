@@ -148,6 +148,9 @@ const CollaborationAssignment = () => {
   const [isContractSent, setIsContractSent] = useState<boolean>(false);
   const [updatedCollaborationIds, setUpdatedCollaborationIds] = useState<Set<string>>(new Set());
   const [filledCollaborationIds, setFilledCollaborationIds] = useState<Set<string>>(new Set());
+  const [influencerSignedStatus, setInfluencerSignedStatus] = useState<Map<string, boolean>>(new Map());
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userAssignedCollaborationIds, setUserAssignedCollaborationIds] = useState<Set<string>>(new Set());
   const [isEmailDialogOpen, setIsEmailDialogOpen] = useState<boolean>(false);
   const [isEditingEmail, setIsEditingEmail] = useState<boolean>(false);
   const [emailViewMode, setEmailViewMode] = useState<'simple' | 'html'>('simple');
@@ -338,34 +341,67 @@ const CollaborationAssignment = () => {
     return null;
   }, [campaign?.id, id, campaignKey]);
 
-  const influencer: CampaignInfluencerRef | null = useMemo(() => {
+  // Sorted influencers list (unsigned first)
+  const sortedInfluencers = useMemo(() => {
     if (!campaign || !campaign.influencers.length) {
+      return [];
+    }
+    
+    let filtered = [...campaign.influencers];
+    
+    // If user role is "user", only show influencers with collaboration entries assigned to this user
+    if (userRole === 'user' && userAssignedCollaborationIds.size > 0 && campaignKey) {
+      filtered = filtered.filter((inf) => {
+        const influencerKey = inf.pid ?? inf.id ?? "none";
+        // Check if any collaboration_id starts with campaignKey-influencerKey-
+        // This matches the format: campaignKey-influencerKey-contractKey
+        const prefix = `${campaignKey}-${influencerKey}-`;
+        return Array.from(userAssignedCollaborationIds).some((collabId) => 
+          collabId.startsWith(prefix)
+        );
+      });
+    }
+    
+    // Create a copy and sort: unsigned (false/null) first, then signed (true)
+    return filtered.sort((a, b) => {
+      const aKey = a.id || a.pid || "";
+      const bKey = b.id || b.pid || "";
+      const aSigned = influencerSignedStatus.get(aKey) ?? false;
+      const bSigned = influencerSignedStatus.get(bKey) ?? false;
+      // Unsigned (false) comes before signed (true)
+      if (aSigned === bSigned) return 0;
+      return aSigned ? 1 : -1;
+    });
+  }, [campaign?.influencers, influencerSignedStatus, userRole, userAssignedCollaborationIds, campaignKey]);
+
+  const influencer: CampaignInfluencerRef | null = useMemo(() => {
+    if (!sortedInfluencers.length) {
       return null;
     }
-    // If influencerId is provided in state, find that influencer, otherwise use first one
+    // If influencerId is provided in state, find that influencer, otherwise use first one (which will be unsigned)
     if (state.influencerId) {
-      const found = campaign.influencers.find(
+      const found = sortedInfluencers.find(
         (inf) => inf.id === state.influencerId || inf.pid === state.influencerId
       );
       if (found) return found;
     }
-    return campaign.influencers[0];
-  }, [campaign, state.influencerId]);
+    return sortedInfluencers[0];
+  }, [sortedInfluencers, state.influencerId]);
 
-  // Get current influencer index and navigation info
+  // Get current influencer index and navigation info (using sorted list)
   const influencerNavigation = useMemo(() => {
-    if (!campaign || !campaign.influencers.length || !influencer) {
+    if (!sortedInfluencers.length || !influencer) {
       return { currentIndex: -1, hasPrevious: false, hasNext: false, previousInfluencer: null, nextInfluencer: null };
     }
-    const currentIndex = campaign.influencers.findIndex(
+    const currentIndex = sortedInfluencers.findIndex(
       (inf) => inf.id === influencer.id || inf.pid === influencer.pid
     );
     const hasPrevious = currentIndex > 0;
-    const hasNext = currentIndex < campaign.influencers.length - 1;
-    const previousInfluencer = hasPrevious ? campaign.influencers[currentIndex - 1] : null;
-    const nextInfluencer = hasNext ? campaign.influencers[currentIndex + 1] : null;
+    const hasNext = currentIndex < sortedInfluencers.length - 1;
+    const previousInfluencer = hasPrevious ? sortedInfluencers[currentIndex - 1] : null;
+    const nextInfluencer = hasNext ? sortedInfluencers[currentIndex + 1] : null;
     return { currentIndex, hasPrevious, hasNext, previousInfluencer, nextInfluencer };
-  }, [campaign, influencer]);
+  }, [sortedInfluencers, influencer]);
 
   const resolvedInfluencerId = useMemo(() => {
     if (isUuid(influencer?.id)) {
@@ -481,6 +517,55 @@ const CollaborationAssignment = () => {
       try {
         const { data } = await supabase.auth.getUser();
         setCurrentUserId(data?.user?.id ?? null);
+
+        // Fetch user role and assigned collaboration IDs
+        if (data?.user?.id) {
+          try {
+            // Get role from localStorage first
+            let finalRole: string | null = null;
+            const cachedRole = localStorage.getItem('currentUserRole');
+            if (cachedRole && (cachedRole === 'admin' || cachedRole === 'super_admin' || cachedRole === 'user')) {
+              finalRole = cachedRole;
+              setUserRole(cachedRole);
+            } else {
+              // Fetch from Supabase
+              const { data: profileData, error: profileError } = await supabase
+                .from("user_profiles")
+                .select("role")
+                .eq("user_id", data.user.id)
+                .maybeSingle();
+
+              if (!profileError && profileData) {
+                const role = (profileData as any).role;
+                if (role) {
+                  finalRole = role;
+                  setUserRole(role);
+                  localStorage.setItem('currentUserRole', role);
+                }
+              }
+            }
+
+            // If role is "user", fetch collaboration IDs assigned to this user
+            if (finalRole === 'user' && data.user.id) {
+              const { data: actionsData, error: actionsError } = await supabase
+                .from("collaboration_actions")
+                .select("collaboration_id")
+                .eq("user_id", data.user.id);
+
+              if (!actionsError && actionsData) {
+                const assignedIds = new Set<string>();
+                actionsData.forEach((action: any) => {
+                  if (action.collaboration_id) {
+                    assignedIds.add(action.collaboration_id);
+                  }
+                });
+                setUserAssignedCollaborationIds(assignedIds);
+              }
+            }
+          } catch (err) {
+            console.error("CollaborationAssignment: Error fetching user role/assigned collaborations", err);
+          }
+        }
       } catch (error) {
         console.error("CollaborationAssignment: Unable to fetch current user", error);
         setCurrentUserId(null);
@@ -789,6 +874,50 @@ const CollaborationAssignment = () => {
 
     fetchSignedStatus();
   }, [collaborationId]);
+
+  // Fetch signed status for all influencers in the campaign
+  useEffect(() => {
+    const fetchAllSignedStatus = async () => {
+      if (!campaign || !campaign.influencers.length || !campaignKey || !resolvedContractPid) {
+        return;
+      }
+
+      try {
+        const statusMap = new Map<string, boolean>();
+        
+        // Fetch signed status for all influencers
+        const promises = campaign.influencers.map(async (inf) => {
+          const influencerKey = inf.pid ?? inf.id ?? "none";
+          const collabId = `${campaignKey}-${influencerKey}-${resolvedContractPid}`;
+          const infKey = inf.id || inf.pid || "";
+          
+          try {
+            const { data, error } = await (supabase as any)
+              .from("collaboration_actions")
+              .select("is_signed")
+              .eq("collaboration_id", collabId)
+              .maybeSingle();
+
+            if (!error && data) {
+              statusMap.set(infKey, data.is_signed === true);
+            } else {
+              statusMap.set(infKey, false);
+            }
+          } catch (err) {
+            console.error(`Error fetching signed status for influencer ${infKey}:`, err);
+            statusMap.set(infKey, false);
+          }
+        });
+
+        await Promise.all(promises);
+        setInfluencerSignedStatus(statusMap);
+      } catch (err) {
+        console.error("Error fetching all signed statuses:", err);
+      }
+    };
+
+    fetchAllSignedStatus();
+  }, [campaign?.influencers, campaignKey, resolvedContractPid]);
 
 
   const handleActionSubmit = async () => {

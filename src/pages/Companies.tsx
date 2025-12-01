@@ -41,6 +41,7 @@ const Companies = () => {
   const { user } = useAuth();
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
+  const [assignedCampaignCompanies, setAssignedCampaignCompanies] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState<boolean>(false);
@@ -71,33 +72,74 @@ const Companies = () => {
   const [isImporting, setIsImporting] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Fetch user profile to check role
+  // Fetch user profile to check role and assigned campaign companies
   useEffect(() => {
-    const fetchUserProfile = async () => {
+    const fetchUserProfileAndCompanies = async () => {
       if (!user?.id) return;
 
       try {
-        const { data: profileData, error } = await supabase
-          .from('user_profiles')
-          .select('role, super_admin')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        // Get role from localStorage first
+        let finalRole: string | null = null;
+        const cachedRole = localStorage.getItem('currentUserRole');
+        if (cachedRole && (cachedRole === 'admin' || cachedRole === 'super_admin' || cachedRole === 'user')) {
+          finalRole = cachedRole;
+          setUserRole(cachedRole);
+        } else {
+          // Fetch from Supabase
+          const { data: profileData, error } = await supabase
+            .from('user_profiles')
+            .select('role, super_admin')
+            .eq('user_id', user.id)
+            .maybeSingle();
 
-        if (error) {
-          console.error('Error fetching user profile:', error);
-          return;
+          if (error) {
+            console.error('Error fetching user profile:', error);
+            return;
+          }
+
+          if (profileData) {
+            const role = profileData.role || null;
+            finalRole = role;
+            setUserRole(role);
+            if (role) {
+              localStorage.setItem('currentUserRole', role);
+            }
+            setIsSuperAdmin(profileData.super_admin === true);
+          }
         }
 
-        if (profileData) {
-          setUserRole(profileData.role || null);
-          setIsSuperAdmin(profileData.super_admin === true);
+        // If role is "user", fetch companies from assigned active campaigns
+        if (finalRole === 'user') {
+          // Fetch all campaigns where user is assigned and status is "live" (active)
+          const { data: campaignsData, error: campaignsError } = await supabase
+            .from("campaigns")
+            .select("id, users, status, brand")
+            .eq("status", "live")
+            .order("created_at", { ascending: false });
+
+          if (!campaignsError && campaignsData) {
+            const companyNames = new Set<string>();
+            campaignsData.forEach((campaign: any) => {
+              const users = campaign.users;
+              if (Array.isArray(users)) {
+                const isAssigned = users.some((userItem: any) => 
+                  userItem.id === user.id || userItem.user_id === user.id
+                );
+                // Only add company if user is assigned AND campaign is active
+                if (isAssigned && campaign.status === "live" && campaign.brand) {
+                  companyNames.add(campaign.brand);
+                }
+              }
+            });
+            setAssignedCampaignCompanies(companyNames);
+          }
         }
       } catch (err) {
-        console.error('Error fetching user profile:', err);
+        console.error('Companies: Error fetching user profile/assigned companies', err);
       }
     };
 
-    fetchUserProfile();
+    fetchUserProfileAndCompanies();
   }, [user?.id]);
 
   useEffect(() => {
@@ -128,7 +170,14 @@ const Companies = () => {
     fetchCompanies();
   }, [toast]);
 
-  const companyCount = companies.length;
+  const companyCount = useMemo(() => {
+    // If user role is "user", only count companies from assigned active campaigns
+    if (userRole === 'user' && assignedCampaignCompanies.size > 0) {
+      return companies.filter((company) => assignedCampaignCompanies.has(company.name)).length;
+    }
+    // For admin/super_admin, show all companies count
+    return companies.length;
+  }, [companies, userRole, assignedCampaignCompanies]);
 
   const summaryTiles = [
     {
@@ -143,8 +192,19 @@ const Companies = () => {
   ];
 
   const filteredCompanies = useMemo(() => {
-    return companies.filter((company) => {
-      const term = searchTerm.toLowerCase();
+    let filtered = companies;
+
+    // If user role is "user", only show companies from assigned active campaigns
+    if (userRole === 'user' && assignedCampaignCompanies.size > 0) {
+      filtered = filtered.filter((company) => {
+        // Only show companies if name matches assigned campaign companies
+        return assignedCampaignCompanies.has(company.name);
+      });
+    }
+
+    // Apply search filter
+    const term = searchTerm.toLowerCase();
+    filtered = filtered.filter((company) => {
       const matchesSearch =
         company.name.toLowerCase().includes(term) ||
         company.description?.toLowerCase().includes(term) ||
@@ -154,7 +214,9 @@ const Companies = () => {
 
       return matchesSearch;
     });
-  }, [companies, searchTerm]);
+
+    return filtered;
+  }, [companies, searchTerm, userRole, assignedCampaignCompanies]);
 
   const resetForm = () => {
     setFormData({

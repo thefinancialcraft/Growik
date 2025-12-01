@@ -211,6 +211,7 @@ const Contract = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
   const [contractToDelete, setContractToDelete] = useState<Contract | null>(null);
+  const [assignedCampaignContractIds, setAssignedCampaignContractIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   useEffect(() => {
@@ -536,6 +537,52 @@ const Contract = () => {
     };
   }, [user?.id, authLoading, navigate, signOut, location.pathname]);
 
+  // Fetch assigned campaign contract IDs for role "user"
+  useEffect(() => {
+    const fetchAssignedCampaignContracts = async () => {
+      if (!user?.id || !profile) return;
+
+      try {
+        // Get role from profile
+        const finalRole = profile.role;
+
+        // If role is "user", fetch contract IDs from assigned active campaigns
+        if (finalRole === 'user') {
+          // Fetch all campaigns where user is assigned and status is "live" (active)
+          const { data: campaignsData, error: campaignsError } = await supabase
+            .from("campaigns")
+            .select("id, users, status, contract_id")
+            .eq("status", "live")
+            .order("created_at", { ascending: false });
+
+          if (!campaignsError && campaignsData) {
+            const contractIds = new Set<string>();
+            campaignsData.forEach((campaign: any) => {
+              const users = campaign.users;
+              if (Array.isArray(users)) {
+                const isAssigned = users.some((userItem: any) => 
+                  userItem.id === user.id || userItem.user_id === user.id
+                );
+                // Only add contract_id if user is assigned AND campaign is active AND contract_id exists
+                if (isAssigned && campaign.status === "live" && campaign.contract_id) {
+                  contractIds.add(campaign.contract_id);
+                }
+              }
+            });
+            setAssignedCampaignContractIds(contractIds);
+          }
+        } else {
+          // For admin/super_admin, clear the filter (show all contracts)
+          setAssignedCampaignContractIds(new Set());
+        }
+      } catch (err) {
+        console.error('Contract: Error fetching assigned campaign contracts', err);
+      }
+    };
+
+    fetchAssignedCampaignContracts();
+  }, [user?.id, profile]);
+
   // Fetch contract counts when profile is available
   useEffect(() => {
     if (!user?.id || !profile) return;
@@ -561,8 +608,13 @@ const Contract = () => {
           .select('*', { count: 'exact', head: true })
           .eq('status', 'draft');
 
-        // RLS policy allows all authenticated users to view all contracts
-        // No need for explicit filtering - all users can see all contracts
+        // For role "user", filter by assigned campaign contract IDs
+        if (profile.role === 'user' && assignedCampaignContractIds.size > 0) {
+          const contractIdsArray = Array.from(assignedCampaignContractIds);
+          activeQuery = activeQuery.in('id', contractIdsArray);
+          inactiveQuery = inactiveQuery.in('id', contractIdsArray);
+          draftQuery = draftQuery.in('id', contractIdsArray);
+        }
 
         const [activeResult, inactiveResult, draftResult] = await Promise.all([
           activeQuery,
@@ -583,7 +635,7 @@ const Contract = () => {
 
     fetchContractCounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, profile?.role, profile?.super_admin]);
+  }, [user?.id, profile?.role, profile?.super_admin, assignedCampaignContractIds]);
 
   // Fetch contracts list
   useEffect(() => {
@@ -781,10 +833,22 @@ const Contract = () => {
       }
 
       // Fetch counts
+      let activeQuery = supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'active');
+      let inactiveQuery = supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'inactive');
+      let draftQuery = supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'draft');
+
+      // For role "user", filter by assigned campaign contract IDs
+      if (profile && profile.role === 'user' && assignedCampaignContractIds.size > 0) {
+        const contractIdsArray = Array.from(assignedCampaignContractIds);
+        activeQuery = activeQuery.in('id', contractIdsArray);
+        inactiveQuery = inactiveQuery.in('id', contractIdsArray);
+        draftQuery = draftQuery.in('id', contractIdsArray);
+      }
+
       const [activeResult, inactiveResult, draftResult] = await Promise.all([
-        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'inactive'),
-        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'draft')
+        activeQuery,
+        inactiveQuery,
+        draftQuery
       ]);
 
       setActiveContracts(activeResult.count || 0);
@@ -807,14 +871,30 @@ const Contract = () => {
     }
   };
 
-  // Filter contracts based on search query
-  const filteredContracts = contracts.filter(contract => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return contract.contract_name.toLowerCase().includes(query) ||
-           (contract.description && contract.description.toLowerCase().includes(query)) ||
-           ((contract.pid ?? "").toLowerCase().includes(query));
-  });
+  // Filter contracts based on search query and user role
+  const filteredContracts = useMemo(() => {
+    let filtered = contracts;
+
+    // If user role is "user", only show contracts from assigned active campaigns
+    if (profile && profile.role === 'user' && assignedCampaignContractIds.size > 0) {
+      filtered = filtered.filter((contract) => {
+        // Only show contracts if id matches assigned campaign contract IDs
+        return assignedCampaignContractIds.has(contract.id);
+      });
+    }
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(contract => {
+        return contract.contract_name.toLowerCase().includes(query) ||
+               (contract.description && contract.description.toLowerCase().includes(query)) ||
+               ((contract.pid ?? "").toLowerCase().includes(query));
+      });
+    }
+
+    return filtered;
+  }, [contracts, searchQuery, profile, assignedCampaignContractIds]);
 
   // Handle delete contract
   const handleDeleteContract = async () => {
