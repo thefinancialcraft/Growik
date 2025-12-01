@@ -2841,13 +2841,13 @@ const CollaborationAssignment = () => {
                                     {isContractSent ? "Resend" : "Send Contract"}
                                   </Button>
                                   {!isSigned && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={handleFillContract}
-                                    >
-                                      Fill Contract
-                                    </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleFillContract}
+                                  >
+                                    Fill Contract
+                                  </Button>
                                   )}
                                   <Button
                                     size="sm"

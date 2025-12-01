@@ -262,6 +262,36 @@ const CampaignDetail = () => {
   }>({ total: 0, signed: 0, pending: 0 });
   const [loadingStats, setLoadingStats] = useState<boolean>(false);
 
+  // Helper to normalize campaign_id the same way as CollaborationAssignment
+  const isUuid = (value: string | undefined | null): value is string =>
+    Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
+
+  const toDeterministicUuid = (input: string): string => {
+    const hash = input.split("").reduce((acc, char) => {
+      const h = (acc << 5) - acc + char.charCodeAt(0);
+      return h & h;
+    }, 0);
+    const hex = Math.abs(hash).toString(16).padStart(32, "0");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((Math.abs(hash) % 4) + 8)
+      .toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  };
+
+  // This should match how collaboration_actions.campaign_id is written
+  const resolvedCampaignIdForStats = useMemo(() => {
+    const campaignKey = campaign?.id ?? id ?? null;
+
+    if (isUuid(campaign?.id)) {
+      return campaign!.id;
+    }
+    if (isUuid(id ?? null)) {
+      return id as string;
+    }
+    if (campaignKey) {
+      return toDeterministicUuid(`campaign:${campaignKey}`);
+    }
+    return null;
+  }, [campaign?.id, id]);
+
   useEffect(() => {
     if (campaign || !id) {
       return;
@@ -309,18 +339,15 @@ const CampaignDetail = () => {
   // Fetch collaboration statistics
   useEffect(() => {
     const fetchCollabStats = async () => {
-      if (!campaign?.id) return;
+      if (!resolvedCampaignIdForStats) return;
 
       setLoadingStats(true);
       try {
-        // Extract campaign key from campaign ID
-        const campaignKey = campaign.id;
-        
         // Fetch all collaboration actions for this campaign
         const { data, error: statsError } = await supabase
           .from("collaboration_actions")
           .select("is_signed, collaboration_id")
-          .eq("campaign_id", campaignKey);
+          .eq("campaign_id", resolvedCampaignIdForStats);
 
         if (statsError) {
           console.error("Error fetching collaboration stats:", statsError);
@@ -714,33 +741,33 @@ const CampaignDetail = () => {
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         {/* Total Collaborations */}
-                        <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2">
-                          <div className="flex items-center justify-between">
+                        <div className="flex flex-col justify-between h-full rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2">
+                          <div className="flex items-center justify-between mb-1">
                             <p className="text-sm font-medium text-slate-600">Total Collaborations</p>
                             <Users className="h-5 w-5 text-slate-400" />
                           </div>
-                          <p className="text-3xl font-bold text-slate-900">{collabStats.total}</p>
-                          <p className="text-xs text-slate-500">All collaborations</p>
+                          <p className="text-3xl font-bold text-slate-900 leading-none">{collabStats.total}</p>
+                          <p className="mt-1 text-xs text-slate-500">All collaborations</p>
                         </div>
 
                         {/* Signed Collaborations */}
-                        <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 space-y-2">
-                          <div className="flex items-center justify-between">
+                        <div className="flex flex-col justify-between h-full rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 space-y-2">
+                          <div className="flex items-center justify-between mb-1">
                             <p className="text-sm font-medium text-emerald-700">Signed</p>
                             <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                           </div>
-                          <p className="text-3xl font-bold text-emerald-700">{collabStats.signed}</p>
-                          <p className="text-xs text-emerald-600">Contracts signed</p>
+                          <p className="text-3xl font-bold text-emerald-700 leading-none">{collabStats.signed}</p>
+                          <p className="mt-1 text-xs text-emerald-600">Contracts signed</p>
                         </div>
 
                         {/* Pending Collaborations */}
-                        <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 space-y-2">
-                          <div className="flex items-center justify-between">
+                        <div className="flex flex-col justify-between h-full rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 space-y-2">
+                          <div className="flex items-center justify-between mb-1">
                             <p className="text-sm font-medium text-amber-700">Pending</p>
                             <Clock className="h-5 w-5 text-amber-500" />
                           </div>
-                          <p className="text-3xl font-bold text-amber-700">{collabStats.pending}</p>
-                          <p className="text-xs text-amber-600">Awaiting signature</p>
+                          <p className="text-3xl font-bold text-amber-700 leading-none">{collabStats.pending}</p>
+                          <p className="mt-1 text-xs text-amber-600">Awaiting signature</p>
                         </div>
                       </div>
                     )}

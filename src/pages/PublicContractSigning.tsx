@@ -396,18 +396,31 @@ const PublicContractSigning = () => {
                     const existingSpanRegex = new RegExp(`<span[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>.*?</span>`, "gi");
                     html = html.replace(existingSpanRegex, replacement);
                 } else if (entry.editable) {
-                    // Make it clickable for the signer
-                    const replacement = `<span class="signature-box-clickable cursor-pointer text-blue-600 border-b border-blue-600" data-signature-key="${entry.key}">[Click to Sign]</span>`;
+                    // Make it look like a proper signature box & clickable for the signer
+                    const replacement = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${entry.key}" style="cursor: pointer; transition: all 0.2s;">--</span>`;
+                    // Replace placeholder with clickable signature box
                     html = html.replace(regex, replacement);
-                    // Also replace any existing signature images for this key
-                    const existingImgRegex1 = new RegExp(`<img[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>`, "gi");
+                    // Also replace any existing signature images for this key with the box
+                    const existingImgRegex1 = new RegExp(
+                        `<img[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}"[^>]*>`,
+                        "gi"
+                    );
                     html = html.replace(existingImgRegex1, replacement);
                     // Replace images that might be signatures (if we have an old value)
                     if (entry.value && entry.value.startsWith("data:image")) {
-                        const escapedOldSrc = entry.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                        const existingImgRegex2 = new RegExp(`<img[^>]*src="${escapedOldSrc}"[^>]*>`, "gi");
+                        const escapedOldSrc = entry.value.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+                        const existingImgRegex2 = new RegExp(
+                            `<img[^>]*src="${escapedOldSrc}"[^>]*>`,
+                            "gi"
+                        );
                         html = html.replace(existingImgRegex2, replacement);
                     }
+                    // Replace any old span-based signature boxes for this key to ensure consistent structure
+                    const existingSpanRegexEditable = new RegExp(
+                        `<span[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}"[^>]*>[\\s\\S]*?<\\/span>`,
+                        "gi"
+                    );
+                    html = html.replace(existingSpanRegexEditable, replacement);
                 } else {
                     // Non-editable signature, use value if available
                     const val = entry.value;
@@ -665,30 +678,87 @@ const PublicContractSigning = () => {
                 });
 
                 // Generate complete HTML with all variables filled
-                // Start with original contract content (clean, without nested HTML structure)
-                // Don't use contractPreviewHtml as it might have nested structure
-                let completeHtml = originalContractContent || contractContent;
+                // IMPORTANT: We need to fetch the FULL contract_html from database to preserve all content
+                // Don't use originalContractContent as it might have been stripped of content
+                let completeHtml = '';
                 
-                // Ensure we're working with clean content (not nested HTML)
-                if (completeHtml.includes('<!DOCTYPE html>') || (completeHtml.includes('<html') && completeHtml.includes('</html>'))) {
-                    // Extract content from nested HTML structure
-                    const bodyMatch = completeHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-                    if (bodyMatch && bodyMatch[1]) {
-                        let bodyContent = bodyMatch[1];
-                        // Extract from tiptap-rendered div
-                        const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
-                        if (tiptapMatch && tiptapMatch[1]) {
-                            completeHtml = tiptapMatch[1];
-                        } else {
-                            // Try contract-preview-container
-                            const containerMatch = bodyContent.match(/<div[^>]*class=["'][^"']*contract-preview-container[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
-                            if (containerMatch && containerMatch[1]) {
-                                completeHtml = containerMatch[1];
+                try {
+                    // Fetch the current contract_html from database to get the full contract
+                    const { data: currentContractData, error: fetchError } = await (supabase as any)
+                        .from("collaboration_variable_overrides")
+                        .select("contract_html")
+                        .eq("collaboration_id", collaborationId)
+                        .eq("variable_key", "all_variables")
+                        .maybeSingle();
+                    
+                    if (!fetchError && currentContractData?.contract_html) {
+                        // Extract clean content from the full HTML document
+                        let fullHtml = currentContractData.contract_html;
+                        
+                        // Extract from nested HTML structure recursively
+                        let extractionDepth = 0;
+                        while ((fullHtml.includes('<!DOCTYPE html>') || (fullHtml.includes('<html') && fullHtml.includes('</html>'))) && extractionDepth < 3) {
+                            extractionDepth++;
+                            const bodyMatch = fullHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                            if (bodyMatch && bodyMatch[1]) {
+                                let bodyContent = bodyMatch[1];
+                                const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                if (tiptapMatch && tiptapMatch[1]) {
+                                    fullHtml = tiptapMatch[1];
+                                } else {
+                                    const containerMatch = bodyContent.match(/<div[^>]*class=["'][^"']*contract-preview-container[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                    if (containerMatch && containerMatch[1]) {
+                                        fullHtml = containerMatch[1];
+                                    } else {
+                                        fullHtml = bodyContent;
+                                    }
+                                }
                             } else {
-                                completeHtml = bodyContent;
+                                break;
                             }
                         }
+                        
+                        completeHtml = fullHtml;
+                        console.log("Loaded full contract from database, length:", completeHtml.length);
+                    } else {
+                        // Fallback to originalContractContent or contractContent
+                        completeHtml = originalContractContent || contractContent || '';
+                        
+                        // Ensure we're working with clean content (not nested HTML)
+                        if (completeHtml.includes('<!DOCTYPE html>') || (completeHtml.includes('<html') && completeHtml.includes('</html>'))) {
+                            const bodyMatch = completeHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                            if (bodyMatch && bodyMatch[1]) {
+                                let bodyContent = bodyMatch[1];
+                                const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                if (tiptapMatch && tiptapMatch[1]) {
+                                    completeHtml = tiptapMatch[1];
+                                } else {
+                                    const containerMatch = bodyContent.match(/<div[^>]*class=["'][^"']*contract-preview-container[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                    if (containerMatch && containerMatch[1]) {
+                                        completeHtml = containerMatch[1];
+                                    } else {
+                                        completeHtml = bodyContent;
+                                    }
+                                }
+                            }
+                        }
+                        console.log("Using fallback content, length:", completeHtml.length);
                     }
+                } catch (fetchErr) {
+                    console.error("Error fetching contract from database:", fetchErr);
+                    // Fallback to originalContractContent
+                    completeHtml = originalContractContent || contractContent || '';
+                    console.log("Using fallback after error, length:", completeHtml.length);
+                }
+                
+                if (!completeHtml || completeHtml.length < 100) {
+                    console.error("Warning: completeHtml is too short or empty:", completeHtml.length);
+                    toast({
+                        title: "Warning",
+                        description: "Contract content is missing. Please refresh the page.",
+                        variant: "destructive",
+                    });
+                    return;
                 }
                 
                 console.log("Base HTML for signature replacement, length:", completeHtml.length);
@@ -1239,12 +1309,107 @@ const PublicContractSigning = () => {
                     </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-4 md:p-8 shadow-inner min-h-[60vh] w-full overflow-x-auto" style={{ width: '100%', maxWidth: '100%' }}>
+                <style>{`
+                    .contract-preview-container .tiptap-rendered .signature-box,
+                    .contract-preview-container .tiptap-rendered [data-signature="true"] {
+                      display: inline-block !important;
+                      width: 200px !important;
+                      height: 140px !important;
+                      border: 1px solid #9ca3af !important;
+                      background-color: transparent !important;
+                      border-radius: 3px !important;
+                      padding: 2px !important;
+                      text-align: center !important;
+                      vertical-align: middle !important;
+                      line-height: 136px !important;
+                      font-size: 10px !important;
+                      color: #6b7280 !important;
+                      box-sizing: border-box !important;
+                      margin-top: 20px !important;
+                      margin-bottom: 20px !important;
+                      margin-left: 25px !important;
+                      margin-right: 25px !important;
+                      min-width: 200px !important;
+                      white-space: nowrap !important;
+                      flex-shrink: 0 !important;
+                    }
+                    .contract-preview-container .tiptap-rendered .signature-box + .signature-box,
+                    .contract-preview-container .tiptap-rendered [data-signature="true"] + [data-signature="true"] {
+                      margin-left: 50px !important;
+                    }
+                    .contract-preview-container .tiptap-rendered span[style*="font-size: 10px"] {
+                      white-space: nowrap !important;
+                      display: inline-block !important;
+                    }
+                    .contract-preview-container .tiptap-rendered {
+                      overflow-x: auto !important;
+                    }
+                    .contract-preview-container .tiptap-rendered .signature-box-clickable:hover {
+                      background-color: rgba(59, 130, 246, 0.1) !important;
+                      border-color: #3b82f6 !important;
+                    }
+                    .contract-preview-container {
+                      background: rgba(255, 255, 255, 0.95);
+                      border-radius: 24px;
+                      border: 1px solid #e2e8f0;
+                      padding: 24px;
+                      box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+                    }
+                    .contract-preview-container .tiptap-rendered {
+                      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                      font-size: 11.5pt;
+                      line-height: 1.7;
+                      color: #111827;
+                      word-break: break-word;
+                    }
+                `}</style>
+                <div className="contract-preview-container rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-inner min-h-[60vh] w-full" style={{ width: '100%', maxWidth: '100%' }}>
                     <div
                         ref={previewRef}
-                        className="prose prose-lg max-w-none w-full"
+                        className="tiptap-rendered w-full"
                         style={{ maxWidth: '100%', width: '100%' }}
-                        dangerouslySetInnerHTML={{ __html: contractPreviewHtml }}
+                        dangerouslySetInnerHTML={{ 
+                            __html: (() => {
+                                // Extract clean content from nested HTML structure if present
+                                let html = contractPreviewHtml || '';
+                                
+                                // If HTML has nested structure (full document), extract the inner content
+                                if (html.includes('<!DOCTYPE html>') || (html.includes('<html') && html.includes('</html>'))) {
+                                    // Extract from body tag
+                                    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+                                    if (bodyMatch && bodyMatch[1]) {
+                                        let bodyContent = bodyMatch[1];
+                                        // Extract from tiptap-rendered div if present
+                                        const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                        if (tiptapMatch && tiptapMatch[1]) {
+                                            html = tiptapMatch[1];
+                                        } else {
+                                            // Try contract-preview-container
+                                            const containerMatch = bodyContent.match(/<div[^>]*class=["'][^"']*contract-preview-container[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                            if (containerMatch && containerMatch[1]) {
+                                                html = containerMatch[1];
+                                            } else {
+                                                html = bodyContent;
+                                            }
+                                        }
+                                    }
+                                } else if (html.includes('tiptap-rendered')) {
+                                    // Extract from tiptap-rendered div if it's not a full document
+                                    const tiptapMatch = html.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                    if (tiptapMatch && tiptapMatch[1]) {
+                                        html = tiptapMatch[1];
+                                    }
+                                } else if (html.includes('contract-preview-container')) {
+                                    // Extract from contract-preview-container if tiptap-rendered not found
+                                    const containerMatch = html.match(/<div[^>]*class=["'][^"']*contract-preview-container[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
+                                    if (containerMatch && containerMatch[1]) {
+                                        html = containerMatch[1];
+                                    }
+                                }
+                                
+                                return html;
+                            })()
+                        }}
                         onClick={(e) => {
                             // Fallback click handler using React events
                             const target = e.target as HTMLElement;
