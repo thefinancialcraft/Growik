@@ -3512,52 +3512,52 @@ const Collaboration = () => {
 
         <div className="flex-1 lg:ml-56">
           <Header />
-          <main className="container mx-auto w-full px-4 py-8">
+          <main className="container mx-auto w-full px-3 sm:px-4 py-4 pb-24 lg:pb-8">
           {loading ? (
             <div className="flex items-center justify-center py-24">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Loading collaboration workspace...</span>
+                <span className="text-xs sm:text-sm">Loading collaboration workspace...</span>
                         </div>
                       </div>
           ) : error ? (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-6 text-sm text-destructive">
+            <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-6 text-xs sm:text-sm text-destructive">
               {error}
                     </div>
                   ) : (
             <>
               {/* Collaboration Actions Table */}
               <Card className="border-none bg-gradient-to-br from-white/95 to-slate-100">
-                <div className="p-6 space-y-4">
+                <div className="p-4 sm:p-6 space-y-3 sm:space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-xl font-semibold text-slate-900">Collaboration Actions</h2>
-                      <p className="text-sm text-slate-500">All actions recorded in collaboration_actions table.</p>
+                      <h2 className="text-lg sm:text-xl font-semibold text-slate-900">Collaboration Actions</h2>
+                      <p className="text-xs sm:text-sm text-slate-500 hidden sm:block">All actions recorded in collaboration_actions table.</p>
                     </div>
                   </div>
 
                   {/* Search, Filter, Export Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="relative w-full md:max-w-xs">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-2 sm:gap-3">
+                    <div className="relative w-full sm:max-w-xs">
+                      <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 text-slate-400" />
                       <Input
                         value={collabSearch}
                         onChange={(event) => setCollabSearch(event.target.value)}
                         placeholder="Search collaborations..."
-                        className="pl-9 bg-white"
+                        className="pl-8 sm:pl-9 bg-white h-8 sm:h-9 text-xs sm:text-sm"
                       />
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
                       <Button
                         type="button"
                         variant="outline"
-                        className="h-9 gap-2"
+                        className="h-8 sm:h-9 gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 flex-1 sm:flex-initial"
                         onClick={() => setIsFilterDialogOpen(true)}
                       >
-                        <Filter className="h-4 w-4" />
-                        Filters
+                        <Filter className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                        <span className="hidden sm:inline">Filters</span>
                         {(filters.company || filters.influencer || filters.user || filters.isSigned || filters.campaign || filters.contract) && (
-                          <span className="ml-1 h-5 w-5 rounded-full bg-primary text-xs text-primary-foreground flex items-center justify-center">
+                          <span className="ml-0.5 sm:ml-1 h-4 w-4 sm:h-5 sm:w-5 rounded-full bg-primary text-[10px] sm:text-xs text-primary-foreground flex items-center justify-center">
                             {[filters.company, filters.influencer, filters.user, filters.isSigned, filters.campaign, filters.contract].filter(Boolean).length}
                           </span>
                         )}
@@ -3565,121 +3565,122 @@ const Collaboration = () => {
                       <Button
                         type="button"
                         variant="outline"
-                        className="h-9 gap-2"
+                        className="h-8 sm:h-9 gap-1.5 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 flex-1 sm:flex-initial"
                         onClick={handleExportCollab}
                         disabled={filteredCollaborationActions.length === 0}
                       >
-                        <Download className="h-4 w-4" />
-                        Export
+                        <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                        <span className="hidden sm:inline">Export</span>
                       </Button>
                     </div>
                   </div>
 
                     {collaborationActionsLoading ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                      <div className="flex items-center justify-center py-6 sm:py-8">
+                        <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin text-slate-400" />
                           </div>
                     ) : filteredCollaborationActions.length > 0 ? (
-                      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead className="bg-slate-50 border-b border-slate-200">
-                              <tr>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700 w-12">
-                                  <input
-                                    type="checkbox"
-                                    checked={
-                                      filteredCollaborationActions.length > 0 &&
-                                      filteredCollaborationActions.every((action) =>
-                                        selectedCollabActions.has(action.id)
-                                      )
-                                    }
-                                    onChange={(e) => handleSelectAllCollab(e.target.checked)}
-                                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
-                                  />
-                                </th>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Campaign</th>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Company</th>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Contract</th>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Influencer</th>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Action</th>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Collaboration ID</th>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700">User Name</th>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Date & Time</th>
-                                <th className="px-4 py-3 text-left font-semibold text-slate-700">Actions</th>
-                              </tr>
-                            </thead>
+                      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden w-full max-w-[350px] mx-auto lg:max-w-none">
+                        <div className="overflow-x-auto w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
+                          <div className="inline-block min-w-full">
+                            <table className="min-w-[800px] w-full text-xs sm:text-sm">
+                              <thead className="bg-slate-50 border-b border-slate-200">
+                                <tr>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 w-10 sm:w-12">
+                                    <input
+                                      type="checkbox"
+                                      checked={
+                                        filteredCollaborationActions.length > 0 &&
+                                        filteredCollaborationActions.every((action) =>
+                                          selectedCollabActions.has(action.id)
+                                        )
+                                      }
+                                      onChange={(e) => handleSelectAllCollab(e.target.checked)}
+                                      className="h-3.5 w-3.5 sm:h-4 sm:w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                                    />
+                                  </th>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 whitespace-nowrap">Campaign</th>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 whitespace-nowrap hidden md:table-cell">Company</th>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 whitespace-nowrap hidden lg:table-cell">Contract</th>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 whitespace-nowrap">Influencer</th>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 whitespace-nowrap">Action</th>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 whitespace-nowrap hidden lg:table-cell">Collaboration ID</th>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 whitespace-nowrap hidden md:table-cell">User Name</th>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 whitespace-nowrap">Date & Time</th>
+                                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700 whitespace-nowrap">Actions</th>
+                                </tr>
+                              </thead>
                             <tbody className="divide-y divide-slate-200">
                               {filteredCollaborationActions.map((action) => (
                                 <tr 
                                   key={action.id} 
                                   className="hover:bg-slate-50 transition-colors"
                                 >
-                                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                  <td className="px-2 sm:px-4 py-2 sm:py-3" onClick={(e) => e.stopPropagation()}>
                                     <input
                                       type="checkbox"
                                       checked={selectedCollabActions.has(action.id)}
                                       onChange={(e) => handleSelectCollab(action.id, e.target.checked)}
-                                      className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                                      className="h-3.5 w-3.5 sm:h-4 sm:w-4 rounded border-slate-300 text-primary focus:ring-primary"
                                     />
                                   </td>
                                   <td 
-                                    className="px-4 py-3 text-slate-700 font-medium cursor-pointer"
+                                    className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 font-medium cursor-pointer text-xs sm:text-sm"
                                     onClick={() => handleRowClick(action)}
                                   >
-                                    {action.campaign_name || <span className="text-slate-400">—</span>}
+                                    <span className="truncate max-w-[120px] sm:max-w-none block">{action.campaign_name || <span className="text-slate-400">—</span>}</span>
                                   </td>
                                   <td 
-                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    className="px-2 sm:px-4 py-2 sm:py-3 text-slate-600 cursor-pointer text-xs sm:text-sm hidden md:table-cell"
                                     onClick={() => handleRowClick(action)}
                                   >
                                     {action.company_name || <span className="text-slate-400">—</span>}
                                   </td>
                                   <td 
-                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    className="px-2 sm:px-4 py-2 sm:py-3 text-slate-600 cursor-pointer text-xs sm:text-sm hidden lg:table-cell"
                                     onClick={() => handleRowClick(action)}
                                   >
                                     {action.contract_name || <span className="text-slate-400">—</span>}
                                   </td>
                                   <td 
-                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    className="px-2 sm:px-4 py-2 sm:py-3 text-slate-600 cursor-pointer text-xs sm:text-sm"
                                     onClick={() => handleRowClick(action)}
                                   >
-                                    {action.influencer_name || <span className="text-slate-400">—</span>}
+                                    <span className="truncate max-w-[100px] sm:max-w-none block">{action.influencer_name || <span className="text-slate-400">—</span>}</span>
                                   </td>
                                   <td 
-                                    className="px-4 py-3 cursor-pointer"
+                                    className="px-2 sm:px-4 py-2 sm:py-3 cursor-pointer"
                                     onClick={() => handleRowClick(action)}
                                   >
-                                    <Badge variant="outline" className="capitalize">
+                                    <Badge variant="outline" className="capitalize text-[10px] sm:text-xs">
                                       {action.action ? action.action.replace('_', ' ') : '—'}
                                     </Badge>
                                   </td>
                                   <td 
-                                    className="px-4 py-3 text-slate-600 font-mono text-xs cursor-pointer"
+                                    className="px-2 sm:px-4 py-2 sm:py-3 text-slate-600 font-mono text-[10px] sm:text-xs cursor-pointer hidden lg:table-cell"
                                     onClick={() => handleRowClick(action)}
                                   >
-                                    {action.collaboration_id}
+                                    <span className="truncate max-w-[150px] block">{action.collaboration_id}</span>
                                   </td>
                                   <td 
-                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    className="px-2 sm:px-4 py-2 sm:py-3 text-slate-600 cursor-pointer text-xs sm:text-sm hidden md:table-cell"
                                     onClick={() => handleRowClick(action)}
                                   >
                                     {action.user_name || <span className="text-slate-400">—</span>}
                                   </td>
                                   <td 
-                                    className="px-4 py-3 text-slate-600 cursor-pointer"
+                                    className="px-2 sm:px-4 py-2 sm:py-3 text-slate-600 cursor-pointer text-[10px] sm:text-xs"
                                     onClick={() => handleRowClick(action)}
                                   >
                                     {new Date(action.occurred_at).toLocaleString()}
                                   </td>
-                                  <td className="px-4 py-3">
-                                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                  <td className="px-2 sm:px-4 py-2 sm:py-3">
+                                    <div className="flex items-center gap-1 sm:gap-2" onClick={(e) => e.stopPropagation()}>
                                       {/* Contract Fill/View Button */}
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-8 w-8 p-0"
+                                        className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           e.preventDefault();
@@ -3696,7 +3697,7 @@ const Collaboration = () => {
                                         title={action.has_contract_html ? "View Contract" : "Fill Contract"}
                                       >
                                         <FileText 
-                                          className={`h-4 w-4 ${action.has_contract_html ? 'text-blue-600' : 'text-slate-400'}`} 
+                                          className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${action.has_contract_html ? 'text-blue-600' : 'text-slate-400'}`} 
                                         />
                                       </Button>
 
@@ -3704,7 +3705,7 @@ const Collaboration = () => {
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-8 w-8 p-0"
+                                        className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           e.preventDefault();
@@ -3720,14 +3721,14 @@ const Collaboration = () => {
                                         }}
                                         title="Change User ID"
                                       >
-                                        <UserCog className="h-4 w-4 text-slate-600" />
+                                        <UserCog className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-slate-600" />
                                       </Button>
 
                                       {/* Delete Button */}
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-8 w-8 p-0"
+                                        className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           e.preventDefault();
@@ -3739,14 +3740,14 @@ const Collaboration = () => {
                                         }}
                                         title="Delete Action"
                                       >
-                                        <Trash2 className="h-4 w-4 text-red-500" />
+                                        <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-red-500" />
                                       </Button>
 
                                       {/* Signed Status Button */}
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-8 w-8 p-0"
+                                        className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           e.preventDefault();
@@ -3760,14 +3761,14 @@ const Collaboration = () => {
                                       >
                                         {action.is_signed ? (
                                           <div className="relative inline-flex items-center justify-center">
-                                            <div className="h-4 w-4 rounded-full bg-green-600 flex items-center justify-center">
-                                              <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <div className="h-3.5 w-3.5 sm:h-4 sm:w-4 rounded-full bg-green-600 flex items-center justify-center">
+                                              <svg className="h-2 sm:h-2.5 w-2 sm:w-2.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                                 <path d="M9 12l2 2 4-4" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
                                               </svg>
                                             </div>
                                           </div>
                                         ) : (
-                                          <Circle className="h-4 w-4 text-slate-400" />
+                                          <Circle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-slate-400" />
                                         )}
                                       </Button>
                                     </div>
@@ -3776,10 +3777,11 @@ const Collaboration = () => {
                               ))}
                             </tbody>
                           </table>
+                        </div>
                     </div>
                   </div>
                     ) : (
-                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-8 text-center text-xs text-slate-400">
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 sm:px-4 py-6 sm:py-8 text-center text-xs sm:text-sm text-slate-400">
                         {collabSearch.trim()
                           ? "No collaboration actions match your search."
                           : "No collaboration actions recorded yet."}

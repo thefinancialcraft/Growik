@@ -2967,97 +2967,97 @@ const CollaborationAssignment = () => {
 
         <div className="flex-1 lg:ml-56">
           <Header />
-          <main className="container mx-auto w-full px-4 py-8">
+          <main className="container mx-auto w-full px-3 sm:px-4 py-4 sm:py-8 pb-24 lg:pb-8">
             {loading ? (
               <div className="flex items-center justify-center py-24">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>Loading collaboration assignment...</span>
+                  <span className="text-xs sm:text-sm">Loading collaboration assignment...</span>
                 </div>
               </div>
             ) : error ? (
-              <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-6 text-sm text-destructive">
+              <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-6 text-xs sm:text-sm text-destructive">
                 {error}
               </div>
             ) : !campaign ? (
               <Card className="border-none bg-gradient-to-br from-white/95 to-slate-100">
-                <div className="p-6 space-y-4">
-                  <h2 className="text-xl font-semibold text-slate-900">No campaign selected</h2>
-                  <p className="text-sm text-slate-500">
+                <div className="p-4 sm:p-6 space-y-3 sm:space-y-4">
+                  <h2 className="text-lg sm:text-xl font-semibold text-slate-900">No campaign selected</h2>
+                  <p className="text-xs sm:text-sm text-slate-500">
                     Choose a campaign from the campaigns list to manage collaboration details.
                   </p>
-                  <Button size="sm" className="bg-primary text-white hover:bg-primary/90" onClick={() => navigate("/campaign")}>
+                  <Button size="sm" className="bg-primary text-white hover:bg-primary/90 text-xs sm:text-sm h-8 sm:h-9" onClick={() => navigate("/campaign")}>
                     Go to Campaigns
                   </Button>
                 </div>
               </Card>
             ) : (
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-                <Card className="border-none bg-gradient-to-br from-white/95 to-slate-100">
-                  <div className="p-6 space-y-5">
-                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <h2 className="text-xl font-semibold text-slate-900">Assigned Influencer</h2>
-                        <p className="text-sm text-slate-500">
+              <div className="grid gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+                <Card className="border-none to-slate-100">
+                  <div className=" sm:p-6 space-y-4 sm:space-y-5 w-full">
+                    <div className="flex flex-col gap-2 sm:gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <h2 className="text-lg sm:text-xl font-semibold text-slate-900">Assigned Influencer</h2>
+                        <p className="text-xs sm:text-sm text-slate-500 hidden sm:block">
                           Showing the first collaborator assigned to this campaign.
                         </p>
-                        <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                            <p className="font-semibold text-slate-700">Campaign ID</p>
-                            <p className="text-[11px] text-slate-500 break-all">
+                        <div className="mt-2 sm:mt-3 grid gap-2 text-xs text-slate-500 grid-cols-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 shadow-sm">
+                            <p className="font-semibold text-slate-700 text-[10px] sm:text-xs">Campaign ID</p>
+                            <p className="text-[9px] sm:text-[11px] text-slate-500 break-all line-clamp-2">
                               {campaignKey ?? resolvedCampaignId ?? "Unknown"}
                             </p>
                           </div>
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                            <p className="font-semibold text-slate-700">Collaboration ID</p>
-                            <p className="text-[11px] text-slate-500 break-all">
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 shadow-sm">
+                            <p className="font-semibold text-slate-700 text-[10px] sm:text-xs">Collaboration ID</p>
+                            <p className="text-[9px] sm:text-[11px] text-slate-500 break-all line-clamp-2">
                               {collaborationId ?? "Not generated"}
                             </p>
                           </div>
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                            <p className="font-semibold text-slate-700">Influencer PID</p>
-                            <p className="text-[11px] text-slate-500 break-all">
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 shadow-sm">
+                            <p className="font-semibold text-slate-700 text-[10px] sm:text-xs">Influencer PID</p>
+                            <p className="text-[9px] sm:text-[11px] text-slate-500 break-all line-clamp-2">
                               {influencer?.pid ?? influencer?.id ?? "Not assigned"}
                             </p>
                           </div>
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                            <p className="font-semibold text-slate-700">Contract PID</p>
-                            <p className="text-[11px] text-slate-500 break-all">
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 shadow-sm">
+                            <p className="font-semibold text-slate-700 text-[10px] sm:text-xs">Contract PID</p>
+                            <p className="text-[9px] sm:text-[11px] text-slate-500 break-all line-clamp-2">
                               {resolvedContractPid ?? (contractMeta?.id ? "Fetching..." : "No contract linked")}
                             </p>
                           </div>
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                            <p className="font-semibold text-slate-700">Employee ID</p>
-                            <p className="text-[11px] text-slate-500 break-all">
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 sm:px-3 py-1.5 sm:py-2 shadow-sm">
+                            <p className="font-semibold text-slate-700 text-[10px] sm:text-xs">Employee ID</p>
+                            <p className="text-[9px] sm:text-[11px] text-slate-500 break-all line-clamp-2">
                               {campaign?.users?.[0]?.employeeId ?? "Not assigned"}
                             </p>
                           </div>
                         </div>
                       </div>
                       {influencer && (
-                        <Badge className="rounded-full bg-emerald-100 text-emerald-700 border-emerald-200 capitalize">
+                        <Badge className="rounded-full bg-emerald-100 text-emerald-700 border-emerald-200 capitalize text-[10px] sm:text-xs px-2 sm:px-3 py-0.5 sm:py-1 shrink-0">
                           Status: {influencer.status ?? "--"}
                         </Badge>
                       )}
                     </div>
 
                     {influencer ? (
-                      <div className="space-y-4 rounded-3xl border border-slate-200 bg-white/90 p-5">
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3">
-                              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary shadow">
+                      <div className="space-y-3 sm:space-y-4 rounded-2xl sm:rounded-3xl border border-slate-200 bg-white/90 p-3 sm:p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
+                          <div className="space-y-1.5 sm:space-y-2 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <span className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-primary/10 text-primary shadow shrink-0">
                                 {influencer.name.charAt(0).toUpperCase()}
                               </span>
-                              <div>
-                                <p className="text-lg font-semibold text-slate-900">{influencer.name}</p>
-                                <p className="text-sm text-slate-500">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-base sm:text-lg font-semibold text-slate-900 truncate">{influencer.name}</p>
+                                <p className="text-xs sm:text-sm text-slate-500 truncate">
                                   Influencer PID: {influencer.pid ?? influencer.id ?? "Not provided"}
                                 </p>
                               </div>
                             </div>
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 shadow-sm">
-                              <p>
+                            <div className="rounded-xl sm:rounded-2xl border border-slate-200 bg-slate-50 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-slate-600 shadow-sm">
+                              <p className="text-[10px] sm:text-xs">
                                 Email:{" "}
                                 {influencer.email ? (
                                   <button
@@ -3068,7 +3068,8 @@ const CollaborationAssignment = () => {
                                       const zohoMailUrl = `https://mail.zoho.in/zm/comp.do?ct=${encodeURIComponent(mailtoLink)}`;
                                       window.open(zohoMailUrl, '_blank', 'noopener,noreferrer');
                                     }}
-                                    className="font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
+                                    className="font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0 text-left truncate max-w-[200px] sm:max-w-none"
+                                    title={influencer.email}
                                   >
                                     {influencer.email}
                                   </button>
@@ -3076,14 +3077,14 @@ const CollaborationAssignment = () => {
                                   <span className="font-medium">Not provided</span>
                                 )}
                               </p>
-                              <p className="text-xs text-slate-500">
+                              <p className="text-[10px] sm:text-xs text-slate-500">
                                 Contact:{" "}
                                 {influencer.handles.length ? (
                                   <a
                                     href={influencer.handles[0].url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-primary hover:underline cursor-pointer break-all"
+                                    className="text-primary hover:underline cursor-pointer break-all line-clamp-1"
                                   >
                                     {influencer.handles[0].url}
                                   </a>
@@ -3094,13 +3095,13 @@ const CollaborationAssignment = () => {
                             </div>
                           </div>
                           {influencer.country && (
-                            <Badge className="rounded-full bg-primary/10 text-primary border-primary/20 text-xs px-3 py-1">
+                            <Badge className="rounded-full bg-primary/10 text-primary border-primary/20 text-[10px] sm:text-xs px-2 sm:px-3 py-0.5 sm:py-1 shrink-0">
                               {influencer.country}
                             </Badge>
                           )}
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[10px] sm:text-xs text-slate-500">
                           <span className="uppercase tracking-wide text-slate-400">Platforms</span>
                           {influencer.handles.length ? (
                             influencer.handles.map((handle) => {
@@ -3111,70 +3112,70 @@ const CollaborationAssignment = () => {
                                   src={meta.icon}
                                   alt={meta.label}
                                   title={meta.label}
-                                  className="h-6 w-6 rounded-full border border-slate-200 bg-white p-[2px] shadow-sm"
+                                  className="h-5 w-5 sm:h-6 sm:w-6 rounded-full border border-slate-200 bg-white p-[2px] shadow-sm"
                                 />
                               ) : (
                                 <span
                                   key={`${influencer.id}-${handle.platform}`}
-                                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] capitalize shadow-sm"
+                                  className="rounded-full border border-slate-200 bg-white px-2 sm:px-3 py-0.5 sm:py-1 text-[9px] sm:text-[11px] capitalize shadow-sm"
                                 >
                                   {meta.label}
                                 </span>
                               );
                             })
                           ) : (
-                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px]">
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] sm:text-[11px]">
                               No platforms
                             </span>
                           )}
                         </div>
 
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div className="rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 text-sm text-slate-700 shadow-sm">
-                            <p className="text-xs uppercase tracking-wide text-slate-400">Latest update</p>
-                            <p className="mt-2 leading-snug">
+                        <div className="grid gap-2 sm:gap-3 grid-cols-1 md:grid-cols-2">
+                          <div className="rounded-xl sm:rounded-2xl border border-slate-200 bg-white/95 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-slate-700 shadow-sm">
+                            <p className="text-[10px] sm:text-xs uppercase tracking-wide text-slate-400">Latest update</p>
+                            <p className="mt-1 sm:mt-2 leading-snug text-[10px] sm:text-xs">
                               {influencer.status === "pending"
                                 ? "Awaiting contract confirmation"
                                 : "No recent updates"}
                             </p>
                           </div>
-                          <div className="rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 text-sm text-slate-700 shadow-sm">
-                            <p className="text-xs uppercase tracking-wide text-slate-400">Internal notes</p>
-                            <p className="mt-2 leading-snug">
+                          <div className="rounded-xl sm:rounded-2xl border border-slate-200 bg-white/95 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-slate-700 shadow-sm">
+                            <p className="text-[10px] sm:text-xs uppercase tracking-wide text-slate-400">Internal notes</p>
+                            <p className="mt-1 sm:mt-2 leading-snug text-[10px] sm:text-xs">
                               Capture outreach notes and next steps here once CRM sync is connected.
                             </p>
                           </div>
                         </div>
 
-                        <div className="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 text-sm text-slate-700 shadow-sm space-y-3">
-                          <p className="text-xs uppercase tracking-wide text-slate-400">Actions</p>
-                          <div className="space-y-4">
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-3">
+                        <div className="rounded-xl sm:rounded-2xl  bg-white/95 sm:px-4 py-3 sm:py-4 text-xs sm:text-sm text-slate-700 shadow-sm space-y-2 sm:space-y-3">
+                          <p className="text-[10px] sm:text-xs uppercase tracking-wide text-slate-400">Actions</p>
+                          <div className="space-y-3 sm:space-y-4">
+                            <div className="rounded-xl sm:rounded-2xl border border-slate-200 bg-slate-50 px-3 sm:px-4 py-2 sm:py-3 space-y-2 sm:space-y-3">
                               <Select value={selectedAction || undefined} onValueChange={(value) => setSelectedAction(value as ActionOption)}>
-                                <SelectTrigger>
+                                <SelectTrigger className="h-8 sm:h-10 text-xs sm:text-sm">
                                   <SelectValue placeholder="Select an action" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="interested">Interested</SelectItem>
-                                  <SelectItem value="not_interested">Not Interested</SelectItem>
-                                  <SelectItem value="callback">Callback</SelectItem>
-                                  <SelectItem value="done">Done</SelectItem>
+                                  <SelectItem value="interested" className="text-xs sm:text-sm">Interested</SelectItem>
+                                  <SelectItem value="not_interested" className="text-xs sm:text-sm">Not Interested</SelectItem>
+                                  <SelectItem value="callback" className="text-xs sm:text-sm">Callback</SelectItem>
+                                  <SelectItem value="done" className="text-xs sm:text-sm">Done</SelectItem>
                                 </SelectContent>
                               </Select>
                               {selectedAction === "callback" && (
-                                <div className="grid gap-2 md:grid-cols-2">
+                                <div className="grid gap-2 grid-cols-1 sm:grid-cols-2">
                                   <Input
                                     type="date"
                                     value={callbackDate}
                                     onChange={(event) => setCallbackDate(event.target.value)}
-                                    className="w-full"
+                                    className="w-full text-xs sm:text-sm h-8 sm:h-10"
                                     aria-label="Select callback date"
                                   />
                                   <Input
                                     type="time"
                                     value={callbackTime}
                                     onChange={(event) => setCallbackTime(event.target.value)}
-                                    className="w-full"
+                                    className="w-full text-xs sm:text-sm h-8 sm:h-10"
                                     aria-label="Select callback time"
                                   />
                                 </div>
@@ -3184,11 +3185,12 @@ const CollaborationAssignment = () => {
                                 placeholder="Add remarks..."
                                 value={actionRemark}
                                 onChange={(event) => setActionRemark(event.target.value)}
+                                className="text-xs sm:text-sm min-h-[60px] sm:min-h-[80px]"
                               />
                               <div className="flex justify-end">
                                 <Button
                                   size="sm"
-                                  className="bg-primary text-white hover:bg-primary/90"
+                                  className="bg-primary text-white hover:bg-primary/90 text-xs sm:text-sm h-8 sm:h-9 px-3 sm:px-4"
                                   onClick={handleActionSubmit}
                                   disabled={
                                     !selectedAction ||
@@ -3200,12 +3202,12 @@ const CollaborationAssignment = () => {
                                 </Button>
                               </div>
                             </div>
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 space-y-3">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex flex-wrap items-center gap-2">
+                            <div className="rounded-xl sm:rounded-2xl border border-slate-200 bg-slate-50 px-3 sm:px-4 py-2 sm:py-3 space-y-2 sm:space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                                   <Button
                                     size="sm"
-                                    className="bg-primary text-white hover:bg-primary/90"
+                                    className="bg-primary text-white hover:bg-primary/90 text-[10px] sm:text-sm h-7 sm:h-9 px-2 sm:px-3"
                                     onClick={handleSendContract}
                                   >
                                     {isContractSent ? "Resend" : "Send Contract"}
@@ -3215,10 +3217,10 @@ const CollaborationAssignment = () => {
                                       size="sm"
                                       variant="outline"
                                       onClick={handleFillContract}
-                                      className={areAllVariablesFilled ? "border-green-500 text-green-700 hover:bg-green-50" : ""}
+                                      className={`text-[10px] sm:text-sm h-7 sm:h-9 px-2 sm:px-3 ${areAllVariablesFilled ? "border-green-500 text-green-700 hover:bg-green-50" : ""}`}
                                     >
                                       {areAllVariablesFilled && (
-                                        <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />
+                                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 text-green-600" />
                                       )}
                                       Fill Contract
                                     </Button>
@@ -3236,33 +3238,36 @@ const CollaborationAssignment = () => {
                                       );
                                     }}
                                     disabled={!collaborationId}
+                                    className="text-[10px] sm:text-sm h-7 sm:h-9 px-2 sm:px-3"
                                   >
                                     View Contract
                                   </Button>
                                   {isSigned && (
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-100 text-green-800 rounded-md">
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-green-100 text-green-800 rounded-md">
+                                      <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                       </svg>
-                                      <span className="text-sm font-semibold">Contract Signed</span>
+                                      <span className="text-[10px] sm:text-sm font-semibold">Contract Signed</span>
                                     </div>
                                   )}
                                 </div>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     onClick={handlePreviousInfluencer}
                                     disabled={!influencerNavigation.hasPrevious}
                                     title="Previous Influencer"
+                                    className="text-[10px] sm:text-sm h-7 sm:h-9 px-2 sm:px-3"
                                   >
-                                    <ChevronLeft className="h-4 w-4 mr-1" />
+                                    <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4 mr-0.5 sm:mr-1" />
                                     Previous
                                   </Button>
                                   {collaborationId && (updatedCollaborationIds.has(collaborationId) || isSigned || filledCollaborationIds.has(collaborationId)) && (
                                     <Button
                                       size="sm"
                                       variant="outline"
+                                      className="text-[10px] sm:text-sm h-7 sm:h-9 px-2 sm:px-3"
                                       onClick={async () => {
                                         if (!collaborationId) {
                                           toast({
@@ -3415,31 +3420,32 @@ const CollaborationAssignment = () => {
                                     onClick={handleNextInfluencer}
                                     disabled={!influencerNavigation.hasNext}
                                     title="Next Influencer"
+                                    className="text-[10px] sm:text-sm h-7 sm:h-9 px-2 sm:px-3"
                                   >
                                     Next
-                                    <ChevronRight className="h-4 w-4 ml-1" />
+                                    <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4 ml-0.5 sm:ml-1" />
                                   </Button>
                                 </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 sm:px-3 py-1.5 sm:py-2 text-[10px] sm:text-xs text-slate-500">
                           {lastAction ? (
                             <>
-                              <p className="font-semibold text-slate-700">{lastAction.label}</p>
-                              <p>{lastAction.timestamp}</p>
+                              <p className="font-semibold text-slate-700 text-[10px] sm:text-xs">{lastAction.label}</p>
+                              <p className="text-[9px] sm:text-xs">{lastAction.timestamp}</p>
                               {lastAction.remark && (
-                                <p className="mt-1 text-slate-500">Remark: {lastAction.remark}</p>
+                                <p className="mt-0.5 sm:mt-1 text-slate-500 text-[9px] sm:text-xs">Remark: {lastAction.remark}</p>
                               )}
                             </>
                           ) : (
-                            <p>No recent actions recorded.</p>
+                            <p className="text-[9px] sm:text-xs">No recent actions recorded.</p>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-12 text-center text-sm text-slate-500">
+                      <div className="rounded-xl sm:rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-8 sm:py-12 text-center text-xs sm:text-sm text-slate-500">
                         No influencers assigned to this campaign yet.
                       </div>
                     )}
@@ -3447,13 +3453,13 @@ const CollaborationAssignment = () => {
                 </Card>
 
                 <Card className="border-none bg-gradient-to-b from-white/95 to-slate-100">
-                  <div className="p-6 space-y-4 flex flex-col h-full">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h2 className="text-xl font-semibold text-slate-900">Timeline</h2>
-                        <p className="text-sm text-slate-500">Key steps in the collaboration workflow.</p>
+                  <div className="p-4 sm:p-6 space-y-3 sm:space-y-4 flex flex-col h-full">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h2 className="text-lg sm:text-xl font-semibold text-slate-900">Timeline</h2>
+                        <p className="text-xs sm:text-sm text-slate-500 hidden sm:block">Key steps in the collaboration workflow.</p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -3462,8 +3468,9 @@ const CollaborationAssignment = () => {
                           }}
                           disabled={timelineLoading}
                           title="Refresh Timeline"
+                          className="h-7 w-7 sm:h-9 sm:w-9 p-0"
                         >
-                          <RefreshCw className={`h-4 w-4 ${timelineLoading ? 'animate-spin' : ''}`} />
+                          <RefreshCw className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${timelineLoading ? 'animate-spin' : ''}`} />
                         </Button>
                         <Button
                           size="sm"
@@ -3475,20 +3482,21 @@ const CollaborationAssignment = () => {
                           }}
                           disabled={timelineLoading || timelineEntries.length === 0}
                           title="Clear Timeline"
+                          className="h-7 w-7 sm:h-9 sm:w-9 p-0"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </Button>
                       </div>
                     </div>
                     {timelineLoading ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+                      <div className="flex items-center justify-center py-6 sm:py-8">
+                        <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin text-slate-400" />
                       </div>
                     ) : (
-                      <ScrollArea className="flex-1 h-[calc(100vh-280px)] min-h-[400px] max-h-[600px]">
-                        <div className="relative pl-4 pr-4">
+                      <ScrollArea className="flex-1 h-[calc(100vh-280px)] min-h-[300px] sm:min-h-[400px] max-h-[500px] sm:max-h-[600px]">
+                        <div className="relative pl-3 sm:pl-4 pr-2 sm:pr-4">
                           <span className="absolute left-0 top-2 bottom-2 w-px bg-slate-200" />
-                          <div className="space-y-5">
+                          <div className="space-y-3 sm:space-y-5">
                             {timelineEntries.length > 0 ? (
                               timelineEntries.map((entry) => {
                                 const timestamp = new Date(entry.occurred_at).toLocaleString();
@@ -3509,25 +3517,25 @@ const CollaborationAssignment = () => {
                                   }
                                 };
                                 return (
-                                  <div key={entry.id} className="relative rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
-                                    <span className="absolute -left-[9px] top-4 h-4 w-4 rounded-full border border-white bg-primary shadow flex items-center justify-center text-[10px] text-white">
+                                  <div key={entry.id} className="relative rounded-xl sm:rounded-2xl border border-slate-200 bg-white/90 p-2.5 sm:p-4 shadow-sm">
+                                    <span className="absolute -left-[7px] sm:-left-[9px] top-3 sm:top-4 h-3 w-3 sm:h-4 sm:w-4 rounded-full border border-white bg-primary shadow flex items-center justify-center text-[8px] sm:text-[10px] text-white">
                                       {getActionIcon()}
                                     </span>
-                                    <div className="ml-2 space-y-1">
-                                      <h3 className="text-sm font-semibold text-slate-900">{entry.description}</h3>
+                                    <div className="ml-1.5 sm:ml-2 space-y-0.5 sm:space-y-1">
+                                      <h3 className="text-xs sm:text-sm font-semibold text-slate-900 line-clamp-2">{entry.description}</h3>
                                       {entry.remark && (
-                                        <p className="text-xs text-slate-500 leading-snug">Remark: {entry.remark}</p>
+                                        <p className="text-[10px] sm:text-xs text-slate-500 leading-snug line-clamp-2">Remark: {entry.remark}</p>
                                       )}
                                       {entry.action && (
-                                        <p className="text-xs text-slate-500 leading-snug">Action: {entry.action.replace('_', ' ')}</p>
+                                        <p className="text-[10px] sm:text-xs text-slate-500 leading-snug">Action: {entry.action.replace('_', ' ')}</p>
                                       )}
-                                      <p className="text-xs text-slate-400">{timestamp}</p>
+                                      <p className="text-[9px] sm:text-xs text-slate-400">{timestamp}</p>
                                     </div>
                                   </div>
                                 );
                               })
                             ) : (
-                              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-8 text-center text-xs text-slate-400">
+                              <div className="rounded-xl sm:rounded-2xl border border-dashed border-slate-200 bg-white/80 px-3 py-6 sm:py-8 text-center text-[10px] sm:text-xs text-slate-400">
                                 No timeline entries yet. Actions and updates will appear here.
                               </div>
                             )}
