@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import MobileNav from "@/components/MobileNav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
@@ -1280,141 +1281,168 @@ const Campaign = () => {
             </div>
           )}
           <section className="space-y-6">
-            <div className="relative overflow-hidden rounded-3xl bg-primary text-white">
+            <div className="relative overflow-hidden rounded-2xl lg:rounded-3xl bg-primary text-white">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.22),transparent_58%)]" />
               <div className="absolute -bottom-20 -left-20 h-60 w-60 rounded-full bg-white/15 blur-3xl" />
-              <div className="relative p-6 sm:p-8 space-y-8">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/60">
+              <div className="relative p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8">
+                <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-2 sm:space-y-3">
+                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">
                       Campaign Control Center
                     </p>
-                    <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">
-                      Campaign performance at a glance
+                    <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">
+                      Campaign Management Hub
                     </h1>
-                    <p className="text-sm sm:text-base text-white/80 max-w-2xl">
+                    <p className="text-sm sm:text-base text-white/80 max-w-2xl hidden sm:block">
                       Monitor budgets, timelines, and influencer collaboration metrics for every live activation.
                     </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge className="rounded-full border border-white/30 bg-white/15 px-3 py-1 text-xs font-semibold text-white/90">
-                        {campaigns.length} active briefs
-                      </Badge>
-                      <Badge className="rounded-full border border-white/30 bg-white/15 px-3 py-1 text-xs font-semibold text-white/90">
-                        {liveCount} live campaigns
-                      </Badge>
-                      <Badge className="rounded-full border border-white/30 bg-white/15 px-3 py-1 text-xs font-semibold text-white/90">
-                        {totalUsers + totalInfluencers} collaborators engaged
-                      </Badge>
-                    </div>
                   </div>
-                  <div className="flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 max-w-sm">
+                  {/* Desktop: Stats Card */}
+                  <div className="hidden lg:flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 min-w-[240px]">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold">Average Influencers</span>
+                      <span className="font-semibold">Total Campaigns</span>
+                      <span>{campaigns.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-white/80">
+                      <span>Live</span>
+                      <span>{liveCount}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-white/80">
+                      <span>Scheduled</span>
+                      <span>{scheduledCount}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-white/80">
+                      <span>Completed</span>
+                      <span>{completedCount}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-white/80">
+                      <span>Avg Influencers</span>
                       <span>{averageInfluencers}</span>
                     </div>
-                    <Separator className="bg-white/20" />
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs uppercase tracking-wide text-white/70">Live</span>
-                        <span className="text-sm font-semibold">{liveCount}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs uppercase tracking-wide text-white/70">Scheduled</span>
-                        <span className="text-sm font-semibold">{scheduledCount}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs uppercase tracking-wide text-white/70">Completed</span>
-                        <span className="text-sm font-semibold">{completedCount}</span>
-                      </div>
+                    <div className="flex items-center justify-between text-xs text-white/70 border-t border-white/20 pt-3 mt-2">
+                      <span>Collaborators</span>
+                      <span>{totalUsers + totalInfluencers}</span>
+                    </div>
+                  </div>
+                  {/* Mobile: Compact Stats */}
+                  <div className="lg:hidden flex items-center justify-between gap-3 rounded-xl border border-white/30 bg-white/10 p-3 backdrop-blur-lg text-xs text-white/90">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">Total:</span>
+                      <span>{campaigns.length}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-white/80">
+                      <span>L:{liveCount}</span>
+                      <span>•</span>
+                      <span>S:{scheduledCount}</span>
+                      <span>•</span>
+                      <span>C:{completedCount}</span>
                     </div>
                   </div>
                 </div>
+
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
+                  <Card className="relative overflow-hidden bg-white/90 px-2 py-2.5 sm:px-4 sm:py-4 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1">
+                    <div className="absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br from-emerald-500/90 to-teal-500/60" />
+                    <div className="relative flex items-start justify-between gap-2 sm:gap-3">
+                      <div className="space-y-0.5 sm:space-y-2 flex-1 min-w-0">
+                        <p className="text-[9px] sm:text-[11px] uppercase tracking-wide text-slate-500 truncate">Live</p>
+                        <p className="text-sm sm:text-2xl font-semibold text-slate-900">{liveCount}</p>
+                        <p className="text-[9px] sm:text-[11px] text-slate-500 line-clamp-1 hidden sm:block">Actively delivering</p>
+                      </div>
+                      <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl text-white bg-gradient-to-br from-emerald-500/90 to-teal-500/60">
+                        <Clock className="h-4 w-4 sm:h-5 sm:w-5" />
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card className="relative overflow-hidden bg-white/90 px-2 py-2.5 sm:px-4 sm:py-4 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1">
+                    <div className="absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br from-blue-500/90 to-indigo-500/60" />
+                    <div className="relative flex items-start justify-between gap-2 sm:gap-3">
+                      <div className="space-y-0.5 sm:space-y-2 flex-1 min-w-0">
+                        <p className="text-[9px] sm:text-[11px] uppercase tracking-wide text-slate-500 truncate">Scheduled</p>
+                        <p className="text-sm sm:text-2xl font-semibold text-slate-900">{scheduledCount}</p>
+                        <p className="text-[9px] sm:text-[11px] text-slate-500 line-clamp-1 hidden sm:block">Awaiting kick-off</p>
+                      </div>
+                      <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl text-white bg-gradient-to-br from-blue-500/90 to-indigo-500/60">
+                        <Calendar className="h-4 w-4 sm:h-5 sm:w-5" />
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card className="relative overflow-hidden bg-white/90 px-2 py-2.5 sm:px-4 sm:py-4 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1">
+                    <div className="absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br from-purple-500/90 to-pink-500/60" />
+                    <div className="relative flex items-start justify-between gap-2 sm:gap-3">
+                      <div className="space-y-0.5 sm:space-y-2 flex-1 min-w-0">
+                        <p className="text-[9px] sm:text-[11px] uppercase tracking-wide text-slate-500 truncate">Influencers</p>
+                        <p className="text-sm sm:text-2xl font-semibold text-slate-900">{totalInfluencers}</p>
+                        <p className="text-[9px] sm:text-[11px] text-slate-500 line-clamp-1 hidden sm:block">Creators engaged</p>
+                      </div>
+                      <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl text-white bg-gradient-to-br from-purple-500/90 to-pink-500/60">
+                        <Users className="h-4 w-4 sm:h-5 sm:w-5" />
+                      </div>
+                    </div>
+                  </Card>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="rounded-2xl border border-border/60 bg-card/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground mb-1">Live Campaigns</p>
-                    <p className="text-2xl font-bold text-foreground">{liveCount}</p>
+            <Card className="border outline-indigo-200 bg-white/95 backdrop-blur">
+              <div className="p-4 sm:p-5 lg:p-6 space-y-4 sm:space-y-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="w-full lg:max-w-xl">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 sm:left-3 top-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={searchTerm}
+                        onChange={(event) => setSearchTerm(event.target.value)}
+                        placeholder="Search campaigns, brands, or objectives..."
+                        className="pl-8 sm:pl-10 h-9 sm:h-11 w-full rounded-xl sm:rounded-2xl border border-slate-200 bg-slate-50/80 text-xs sm:text-sm focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      />
+                    </div>
                   </div>
-                  <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                    <Clock className="h-6 w-6" />
-                  </div>
-                </div>
-                <p className="mt-3 text-xs text-muted-foreground">Actively delivering influencer content right now.</p>
-              </div>
-
-              <div className="rounded-2xl border border-border/60 bg-card/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground mb-1">Scheduled Campaigns</p>
-                    <p className="text-2xl font-bold text-foreground">{scheduledCount}</p>
-                  </div>
-                  <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                    <Calendar className="h-6 w-6" />
-                  </div>
-                </div>
-                <p className="mt-3 text-xs text-muted-foreground">Awaiting kick-off or pending content approvals.</p>
-              </div>
-
-              <div className="rounded-2xl border border-border/60 bg-card/80 backdrop-blur-sm shadow-sm hover:shadow-lg transition-all duration-300 p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground mb-1">Influencer Pool</p>
-                    <p className="text-2xl font-bold text-foreground">{totalInfluencers}</p>
-                  </div>
-                  <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                    <Users className="h-6 w-6" />
-                  </div>
-                </div>
-                <p className="mt-3 text-xs text-muted-foreground">Creators currently engaged across campaign briefs.</p>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-border/60 bg-card/70 backdrop-blur-xl shadow-lg p-6 space-y-5">
-              <div className="flex flex-col sm:flex-row gap-4 items-stretch">
-                <div className="flex-1 flex items-center gap-3">
-                  <div className="relative w-full">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input
-                      value={searchTerm}
-                      onChange={(event) => setSearchTerm(event.target.value)}
-                      placeholder="Search campaigns, brands, or objectives..."
-                      className="pl-10 h-11 bg-card border-border/50 focus:shadow-md transition-all duration-300"
-                    />
-                  </div>
-                  <div className="flex items-center rounded-lg border border-border/60 bg-background p-1 shadow-sm">
-                    <Button
-                      variant={viewMode === "grid" ? "default" : "ghost"}
-                      size="icon"
-                      onClick={() => setViewMode("grid")}
-                      className="h-10 w-10"
-                      title="Grid view"
-                    >
-                      <LayoutGrid className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant={viewMode === "list" ? "default" : "ghost"}
-                      size="icon"
-                      onClick={() => setViewMode("list")}
-                      className="h-10 w-10"
-                      title="List view"
-                    >
-                      <List className="h-4 w-4" />
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex items-center rounded-lg sm:rounded-xl border border-border/60 bg-background p-1 shadow-sm">
+                      <Button
+                        variant={viewMode === "grid" ? "default" : "ghost"}
+                        size="icon"
+                        onClick={() => setViewMode("grid")}
+                        className="h-8 w-8 sm:h-10 sm:w-10"
+                        title="Grid view"
+                      >
+                        <LayoutGrid className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      </Button>
+                      <Button
+                        variant={viewMode === "list" ? "default" : "ghost"}
+                        size="icon"
+                        onClick={() => setViewMode("list")}
+                        className="h-8 w-8 sm:h-10 sm:w-10"
+                        title="List view"
+                      >
+                        <List className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                      </Button>
+                    </div>
+                    <Button variant="outline" className="h-9 sm:h-11 px-3 sm:px-4 text-xs sm:text-sm">
+                      <Filter className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
+                      Filters
                     </Button>
                   </div>
-                  <Button variant="outline" className="h-11 px-4">
-                    <Filter className="h-4 w-4 mr-2" />
-                    Filters
-                  </Button>
                 </div>
               </div>
+            </Card>
 
-              <Separator />
-
-              <div className={viewMode === "grid" ? "grid gap-4 md:grid-cols-2" : "space-y-3"}>
+            {/* Campaigns List */}
+            {isCampaignsLoading ? (
+              <div className="bg-card rounded-lg p-8 border border-border/50">
+                <p className="text-muted-foreground text-center">Loading campaigns...</p>
+              </div>
+            ) : filteredCampaigns.length === 0 ? (
+              <div className="bg-card rounded-lg p-8 border border-border/50">
+                <p className="text-muted-foreground text-center">
+                  {searchTerm ? 'No campaigns found matching your search.' : 'No campaigns found. Create your first campaign!'}
+                </p>
+              </div>
+            ) : (
+              <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" : "space-y-4"}>
                 {filteredCampaigns.map((campaign) => {
                   const startDisplay = formatDateForDisplay(campaign.startDate);
                   const endDisplay = formatDateForDisplay(campaign.endDate);
@@ -1422,7 +1450,7 @@ const Campaign = () => {
                   const isLive = campaign.status === "live";
                   const isInactive = campaign.status === "inactive";
                   return (
-                  <div
+                  <Card
                     key={campaign.id}
                     role="button"
                     tabIndex={0}
@@ -1445,145 +1473,128 @@ const Campaign = () => {
                         handleNavigateToCampaign(campaign);
                       }
                     }}
-                    className="group rounded-2xl border border-border/50 bg-background/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-200 p-4 flex flex-col gap-3 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="p-4 bg-card hover:shadow-lg transition-all duration-300 border-border/50 hover:scale-[1.02] flex flex-col cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
+                    <div className="flex items-start justify-between gap-2 sm:gap-3 mb-3">
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                          <p className="text-xs sm:text-sm font-semibold uppercase tracking-[0.15em] sm:tracking-[0.2em] text-primary truncate">
                             {campaign.brand}
                           </p>
-                          <Badge className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[campaign.status]}`}>
+                          <Badge className={`rounded-full px-2 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs font-semibold shrink-0 ${STATUS_STYLES[campaign.status]}`}>
                             {campaign.status}
                           </Badge>
                         </div>
-                        <h3 className="text-base font-semibold text-foreground">{campaign.name}</h3>
-                        <p className="text-xs text-muted-foreground">{campaign.objective}</p>
+                        <h3 className="text-sm sm:text-base font-semibold text-foreground line-clamp-1">{campaign.name}</h3>
+                        <p className="text-xs text-muted-foreground line-clamp-2">{campaign.objective}</p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs uppercase text-muted-foreground">Campaign ID</p>
-                        <p className="text-sm font-semibold text-foreground">{campaign.id}</p>
+                      <div className="text-right shrink-0">
+                        <p className="text-[10px] sm:text-xs uppercase text-muted-foreground">ID</p>
+                        <p className="text-xs sm:text-sm font-semibold text-foreground truncate max-w-[80px] sm:max-w-none">{campaign.id}</p>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 text-xs sm:text-sm">
-                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-3 flex items-start gap-3">
-                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                          <CalendarRange className="h-5 w-5" />
+                    <div className="grid grid-cols-1 gap-2 sm:gap-3 text-xs sm:text-sm mb-3">
+                      <div className="rounded-xl sm:rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-2 sm:p-3 flex items-start gap-2 sm:gap-3">
+                        <span className="flex h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-primary/10 text-primary">
+                          <CalendarRange className="h-4 w-4 sm:h-5 sm:w-5" />
                         </span>
-                        <div className="flex-1 space-y-1">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <div className="flex-1 space-y-0.5 sm:space-y-1 min-w-0">
+                          <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             Timeline
                           </p>
                           {campaign.isLongTerm ? (
-                            <div className="space-y-1">
-                              <p className="text-sm font-semibold text-foreground leading-tight">
+                            <div className="space-y-0.5 sm:space-y-1">
+                              <p className="text-xs sm:text-sm font-semibold text-foreground leading-tight">
                                 Long-term engagement
                               </p>
-                              <p className="text-[11px] text-muted-foreground">
+                              <p className="text-[10px] sm:text-[11px] text-muted-foreground">
                                 {startDisplay ? `Starts ${startDisplay}` : "Start date not set"}
-                              </p>
-                              <p className="text-[10px] text-muted-foreground/80">
-                                Running without a scheduled end date.
                               </p>
                             </div>
                           ) : (
                             <div className="space-y-0.5">
-                              <p className="text-sm font-semibold text-foreground leading-tight">
+                              <p className="text-xs sm:text-sm font-semibold text-foreground leading-tight">
                                 {startDisplay ?? "Start date not set"}
                               </p>
-                              <p className="text-[11px] text-muted-foreground">
+                              <p className="text-[10px] sm:text-[11px] text-muted-foreground">
                                 {endDisplay ? `Ends ${endDisplay}` : "End date not set"}
-                              </p>
-                              <p className="text-[10px] text-muted-foreground/80">
-                                Scheduled activation window for this brief.
                               </p>
                             </div>
                           )}
                         </div>
                       </div>
-                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-3 flex items-start gap-3">
-                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                          <Users className="h-5 w-5" />
+                      <div className="rounded-xl sm:rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-2 sm:p-3 flex items-start gap-2 sm:gap-3">
+                        <span className="flex h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-primary/10 text-primary">
+                          <Users className="h-4 w-4 sm:h-5 sm:w-5" />
                         </span>
-                        <div className="flex-1 space-y-1">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <div className="flex-1 space-y-0.5 sm:space-y-1">
+                          <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             Users
                           </p>
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-2xl font-semibold text-foreground">
+                          <div className="flex items-baseline gap-1 sm:gap-1.5">
+                            <span className="text-lg sm:text-2xl font-semibold text-foreground">
                               {campaign.users.length}
                             </span>
-                            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            <span className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                               {campaign.users.length === 1 ? "User" : "Users"}
                             </span>
                           </div>
-                          <p className="text-[10px] text-muted-foreground/80">
-                            Assigned collaborators in this campaign.
-                          </p>
                         </div>
                       </div>
-                      <div className="rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-3 flex items-start gap-3">
-                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                          <Megaphone className="h-5 w-5" />
+                      <div className="rounded-xl sm:rounded-2xl border border-border/60 bg-background/70 backdrop-blur-sm p-2 sm:p-3 flex items-start gap-2 sm:gap-3">
+                        <span className="flex h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-100 text-emerald-700">
+                          <Megaphone className="h-4 w-4 sm:h-5 sm:w-5" />
                         </span>
-                        <div className="flex-1 space-y-1">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <div className="flex-1 space-y-0.5 sm:space-y-1">
+                          <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             Influencers
                           </p>
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-2xl font-semibold text-foreground">
+                          <div className="flex items-baseline gap-1 sm:gap-1.5">
+                            <span className="text-lg sm:text-2xl font-semibold text-foreground">
                               {campaign.influencers.length}
                             </span>
-                            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            <span className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                               {campaign.influencers.length === 1 ? "Influencer" : "Influencers"}
                             </span>
                           </div>
-                          <p className="text-[10px] text-muted-foreground/80">
-                            Creators attached to campaign deliverables.
-                          </p>
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 text-xs sm:text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm mb-3 pt-3 border-t border-border/30">
                       <div className="space-y-1">
-                        <p className="text-xs uppercase text-muted-foreground">Contract</p>
+                        <p className="text-[10px] sm:text-xs uppercase text-muted-foreground">Contract</p>
                         <div className="flex flex-col gap-0.5">
-                          <p className="text-sm font-semibold text-foreground leading-tight">
+                          <p className="text-xs sm:text-sm font-semibold text-foreground leading-tight line-clamp-1">
                             {campaign.contract?.name ?? "Not selected"}
                           </p>
-                      {campaign.contract?.pid && (
-                        <p className="text-[11px] text-muted-foreground leading-snug">
-                          PID: {campaign.contract.pid}
-                        </p>
-                      )}
+                          {campaign.contract?.pid && (
+                            <p className="text-[10px] sm:text-[11px] text-muted-foreground leading-snug">
+                              PID: {campaign.contract.pid}
+                            </p>
+                          )}
                           {campaign.contract?.status && (
-                            <span className="w-fit rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 capitalize">
+                            <span className="w-fit rounded-full border border-indigo-200 bg-indigo-50 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-indigo-700 capitalize">
                               {campaign.contract.status}
                             </span>
-                          )}
-                          {campaign.contract?.description && (
-                            <p className="text-[11px] text-muted-foreground leading-snug">
-                              {campaign.contract.description}
-                            </p>
                           )}
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs uppercase text-muted-foreground">Created</p>
-                        <p className="text-sm font-semibold text-foreground leading-tight">
+                        <p className="text-[10px] sm:text-xs uppercase text-muted-foreground">Created</p>
+                        <p className="text-xs sm:text-sm font-semibold text-foreground leading-tight">
                           {new Date(campaign.createdAt).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
 
-                    <div>
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1">
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-muted-foreground mb-1">
                         <span>Progress</span>
                         <span>{campaign.progress}%</span>
                       </div>
-                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div className="h-1.5 sm:h-2 rounded-full bg-muted overflow-hidden">
                         <div
                           className="h-full bg-gradient-to-r from-indigo-500 via-sky-500 to-purple-500"
                           style={{ width: `${campaign.progress}%` }}
@@ -1591,21 +1602,23 @@ const Campaign = () => {
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2 pt-1">
-                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                        {campaign.status === "completed"
-                          ? "Report ready for download"
-                          : campaign.status === "live"
-                          ? "Content approvals on-track"
-                          : "Draft insights auto-saved"}
+                    <div className="flex flex-col gap-2 pt-3 border-t border-border/50">
+                      <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-muted-foreground">
+                        <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-emerald-500 shrink-0" />
+                        <span className="line-clamp-1">
+                          {campaign.status === "completed"
+                            ? "Report ready for download"
+                            : campaign.status === "live"
+                            ? "Content approvals on-track"
+                            : "Draft insights auto-saved"}
+                        </span>
                       </div>
-                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="h-8 px-3 text-xs"
+                          className="h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs"
                           onClick={(event) => event.stopPropagation()}
                         >
                           View Brief
@@ -1615,7 +1628,7 @@ const Campaign = () => {
                             <DropdownMenuTrigger asChild>
                               <Button
                                 size="sm"
-                                className="h-8 px-3 text-xs bg-primary text-white hover:bg-primary/90 focus-visible:ring-primary"
+                                className="h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs bg-primary text-white hover:bg-primary/90 focus-visible:ring-primary"
                                 disabled={isCampaignBusy}
                                 onClick={(event) => event.stopPropagation()}
                               >
@@ -1701,23 +1714,11 @@ const Campaign = () => {
                         )}
                       </div>
                     </div>
-                  </div>
+                  </Card>
                 );
               })}
-
-                {filteredCampaigns.length === 0 && (
-                  <div className="col-span-full rounded-2xl border border-dashed border-border/50 bg-background/60 backdrop-blur-sm py-16 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary mb-4">
-                      <Search className="h-6 w-6" />
-                    </div>
-                    <h4 className="text-lg font-semibold text-foreground">No campaigns found</h4>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Try adjusting your search filters to get started.
-                    </p>
-                  </div>
-                )}
               </div>
-            </div>
+            )}
           </section>
         </main>
       </div>

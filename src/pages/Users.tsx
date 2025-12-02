@@ -20,7 +20,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase, supabaseAdmin } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Plus, Trash2, Shield, CheckCircle, XCircle, Clock, MoreVertical, Settings2, Circle, Search, Users as UsersIcon, UserCheck, UserX, UserPlus, Activity } from "lucide-react";
+import { Eye, EyeOff, Plus, Trash2, Shield, CheckCircle, XCircle, Clock, MoreVertical, Settings2, Circle, Search, Users as UsersIcon, UserCheck, UserX, UserPlus, Activity, Filter } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,6 +93,7 @@ const Users = () => {
   const [customHoldDate, setCustomHoldDate] = useState("");
   const [customHoldTime, setCustomHoldTime] = useState("");
   const [onlineUsers, _setOnlineUsers] = useState<Set<string>>(new Set());
+  const [showFilters, setShowFilters] = useState(false);
 
   // Format last seen time
   const formatLastSeen = (lastSeen?: string) => {
@@ -1311,43 +1312,43 @@ const Users = () => {
         <Header />
         <main className="container mx-auto px-3 sm:px-4 py-4 space-y-6 pb-24 lg:pb-8 animate-fade-in max-w-7xl">
           <div className="space-y-6">
-            <div className="relative overflow-hidden rounded-3xl bg-primary text-white ">
+            <div className="relative overflow-hidden rounded-2xl lg:rounded-3xl bg-primary text-white ">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_55%)]" />
               <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-              <div className="relative p-6 sm:p-8 space-y-8">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Control Center</p>
-                    <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">User Management Dashboard</h1>
-                    <p className="text-sm sm:text-base text-white/80 max-w-2xl">
+              <div className="relative p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8">
+                <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-2 sm:space-y-3">
+                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">Control Center</p>
+                    <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">User Management Dashboard</h1>
+                    <p className="text-xs sm:text-sm lg:text-base text-white/80 max-w-2xl hidden sm:block">
                       Monitor access, update roles, and keep a pulse on your organisation's health with real-time insights.
                     </p>
                   </div>
                   <Button
                     onClick={() => setIsAddUserOpen(true)}
-                    className="bg-white text-indigo-600 hover:bg-white/90 shadow-lg h-11 px-5 rounded-full font-semibold flex items-center gap-2 w-full sm:w-auto"
+                    className="bg-white text-indigo-600 hover:bg-white/90 shadow-lg h-10 sm:h-11 px-4 sm:px-5 rounded-full text-xs sm:text-sm font-semibold flex items-center gap-2 w-full sm:w-auto"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     Add User
                   </Button>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
                   {statTiles.map((tile) => {
                     const Icon = tile.icon;
                     return (
                       <div
                         key={tile.label}
-                        className="group relative overflow-hidden rounded-2xl border border-white/20 bg-white/10 backdrop-blur px-4 py-4 shadow-lg transition-transform duration-200 hover:-translate-y-1"
+                        className="group relative overflow-hidden rounded-xl sm:rounded-2xl border border-white/20 bg-white/10 backdrop-blur px-2 py-2.5 sm:px-4 sm:py-4 shadow-lg transition-transform duration-200 hover:-translate-y-1"
                       >
                         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/10" />
-                        <div className="relative flex items-start gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/25 shadow-inner">
-                            <Icon className="h-5 w-5 text-white" />
+                        <div className="relative flex items-start gap-2 sm:gap-3">
+                          <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl bg-white/25 shadow-inner">
+                            <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                           </div>
-                          <div className="space-y-1">
-                            <p className="text-[11px] uppercase tracking-wide text-white/70">{tile.label}</p>
-                            <p className="text-lg font-semibold">{tile.value}</p>
-                            <p className="text-[11px] text-white/70">{tile.subtext}</p>
+                          <div className="space-y-0.5 sm:space-y-1 flex-1 min-w-0">
+                            <p className="text-[9px] sm:text-[11px] uppercase tracking-wide text-white/70 truncate">{tile.label}</p>
+                            <p className="text-sm sm:text-lg font-semibold">{tile.value}</p>
+                            <p className="text-[9px] sm:text-[11px] text-white/70 line-clamp-1 hidden sm:block">{tile.subtext}</p>
                           </div>
                         </div>
                       </div>
@@ -1358,71 +1359,80 @@ const Users = () => {
             </div>
 
             <Card className="border outline-indigo-200 bg-white/90 backdrop-blur">
-              <div className="p-5 sm:p-6 space-y-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="p-4 sm:p-5 lg:p-6 space-y-4 sm:space-y-5 lg:space-y-6">
+                <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="relative w-full lg:max-w-md">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Search className="absolute left-2.5 sm:left-3 top-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       placeholder="Search by name, email, or employee ID..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50/80 pl-9 pr-4 text-sm focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      className="h-9 sm:h-11 w-full rounded-xl sm:rounded-2xl border border-slate-200 bg-slate-50/80 pl-8 sm:pl-9 pr-3 sm:pr-4 text-xs sm:text-sm focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
                     />
                   </div>
-                  <Badge className="w-fit rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
-                    Showing {filteredUsers.length} of {totalUsersCount} users
-                  </Badge>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="space-y-1">
-                    <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Role</Label>
-                    <select
-                      value={filterRole}
-                      onChange={(e) => setFilterRole(e.target.value as any)}
-                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    >
-                      <option value="all">All roles</option>
-                      <option value="user">User</option>
-                      <option value="admin">Admin</option>
-                      <option value="super_admin">Super Admin</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</Label>
-                    <select
-                      value={filterStatus}
-                      onChange={(e) => setFilterStatus(e.target.value as any)}
-                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    >
-                      <option value="all">All statuses</option>
-                      <option value="active">Active</option>
-                      <option value="hold">Hold</option>
-                      <option value="suspend">Suspended</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approval</Label>
-                    <select
-                      value={filterApproval}
-                      onChange={(e) => setFilterApproval(e.target.value as any)}
-                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    >
-                      <option value="all">All approvals</option>
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Online</Label>
-                    <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50/80 px-4 text-sm text-slate-600 ">
-                      <span className="flex items-center gap-2">
-                        <span className="relative flex h-2.5 w-2.5">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    {/* Online Count - Always visible */}
+                    <div className="flex h-9 sm:h-11 items-center rounded-lg sm:rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 sm:px-4 text-xs sm:text-sm text-emerald-700">
+                      <span className="flex items-center gap-1.5 sm:gap-2">
+                        <span className="relative flex h-2 w-2 sm:h-2.5 sm:w-2.5">
                           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70 opacity-75"></span>
-                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                          <span className="relative inline-flex h-full w-full rounded-full bg-emerald-500"></span>
                         </span>
-                        {onlineCount} users active
+                        <span className="font-medium">{onlineCount} online</span>
                       </span>
+                    </div>
+                    {/* Filter Button - Mobile only */}
+                    <Button
+                      onClick={() => setShowFilters(!showFilters)}
+                      variant="outline"
+                      className="lg:hidden h-9 sm:h-11 px-3 sm:px-4 rounded-lg sm:rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-100/80"
+                    >
+                      <Filter className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
+                      <span className="text-xs sm:text-sm font-medium">Filters</span>
+                    </Button>
+                  </div>
+                </div>
+                {/* Filters - Collapsible on mobile */}
+                <div className={`${showFilters ? 'block' : 'hidden'} lg:block`}>
+                  <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3 lg:gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-slate-500">Role</Label>
+                      <select
+                        value={filterRole}
+                        onChange={(e) => setFilterRole(e.target.value as any)}
+                        className="h-9 sm:h-11 w-full rounded-lg sm:rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 sm:px-3 text-xs sm:text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      >
+                        <option value="all">All roles</option>
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                        <option value="super_admin">Super Admin</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-slate-500">Status</Label>
+                      <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value as any)}
+                        className="h-9 sm:h-11 w-full rounded-lg sm:rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 sm:px-3 text-xs sm:text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      >
+                        <option value="all">All statuses</option>
+                        <option value="active">Active</option>
+                        <option value="hold">Hold</option>
+                        <option value="suspend">Suspended</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide text-slate-500">Approval</Label>
+                      <select
+                        value={filterApproval}
+                        onChange={(e) => setFilterApproval(e.target.value as any)}
+                        className="h-9 sm:h-11 w-full rounded-lg sm:rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 sm:px-3 text-xs sm:text-sm font-medium text-slate-700 shadow-sm transition focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      >
+                        <option value="all">All approvals</option>
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                      </select>
                     </div>
                   </div>
                 </div>

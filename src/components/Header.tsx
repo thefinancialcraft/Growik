@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { LogOut, Wifi, WifiOff } from "lucide-react";
+import { LogOut, Wifi, WifiOff, MessageCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface UserProfile {
@@ -315,8 +315,8 @@ const Header = () => {
             {initials}
           </button>
 
-          {/* Center: Username */}
-          <div className="flex-1 flex flex-col items-center justify-center">
+          {/* Left: Username */}
+          <div className="flex-1 flex flex-col items-start justify-center ml-4">
             <h1 className="text-base font-bold text-gray-900 leading-tight">
               {profile?.user_name || (user as any)?.user_metadata?.full_name || user?.email?.split("@")[0] || userEmail.split("@")[0] || "User"}
             </h1>
@@ -325,26 +325,37 @@ const Header = () => {
             </p>
           </div>
 
-          {/* Right: Server Status & Logout */}
+          {/* Right: Message Icon, Server Status (Desktop only) & Logout */}
           <div className="flex items-center gap-2 shrink-0">
-            <div
-              className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all ${
-                serverStatus === 'online'
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : serverStatus === 'offline'
-                  ? 'bg-red-100 text-red-700'
-                  : 'bg-amber-100 text-amber-700'
-              }`}
-              title={serverStatus === 'online' ? 'Server Online' : serverStatus === 'offline' ? 'Server Offline' : 'Checking...'}
+            {/* Message Icon - Show on mobile */}
+            <button
+              onClick={() => navigate('/messaging')}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-blue-500 hover:text-blue-600"
+              aria-label="Messages"
             >
-              {serverStatus === 'online' ? (
-                <Wifi className="w-3 h-3" />
-              ) : serverStatus === 'offline' ? (
-                <WifiOff className="w-3 h-3" />
-              ) : (
-                <Wifi className="w-3 h-3 animate-pulse" />
-              )}
-            </div>
+              <MessageCircle className="w-5 h-5" />
+            </button>
+            {/* Server Status - Hide on mobile, show on desktop */}
+            {!isMobile && (
+              <div
+                className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all ${
+                  serverStatus === 'online'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : serverStatus === 'offline'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-amber-100 text-amber-700'
+                }`}
+                title={serverStatus === 'online' ? 'Server Online' : serverStatus === 'offline' ? 'Server Offline' : 'Checking...'}
+              >
+                {serverStatus === 'online' ? (
+                  <Wifi className="w-3 h-3" />
+                ) : serverStatus === 'offline' ? (
+                  <WifiOff className="w-3 h-3" />
+                ) : (
+                  <Wifi className="w-3 h-3 animate-pulse" />
+                )}
+              </div>
+            )}
             <button
               onClick={handleLogout}
               className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-orange-500 hover:text-orange-600"

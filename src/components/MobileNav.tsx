@@ -56,26 +56,10 @@ const MobileNav = () => {
       adminOnly: false,
     },
     {
-      name: "Users",
-      path: "/users",
-      icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-      ),
-      adminOnly: true,
-    },
-    {
       name: "Contract",
       path: "/contract",
       icon: (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      ),
-      adminOnly: false,
-    },
-    {
-      name: "Messages",
-      path: "/messaging",
-      icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
       ),
       adminOnly: false,
     },
@@ -88,26 +72,18 @@ const MobileNav = () => {
       adminOnly: false,
     },
     {
-      name: "Product",
-      path: "/product",
-      icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-      ),
-      adminOnly: false,
-    },
-    {
-      name: "Companies",
-      path: "/companies",
-      icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-      ),
-      adminOnly: false,
-    },
-    {
       name: "Campaign",
       path: "/campaign",
       icon: (
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m4 6.341l1.553 1.552a1.414 1.414 0 002 0L21 9l-3.447-3.894a1.414 1.414 0 00-2 0L14 6.659m-1 2.682L3 18" />
+      ),
+      adminOnly: false,
+    },
+    {
+      name: "Collaboration",
+      path: "/collaboration",
+      icon: (
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4a8 8 0 00-8 8 8 8 0 0014.32 4.906l2.36.864-1.012-2.764A8 8 0 0012 4zm0 4a4 4 0 11-2.828 6.828l-1.414 1.414A6 6 0 1012 6zm0 2a2 2 0 100 4 2 2 0 000-4z" />
       ),
       adminOnly: false,
     },
@@ -121,8 +97,8 @@ const MobileNav = () => {
   });
 
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border/50 z-50 safe-area-bottom shadow-lg">
-      <div className="flex justify-around items-center h-16 px-2">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-slate-200/60 z-50 safe-area-bottom shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+      <div className="flex justify-around items-center h-18 px-1 sm:px-2 pb-2 pt-1">
         {filteredNavItems.map((item) => {
           const isActive = location.pathname === item.path || 
             (item.path === '/dashboard' && location.pathname === '/');
@@ -131,32 +107,30 @@ const MobileNav = () => {
               key={item.path}
               to={item.path}
               className={cn(
-                "flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-lg transition-all duration-300 min-w-[60px] relative",
+                "flex flex-col items-center justify-center gap-1 px-2 sm:px-3 py-2 rounded-2xl transition-all duration-300 min-w-[64px] relative group",
                 isActive
                   ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground"
+                  : "text-slate-600 hover:text-slate-900"
               )}
             >
               <svg 
                 className={cn(
-                  "w-6 h-6 transition-all duration-300",
-                  isActive && "scale-110"
+                  "w-5 h-5 sm:w-6 sm:h-6 transition-all duration-300",
+                  isActive && "scale-110 drop-shadow-sm"
                 )} 
                 fill="none" 
                 stroke="currentColor" 
+                strokeWidth={isActive ? 2.5 : 2}
                 viewBox="0 0 24 24"
               >
                 {item.icon}
               </svg>
               <span className={cn(
-                "text-xs font-medium transition-all duration-300",
-                isActive && "font-semibold"
+                "text-[10px] sm:text-xs font-medium transition-all duration-300 leading-tight text-center",
+                isActive ? "font-semibold text-primary" : "text-slate-600 group-hover:text-slate-900"
               )}>
                 {item.name}
               </span>
-              {isActive && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-primary rounded-b-full" />
-              )}
             </Link>
           );
         })}

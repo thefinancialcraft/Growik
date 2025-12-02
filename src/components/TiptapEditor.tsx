@@ -3157,8 +3157,8 @@ export default function TiptapEditor({
   });
 
   return (
-    <div className="tiptap-container">
-      <EditorContent editor={editor} />
+    <div className="tiptap-container w-full overflow-x-hidden">
+      <EditorContent editor={editor} className="w-full max-w-full overflow-x-hidden" />
     </div>
   );
 }

@@ -901,6 +901,61 @@ const ContractEditor = () => {
   const [isLoadingContract, setIsLoadingContract] = useState<boolean>(false);
   const { toast } = useToast();
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+
+  // Detect mobile viewport
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Add mobile-specific styles for editor content
+  useEffect(() => {
+    if (isMobile) {
+      const style = document.createElement('style');
+      style.id = 'contract-editor-mobile-styles';
+      style.textContent = `
+        .tiptap-editor,
+        .ProseMirror {
+          max-width: 100% !important;
+          overflow-x: hidden !important;
+          word-wrap: break-word !important;
+          overflow-wrap: break-word !important;
+        }
+        .tiptap-editor *,
+        .ProseMirror * {
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+        .tiptap-editor img,
+        .ProseMirror img {
+          max-width: 100% !important;
+          height: auto !important;
+        }
+        .tiptap-editor table,
+        .ProseMirror table {
+          max-width: 100% !important;
+          table-layout: fixed !important;
+        }
+        .tiptap-editor table td,
+        .ProseMirror table td {
+          word-wrap: break-word !important;
+          overflow-wrap: break-word !important;
+        }
+      `;
+      document.head.appendChild(style);
+      return () => {
+        const existingStyle = document.getElementById('contract-editor-mobile-styles');
+        if (existingStyle) {
+          document.head.removeChild(existingStyle);
+        }
+      };
+    }
+  }, [isMobile]);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [isAutoSaving, setIsAutoSaving] = useState<boolean>(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -2698,7 +2753,7 @@ const ContractEditor = () => {
           </div>
         </div>
 
-        <main className="px-4 py-6 pb-24 lg:pb-8 animate-fade-in">
+        <main className="px-2 sm:px-4 py-6 pb-24 lg:pb-8 animate-fade-in overflow-x-hidden">
 
           {/* Editor Content */}
           {isLoadingContract ? (
@@ -2710,7 +2765,7 @@ const ContractEditor = () => {
               </div>
             </div>
           ) : (
-            <div className="max-w-5xl mx-auto">
+            <div className="max-w-5xl mx-auto w-full">
               {/* Contract Name & Description - Floating above canvas */}
               <div className="mb-6 space-y-4">
                 <div>
@@ -2747,14 +2802,18 @@ const ContractEditor = () => {
               </div>
 
               {/* Editor Container */}
-              <div 
-                className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden transition-transform duration-300 origin-top" 
-                style={{ 
-                  minHeight: '800px',
-                  transform: `scale(${zoomLevel / 100})`,
-                  transformOrigin: 'top center'
-                }}
-              >
+              <div className="w-full overflow-x-hidden -mx-2 sm:mx-0 px-2 sm:px-0">
+                <div 
+                  className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden transition-transform duration-300 origin-top mx-auto" 
+                  style={{ 
+                    minHeight: '800px',
+                    transform: isMobile ? 'scale(0.6)' : `scale(${zoomLevel / 100})`,
+                    transformOrigin: 'top center',
+                    width: isMobile ? '166.67%' : '100%',
+                    maxWidth: isMobile ? 'none' : '100%',
+                    marginLeft: isMobile ? '-33.33%' : '0'
+                  }}
+                >
                 <TiptapEditor
                   content={contractContent}
                   onChange={setContractContent}
@@ -2767,6 +2826,7 @@ Use the toolbar above to format text, add headings, lists, and more."
                   onEditorReady={setEditor}
                   onImageUpload={handleImageUpload}
                 />
+                </div>
               </div>
 
             </div>

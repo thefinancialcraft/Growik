@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
@@ -8,7 +8,7 @@ import MobileNav from "@/components/MobileNav";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Activity, ArrowRight, CheckCircle, Clock, FileText, LogOut, Shield, Users as UsersIcon } from "lucide-react";
+import { Activity, ArrowRight, CheckCircle, Clock, FileText, LogOut, Shield, Users as UsersIcon, LayoutGrid, Package, Building2 } from "lucide-react";
 
 interface UserProfile {
   id: string;
@@ -28,6 +28,7 @@ interface UserProfile {
 const Dashboard = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [displayName, setDisplayName] = useState<string>("User");
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
@@ -379,6 +380,7 @@ const Dashboard = () => {
     return "bg-slate-100 text-slate-600 border border-slate-200";
   };
 
+
   return (
     <div className="flex min-h-screen bg-gradient-subtle">
       <Sidebar />
@@ -387,27 +389,27 @@ const Dashboard = () => {
         <Header />
         <main className="container mx-auto px-3 sm:px-4 py-4 space-y-6 pb-24 lg:pb-8 animate-fade-in max-w-7xl">
           <div className="space-y-6">
-            <div className="relative overflow-hidden rounded-3xl bg-primary text-white">
+            <div className="relative overflow-hidden rounded-2xl lg:rounded-3xl bg-primary text-white">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_55%)]" />
               <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-              <div className="relative p-6 sm:p-8 space-y-8">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Overview</p>
-                    <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">Welcome back, {displayName}!</h1>
-                    <p className="text-sm sm:text-base text-white/80 max-w-2xl">
+              <div className="relative p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8">
+                <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-2 sm:space-y-3">
+                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">Overview</p>
+                    <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">Welcome back, {displayName}!</h1>
+                    <p className="text-xs sm:text-sm lg:text-base text-white/80 max-w-2xl hidden sm:block">
                       Monitor your account status, team access, and quick entry points across the Growik workspace.
                     </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge className={`rounded-full border border-white/30 bg-white/20 px-3 py-1 text-xs font-semibold text-white/90 ${statusBadge()}`}>
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <Badge className={`rounded-full border border-white/30 bg-white/20 px-2 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-semibold text-white/90 ${statusBadge()}`}>
                         Status: {accountStatus}
                       </Badge>
-                      <Badge className={`rounded-full border border-white/30 bg-white/15 px-3 py-1 text-xs font-semibold text-white/90 ${approvalBadge()}`}>
+                      <Badge className={`rounded-full border border-white/30 bg-white/15 px-2 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-semibold text-white/90 ${approvalBadge()}`}>
                         Approval: {approvalStatus}
                       </Badge>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 max-w-sm">
+                  <div className="hidden lg:flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 max-w-sm">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold">Employee ID</span>
                       <span>{employeeId}</span>
@@ -433,23 +435,34 @@ const Dashboard = () => {
                       <ArrowRight className="h-4 w-4" />
                     </Button>
                   </div>
+                  {/* Mobile: Compact Employee Info */}
+                  <div className="lg:hidden flex items-center justify-between gap-3 rounded-xl border border-white/30 bg-white/10 p-3 backdrop-blur-lg text-xs text-white/90">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">ID:</span>
+                      <span>{employeeId}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">Role:</span>
+                      <span>{roleLabel}</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
                   {stats.map(({ id, title, value, subtext, accent, icon: Icon }) => (
                     <Card
                       key={id}
-                      className="relative overflow-hidden bg-white/90 px-4 py-4 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"
+                      className="relative overflow-hidden bg-white/90 px-2 py-2.5 sm:px-4 sm:py-4 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"
                     >
                       <div className={`absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br ${accent}`} />
-                      <div className="relative flex items-start justify-between gap-3">
-                        <div className="space-y-2">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-500">{title}</p>
-                          <p className="text-lg font-semibold text-slate-900">{value}</p>
-                          <p className="text-[11px] text-slate-500">{subtext}</p>
+                      <div className="relative flex items-start justify-between gap-2 sm:gap-3">
+                        <div className="space-y-1 sm:space-y-2 flex-1 min-w-0">
+                          <p className="text-[9px] sm:text-[11px] uppercase tracking-wide text-slate-500 truncate">{title}</p>
+                          <p className="text-sm sm:text-lg font-semibold text-slate-900 truncate">{value}</p>
+                          <p className="text-[9px] sm:text-[11px] text-slate-500 line-clamp-1 hidden sm:block">{subtext}</p>
                         </div>
-                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-white bg-gradient-to-br ${accent}`}>
-                          <Icon className="h-5 w-5" />
+                        <div className={`flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl text-white bg-gradient-to-br ${accent} flex-shrink-0`}>
+                          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
                         </div>
                       </div>
                     </Card>
@@ -459,12 +472,12 @@ const Dashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
-              <Card className="lg:col-span-2 border-none bg-white/95 backdrop-blur">
+              <Card className="order-2 lg:order-1 lg:col-span-2 border-none bg-white/95 backdrop-blur">
                 <div className="p-5 sm:p-6 space-y-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-lg font-semibold text-slate-900">Account Insights</h2>
-                      <p className="text-sm text-slate-500">Quick information about your current workspace access.</p>
+                      <h2 className="text-base font-semibold text-slate-900">Account Insights</h2>
+                      <p className="text-xs text-slate-500">Quick information about your Growik current workspace access.</p>
                     </div>
                     <Badge className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge()}`}>
                       {accountStatus.toUpperCase()}
@@ -478,9 +491,11 @@ const Dashboard = () => {
                           <span>Name</span>
                           <span className="font-medium text-slate-900">{profile?.user_name ?? displayName}</span>
                         </div>
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <span>Email</span>
-                          <span className="font-medium text-slate-900">{profile?.email ?? user?.email ?? "-"}</span>
+                          <span className="font-medium text-slate-900 truncate max-w-[200px] sm:max-w-none" title={profile?.email ?? user?.email ?? "-"}>
+                            {profile?.email ?? user?.email ?? "-"}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span>Contact</span>
@@ -508,44 +523,99 @@ const Dashboard = () => {
                       </div>
                     </div>
                   </div>
+                  {/* Mobile: Sign Out Section */}
+                  <div className="lg:hidden mt-4 sm:mt-5 rounded-xl border border-red-200/80 bg-gradient-to-br from-red-50/90 to-orange-50/50 p-3 sm:p-4 text-xs sm:text-sm space-y-2 sm:space-y-3 backdrop-blur-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600">
+                        <LogOut className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="font-semibold text-xs sm:text-sm text-red-800">Need to sign out?</span>
+                    </div>
+                    <p className="text-red-700/80 text-xs">Securely log out of your workspace when leaving the desk.</p>
+                    <Button
+                      variant="destructive"
+                      className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs sm:text-sm font-semibold shadow-md hover:shadow-lg transition-all duration-200"
+                      onClick={async () => {
+                        try {
+                          const signOutFn = signOutRef.current;
+                          await signOutFn();
+                          navigateRef.current?.("/login");
+                        } catch (error) {
+                          console.error("Error signing out:", error);
+                        }
+                      }}
+                    >
+                      Sign out
+                    </Button>
+                  </div>
                 </div>
               </Card>
 
-              <Card className="border-none bg-white/95 backdrop-blur">
-                <div className="p-5 sm:p-6 space-y-5">
-                  <h2 className="text-lg font-semibold text-slate-900">Quick Actions</h2>
-                  <div className="flex flex-col gap-3">
-                    <Button
-                      variant="outline"
-                      className="justify-start gap-3 rounded-xl border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-indigo-50/90 hover:text-indigo-600"
-                      onClick={() => navigate("/users")}
-                    >
-                      <UsersIcon className="h-4 w-4" /> Manage Users
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start gap-3 rounded-xl border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-indigo-50/90 hover:text-indigo-600"
-                      onClick={() => navigate("/contract")}
-                    >
-                      <FileText className="h-4 w-4" /> View Contracts
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="justify-start gap-3 rounded-xl border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-indigo-50/90 hover:text-indigo-600"
-                      onClick={() => navigate("/influencer")}
-                    >
-                      <Shield className="h-4 w-4" /> Influencer Hub
-                    </Button>
+              <Card className="order-1 lg:order-2 border-none bg-gradient-to-br from-white to-slate-50/50 backdrop-blur shadow-sm">
+                <div className="p-4 sm:p-5 lg:p-6 space-y-4 sm:space-y-5">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+                    <h2 className="text-sm sm:text-base font-bold text-slate-900">Quick Actions</h2>
                   </div>
-                  <div className="rounded-2xl border border-red-100 bg-red-50/80 p-4 text-sm text-red-700 space-y-3">
+                  <div className="grid grid-cols-3 lg:grid-cols-1 gap-1.5 sm:gap-2 lg:gap-2.5">
+                    <button
+                      onClick={() => navigate("/users")}
+                      className="group relative flex flex-col lg:flex-row items-center justify-center lg:justify-start gap-1.5 lg:gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-2 lg:p-3 text-center lg:text-left transition-all duration-200 hover:border-indigo-300 hover:bg-gradient-to-br lg:hover:bg-gradient-to-r hover:from-indigo-50/90 hover:to-purple-50/90 hover:shadow-md hover:-translate-y-0.5"
+                    >
+                      <div className="flex h-7 w-7 lg:h-8 lg:w-8 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-sm transition-transform duration-200 group-hover:scale-110 group-hover:shadow-md">
+                        <UsersIcon className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                      </div>
+                      <span className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-700 group-hover:text-indigo-700 text-center lg:text-left leading-tight">Manage Users</span>
+                    </button>
+                    <button
+                      onClick={() => navigate("/contract")}
+                      className="group relative flex flex-col lg:flex-row items-center justify-center lg:justify-start gap-1.5 lg:gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-2 lg:p-3 text-center lg:text-left transition-all duration-200 hover:border-blue-300 hover:bg-gradient-to-br lg:hover:bg-gradient-to-r hover:from-blue-50/90 hover:to-cyan-50/90 hover:shadow-md hover:-translate-y-0.5"
+                    >
+                      <div className="flex h-7 w-7 lg:h-8 lg:w-8 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-sm transition-transform duration-200 group-hover:scale-110 group-hover:shadow-md">
+                        <FileText className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                      </div>
+                      <span className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-700 group-hover:text-blue-700 text-center lg:text-left leading-tight">View Contracts</span>
+                    </button>
+                    <button
+                      onClick={() => navigate("/product")}
+                      className="group relative flex flex-col lg:flex-row items-center justify-center lg:justify-start gap-1.5 lg:gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-2 lg:p-3 text-center lg:text-left transition-all duration-200 hover:border-emerald-300 hover:bg-gradient-to-br lg:hover:bg-gradient-to-r hover:from-emerald-50/90 hover:to-teal-50/90 hover:shadow-md hover:-translate-y-0.5"
+                    >
+                      <div className="flex h-7 w-7 lg:h-8 lg:w-8 items-center justify-center rounded-md bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-sm transition-transform duration-200 group-hover:scale-110 group-hover:shadow-md">
+                        <Package className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                      </div>
+                      <span className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-700 group-hover:text-emerald-700 text-center lg:text-left leading-tight">Product</span>
+                    </button>
+                    <button
+                      onClick={() => navigate("/companies")}
+                      className="group relative flex flex-col lg:flex-row items-center justify-center lg:justify-start gap-1.5 lg:gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-2 lg:p-3 text-center lg:text-left transition-all duration-200 hover:border-amber-300 hover:bg-gradient-to-br lg:hover:bg-gradient-to-r hover:from-amber-50/90 hover:to-orange-50/90 hover:shadow-md hover:-translate-y-0.5"
+                    >
+                      <div className="flex h-7 w-7 lg:h-8 lg:w-8 items-center justify-center rounded-md bg-gradient-to-br from-amber-500 to-amber-600 text-white shadow-sm transition-transform duration-200 group-hover:scale-110 group-hover:shadow-md">
+                        <Building2 className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                      </div>
+                      <span className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-700 group-hover:text-amber-700 text-center lg:text-left leading-tight">Companies</span>
+                    </button>
+                    <button
+                      onClick={() => navigate("/influencer")}
+                      className="group relative flex flex-col lg:flex-row items-center justify-center lg:justify-start gap-1.5 lg:gap-3 rounded-lg border border-slate-200/80 bg-white/80 p-2 lg:p-3 text-center lg:text-left transition-all duration-200 hover:border-purple-300 hover:bg-gradient-to-br lg:hover:bg-gradient-to-r hover:from-purple-50/90 hover:to-pink-50/90 hover:shadow-md hover:-translate-y-0.5"
+                    >
+                      <div className="flex h-7 w-7 lg:h-8 lg:w-8 items-center justify-center rounded-md bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-sm transition-transform duration-200 group-hover:scale-110 group-hover:shadow-md">
+                        <Shield className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
+                      </div>
+                      <span className="text-[10px] sm:text-xs lg:text-sm font-medium text-slate-700 group-hover:text-purple-700 text-center lg:text-left leading-tight">Influencer Hub</span>
+                    </button>
+                  </div>
+                  {/* Desktop: Sign Out Section */}
+                  <div className="hidden lg:block mt-4 sm:mt-5 rounded-xl border border-red-200/80 bg-gradient-to-br from-red-50/90 to-orange-50/50 p-3 sm:p-4 text-xs sm:text-sm space-y-2 sm:space-y-3 backdrop-blur-sm">
                     <div className="flex items-center gap-2">
-                      <LogOut className="h-4 w-4" />
-                      <span className="font-semibold">Need to sign out?</span>
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600">
+                        <LogOut className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="font-semibold text-xs sm:text-sm text-red-800">Need to sign out?</span>
                     </div>
-                    <p>Securely log out of your workspace when leaving the desk.</p>
+                    <p className="text-red-700/80 text-xs">Securely log out of your workspace when leaving the desk.</p>
                     <Button
                       variant="destructive"
-                      className="w-full"
+                      className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs sm:text-sm font-semibold shadow-md hover:shadow-lg transition-all duration-200"
                       onClick={async () => {
                         try {
                           const signOutFn = signOutRef.current;

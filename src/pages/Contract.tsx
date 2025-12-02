@@ -1226,30 +1226,30 @@ const Contract = () => {
         <Header />
         <main className="container mx-auto px-3 sm:px-4 py-4 space-y-6 pb-24 lg:pb-8 animate-fade-in max-w-7xl">
           <div className="space-y-6">
-            <div className="relative overflow-hidden rounded-3xl bg-primary text-white">
+            <div className="relative overflow-hidden rounded-2xl lg:rounded-3xl bg-primary text-white">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_55%)]" />
               <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-              <div className="relative p-6 sm:p-8 space-y-8">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Contracts</p>
-                    <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">Contract Management Hub</h1>
-                    <p className="text-sm sm:text-base text-white/80 max-w-2xl">
+              <div className="relative p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8">
+                <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-2 sm:space-y-3">
+                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">Contracts</p>
+                    <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">Contract Management Hub</h1>
+                    <p className="text-xs sm:text-sm lg:text-base text-white/80 max-w-2xl mb-4 sm:mb-0">
                       Keep every agreement aligned. Monitor statuses, flip drafts into live contracts, and export polished PDFs in seconds.
                     </p>
                     {profile && (profile.role === 'admin' || profile.role === 'super_admin' || profile.super_admin === true) && (
                       <Button
                         onClick={() => navigate('/contract/editor')}
-                        className="bg-white text-indigo-600 hover:bg-white/90  h-11 px-5 rounded-full font-semibold flex items-center gap-2 w-full sm:w-auto"
+                        className="hidden lg:flex bg-white text-indigo-600 hover:bg-white/90 h-9 sm:h-11 px-4 sm:px-5 rounded-full text-xs sm:text-sm font-semibold items-center gap-2 w-full sm:w-auto"
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
                         Create Contract
                       </Button>
                     )}
                   </div>
-                  <div className="flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 min-w-[240px]">
+                  <div className="hidden lg:flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 min-w-[240px]">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold">Total Contracts</span>
                       <span>{activeContracts + inactiveContracts + draftContracts}</span>
@@ -1273,26 +1273,44 @@ const Contract = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
                   {contractStats.map(({ id, title, value, subtext, accent, icon: Icon }) => (
                     <Card
                       key={id}
-                      className="relative overflow-hidden p-4 md:p-6 bg-white/90 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"
+                      className="relative overflow-hidden px-2 py-2.5 sm:px-4 sm:py-4 lg:p-6 bg-white/90 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"
                     >
                       <div className={`absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br ${accent}`} />
-                      <div className="relative flex items-start justify-between gap-3">
-                        <div className="space-y-2">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-500">{title}</p>
-                          <p className="text-2xl font-semibold text-slate-900">{value}</p>
-                          <p className="text-[11px] text-slate-500">{subtext}</p>
+                      <div className="relative flex items-start justify-between gap-2 sm:gap-3">
+                        <div className="space-y-0.5 sm:space-y-2 flex-1 min-w-0">
+                          <p className="text-[9px] sm:text-[11px] uppercase tracking-wide text-slate-500 truncate">{title}</p>
+                          <p className="text-sm sm:text-2xl font-semibold text-slate-900">{value}</p>
+                          <p className="text-[9px] sm:text-[11px] text-slate-500 line-clamp-1 hidden sm:block">{subtext}</p>
                         </div>
-                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-white bg-gradient-to-br ${accent}`}>
-                          <Icon className="h-5 w-5" />
+                        <div className={`flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl text-white bg-gradient-to-br ${accent}`}>
+                          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
                         </div>
                       </div>
                     </Card>
                   ))}
                 </div>
+                {/* Mobile: Desktop Only Message */}
+                {profile && (profile.role === 'admin' || profile.role === 'super_admin' || profile.super_admin === true) && (
+                  <div className="lg:hidden">
+                    <div className="flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90">
+                      <div className="flex items-center justify-center gap-2">
+                        <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        <p className="text-xs sm:text-sm font-semibold text-white/90 text-center">
+                          Contract creation available only on desktop
+                        </p>
+                      </div>
+                      <p className="text-xs text-white/70 text-center">
+                        Please use a desktop or laptop to create new contracts
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

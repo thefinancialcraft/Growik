@@ -373,10 +373,6 @@ const Influencer = () => {
       trend: "98% uptime",
       icon: Activity,
       accent: "from-emerald-500/90 to-lime-500/60",
-      statusBadge: {
-        label: "Live",
-        variant: "default" as const,
-      },
     },
   ];
 
@@ -1135,19 +1131,19 @@ const Influencer = () => {
           <Header />
           <main className="container mx-auto max-w-7xl px-3 sm:px-4 py-4 sm:py-6 space-y-4 pb-24 lg:pb-8 animate-fade-in">
             <div className="space-y-6">
-              <div className="relative overflow-hidden rounded-3xl bg-primary text-white ">
+              <div className="relative overflow-hidden rounded-2xl lg:rounded-3xl bg-primary text-white ">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.28),transparent_55%)]" />
                 <div className="absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-                <div className="relative p-6 sm:p-8 space-y-8">
-                  <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="space-y-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Creators</p>
-                      <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">Influencer Management</h1>
-                      <p className="text-sm sm:text-base text-white/80 max-w-2xl">
+                <div className="relative p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8">
+                  <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="space-y-2 sm:space-y-3">
+                      <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">Creators</p>
+                      <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">Influencer Management</h1>
+                      <p className="text-xs sm:text-sm lg:text-base text-white/80 max-w-2xl hidden sm:block">
                         Build, monitor, and activate your influencer roster with live platform stats, imports, and fast edits.
                       </p>
                     </div>
-                    <div className="flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 min-w-[240px]">
+                    <div className="hidden lg:flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 min-w-[240px]">
                       <div className="flex items-center justify-between">
                         <span className="font-semibold">Total Creators</span>
                         <span>{influencers.length}</span>
@@ -1171,43 +1167,26 @@ const Influencer = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
                     {summaryTiles.map(({ id, title, value, subtext, trend, icon: Icon, accent, statusBadge }) => (
                       <Card
                         key={id}
-                        className="relative overflow-hidden p-4 md:p-6 bg-white/90 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"
+                        className="relative overflow-hidden bg-white/90 px-2 py-2.5 sm:px-4 sm:py-4 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"
                       >
                         <div className={cn("absolute inset-0 opacity-[0.08] pointer-events-none bg-gradient-to-br", accent)} />
-                        <div className="relative space-y-4">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <p className="text-xs font-medium text-slate-500 uppercase tracking-[0.12em] mb-1">
-                                {title}
-                              </p>
-                              <div className="flex items-end gap-2">
-                                <span className="text-2xl md:text-3xl font-bold text-slate-900">
-                                  {typeof value === 'number' ? value.toLocaleString() : value}
-                                </span>
-                                {statusBadge && (
-                                  <Badge variant={statusBadge.variant} className="rounded-full text-xs px-2.5 py-0.5">
-                                    {statusBadge.label}
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                            <div
-                              className={cn(
-                                "w-12 h-12 rounded-xl flex items-center justify-center text-white",
-                                "bg-gradient-to-br",
-                                accent
-                              )}
-                            >
-                              <Icon className="h-5 w-5" />
+                        <div className="relative flex items-start justify-between gap-2 sm:gap-3">
+                          <div className="space-y-1 sm:space-y-2 flex-1 min-w-0">
+                            <p className="text-[9px] sm:text-[11px] uppercase tracking-wide text-slate-500 truncate">{title}</p>
+                            <p className="text-sm sm:text-lg font-semibold text-slate-900 truncate">
+                              {typeof value === 'number' ? value.toLocaleString() : value}
+                            </p>
+                            <p className="text-[9px] sm:text-[11px] text-slate-500 line-clamp-1 hidden sm:block">{subtext}</p>
+                            <div className="text-[9px] sm:text-xs font-medium text-indigo-500/80 bg-indigo-50 inline-flex px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-full truncate max-w-full">
+                              <span className="truncate">{trend}</span>
                             </div>
                           </div>
-                          <p className="text-xs text-slate-600">{subtext}</p>
-                          <div className="text-xs font-medium text-indigo-500/80 bg-indigo-50 inline-flex px-2.5 py-1 rounded-full">
-                            {trend}
+                          <div className={`flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl text-white bg-gradient-to-br ${accent} flex-shrink-0`}>
+                            <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
                           </div>
                         </div>
                       </Card>
