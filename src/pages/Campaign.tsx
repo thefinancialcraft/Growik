@@ -1410,20 +1410,6 @@ const Campaign = () => {
                     Filters
                   </Button>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                  <Button variant="outline" className="h-11 px-4">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Import Brief
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleOpenCreateDialog}
-                    className="h-11 px-5 bg-gradient-to-r from-indigo-500 via-sky-500 to-purple-500 text-white shadow-md hover:opacity-90"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Campaign
-                  </Button>
-                </div>
               </div>
 
               <Separator />
@@ -1726,18 +1712,8 @@ const Campaign = () => {
                     </div>
                     <h4 className="text-lg font-semibold text-foreground">No campaigns found</h4>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      Try adjusting your search filters or create a new campaign brief to get started.
+                      Try adjusting your search filters to get started.
                     </p>
-                    <div className="mt-6 flex justify-center">
-                      <Button
-                        type="button"
-                        onClick={handleOpenCreateDialog}
-                        className="h-11 px-5 bg-gradient-to-r from-indigo-500 via-sky-500 to-purple-500 text-white shadow-md hover:opacity-90"
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        New Campaign
-                      </Button>
-                    </div>
                   </div>
                 )}
               </div>
