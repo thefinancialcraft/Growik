@@ -314,7 +314,7 @@ const PublicContractSigning = () => {
                     .maybeSingle();
 
                 if (!error && data) {
-                    const signedStatus = data.is_signed === true;
+                    const signedStatus = (data as any).is_signed === true;
                     setIsSigned(signedStatus);
                     // Show overlay when contract is signed
                     if (signedStatus) {
@@ -1400,7 +1400,7 @@ const PublicContractSigning = () => {
     // Show email verification form if not verified
     if (!isEmailVerified && influencer?.email) {
         return (
-            <div className="min-h-screen bg-slate-50 w-full flex items-center justify-center p-4" style={{ width: '100vw', margin: 0, padding: '1rem' }}>
+            <div className="min-h-screen bg-slate-50 w-full flex items-center justify-center p-4" style={{ width: '100vw', margin: 0 }}>
                 <Card className="w-full max-w-md p-4 sm:p-6 md:p-8 shadow-lg">
                     <div className="space-y-4">
                         <div>
@@ -1446,8 +1446,8 @@ const PublicContractSigning = () => {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 w-full" style={{ width: '100vw', margin: 0, padding: 0 }}>
-            <Card className="w-full bg-white p-3 sm:p-4 md:p-8 shadow-lg" style={{ width: '100%', maxWidth: '100%', margin: 0 }}>
+        <div className="min-h-screen bg-slate-50 w-full px-2 sm:px-4 py-2 sm:py-4" style={{ width: '100vw', margin: 0 }}>
+            <Card className="w-full bg-white p-3 sm:p-4 md:p-8 shadow-lg mx-auto" style={{ width: '100%', maxWidth: '100%', margin: '0 auto' }}>
                 <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div className="flex-1">
                         <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Contract Agreement</h1>
@@ -1465,7 +1465,7 @@ const PublicContractSigning = () => {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                className="w-full sm:w-auto"
+                                className="w-full sm:w-auto flex items-center gap-2"
                                 onClick={() => {
                                     // Print functionality with font preservation
                                     const printWindow = window.open('', '_blank');
@@ -1600,7 +1600,6 @@ const PublicContractSigning = () => {
                                         };
                                     }
                                 }}
-                                className="flex items-center gap-2"
                             >
                                 <Printer className="h-4 w-4" />
                                 Print
@@ -1625,25 +1624,26 @@ const PublicContractSigning = () => {
                     .contract-preview-container .tiptap-rendered .signature-box,
                     .contract-preview-container .tiptap-rendered [data-signature="true"] {
                       display: inline-block !important;
-                      width: 150px !important;
-                      height: 100px !important;
+                      width: 140px !important;
+                      height: 90px !important;
                       border: 1px solid #9ca3af !important;
                       background-color: transparent !important;
                       border-radius: 3px !important;
                       padding: 2px !important;
                       text-align: center !important;
                       vertical-align: middle !important;
-                      line-height: 96px !important;
-                      font-size: 9px !important;
+                      line-height: 86px !important;
+                      font-size: 8px !important;
                       color: #6b7280 !important;
                       box-sizing: border-box !important;
-                      margin-top: 15px !important;
-                      margin-bottom: 15px !important;
-                      margin-left: 10px !important;
-                      margin-right: 10px !important;
-                      min-width: 150px !important;
+                      margin-top: 10px !important;
+                      margin-bottom: 10px !important;
+                      margin-left: 5px !important;
+                      margin-right: 5px !important;
+                      min-width: 140px !important;
                       white-space: nowrap !important;
                       flex-shrink: 0 !important;
+                      touch-action: manipulation !important;
                     }
                     @media (min-width: 640px) {
                       .contract-preview-container .tiptap-rendered .signature-box,
@@ -1657,11 +1657,12 @@ const PublicContractSigning = () => {
                         margin-left: 25px !important;
                         margin-right: 25px !important;
                         min-width: 200px !important;
+                        touch-action: auto !important;
                       }
                     }
                     .contract-preview-container .tiptap-rendered .signature-box + .signature-box,
                     .contract-preview-container .tiptap-rendered [data-signature="true"] + [data-signature="true"] {
-                      margin-left: 20px !important;
+                      margin-left: 10px !important;
                     }
                     @media (min-width: 640px) {
                       .contract-preview-container .tiptap-rendered .signature-box + .signature-box,
@@ -1676,9 +1677,16 @@ const PublicContractSigning = () => {
                     .contract-preview-container .tiptap-rendered {
                       overflow-x: auto !important;
                     }
-                    .contract-preview-container .tiptap-rendered .signature-box-clickable:hover {
+                    .contract-preview-container .tiptap-rendered .signature-box-clickable:hover,
+                    .contract-preview-container .tiptap-rendered .signature-box-clickable:active {
                       background-color: rgba(59, 130, 246, 0.1) !important;
                       border-color: #3b82f6 !important;
+                    }
+                    @media (max-width: 639px) {
+                      .contract-preview-container .tiptap-rendered .signature-box-clickable:active {
+                        background-color: rgba(59, 130, 246, 0.15) !important;
+                        transform: scale(0.98) !important;
+                      }
                     }
                     ${isSigned ? `
                     .contract-preview-container .tiptap-rendered .signature-box,
@@ -1691,10 +1699,16 @@ const PublicContractSigning = () => {
                     ` : ''}
                     .contract-preview-container {
                       background: rgba(255, 255, 255, 0.95);
-                      border-radius: 24px;
+                      border-radius: 16px;
                       border: 1px solid #e2e8f0;
-                      padding: 24px;
+                      padding: 12px;
                       box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+                    }
+                    @media (min-width: 640px) {
+                      .contract-preview-container {
+                        border-radius: 24px;
+                        padding: 24px;
+                      }
                     }
                     .contract-preview-container .tiptap-rendered {
                       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -1713,7 +1727,12 @@ const PublicContractSigning = () => {
                     /* Preserve spacing in paragraphs */
                     .contract-preview-container .tiptap-rendered p {
                       white-space: pre-wrap !important;
-                      margin: 0 0 14px 0;
+                      margin: 0 0 10px 0;
+                    }
+                    @media (min-width: 640px) {
+                      .contract-preview-container .tiptap-rendered p {
+                        margin: 0 0 14px 0;
+                      }
                     }
                     /* Preserve spacing in divs */
                     .contract-preview-container .tiptap-rendered div {
@@ -1731,11 +1750,18 @@ const PublicContractSigning = () => {
                     }
                 `}</style>
                 <div 
-                    className="contract-preview-container rounded-2xl sm:rounded-3xl border border-slate-200 bg-white/95 p-3 sm:p-4 md:p-6 shadow-inner min-h-[50vh] sm:min-h-[60vh] w-full relative overflow-x-auto" 
-                    style={{ width: '100%', maxWidth: '100%' }}
+                    className="contract-preview-container rounded-2xl sm:rounded-3xl border border-slate-200 bg-white/95 p-2 sm:p-4 md:p-6 shadow-inner min-h-[50vh] sm:min-h-[60vh] w-full relative overflow-x-auto overflow-y-auto max-h-[70vh] sm:max-h-none" 
+                    style={{ width: '100%', maxWidth: '100%', position: 'relative' }}
                 >
                     {isSigned && showSignedOverlay && (
-                        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl sm:rounded-3xl p-4">
+                        <div 
+                            className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                            onClick={(e) => {
+                                if (e.target === e.currentTarget) {
+                                    setShowSignedOverlay(false);
+                                }
+                            }}
+                        >
                             <div className="bg-green-50 border-2 border-green-200 rounded-lg px-4 sm:px-6 py-4 shadow-lg max-w-md w-full mx-4">
                                 <div className="flex flex-col items-center gap-4">
                                     <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
@@ -1849,7 +1875,7 @@ const PublicContractSigning = () => {
 
             {/* Signature Dialog - Copied & Simplified */}
             <Dialog open={isSignatureDialogOpen} onOpenChange={setIsSignatureDialogOpen}>
-                <DialogContent className="w-[95vw] sm:w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+                <DialogContent className="w-[95vw] sm:w-full sm:max-w-md max-h-[90vh] overflow-y-auto mx-2 sm:mx-0">
                     <DialogHeader>
                         <DialogTitle className="text-lg sm:text-xl">Add Signature</DialogTitle>
                         <DialogDescription className="text-sm">
@@ -1880,7 +1906,7 @@ const PublicContractSigning = () => {
                             <div 
                                 className="relative border-2 border-slate-300 rounded-lg bg-white overflow-hidden" 
                                 style={{ 
-                                    height: '180px', 
+                                    height: '160px', 
                                     width: '100%', 
                                     minWidth: '100%', 
                                     position: 'relative',
