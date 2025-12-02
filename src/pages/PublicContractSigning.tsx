@@ -1400,18 +1400,18 @@ const PublicContractSigning = () => {
     // Show email verification form if not verified
     if (!isEmailVerified && influencer?.email) {
         return (
-            <div className="min-h-screen bg-slate-50 w-full flex items-center justify-center" style={{ width: '100vw', margin: 0, padding: 0 }}>
-                <Card className="w-full max-w-md p-6 md:p-8 shadow-lg">
+            <div className="min-h-screen bg-slate-50 w-full flex items-center justify-center p-4" style={{ width: '100vw', margin: 0, padding: '1rem' }}>
+                <Card className="w-full max-w-md p-4 sm:p-6 md:p-8 shadow-lg">
                     <div className="space-y-4">
                         <div>
-                            <h1 className="text-2xl font-bold text-slate-900 mb-2">Email Verification</h1>
-                            <p className="text-sm text-slate-500">
+                            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Email Verification</h1>
+                            <p className="text-xs sm:text-sm text-slate-500">
                                 Please enter your registered email address to access the contract.
                             </p>
                         </div>
                         
                         <div className="space-y-2">
-                            <Label htmlFor="email">Email Address</Label>
+                            <Label htmlFor="email" className="text-sm sm:text-base">Email Address</Label>
                             <Input
                                 id="email"
                                 type="email"
@@ -1426,16 +1426,16 @@ const PublicContractSigning = () => {
                                         handleEmailVerification();
                                     }
                                 }}
-                                className={emailError ? "border-red-500" : ""}
+                                className={`text-sm sm:text-base ${emailError ? "border-red-500" : ""}`}
                             />
                             {emailError && (
-                                <p className="text-sm text-red-500">{emailError}</p>
+                                <p className="text-xs sm:text-sm text-red-500">{emailError}</p>
                             )}
                         </div>
                         
                         <Button 
                             onClick={handleEmailVerification}
-                            className="w-full bg-primary text-white"
+                            className="w-full bg-primary text-white text-sm sm:text-base"
                         >
                             Verify Email
                         </Button>
@@ -1447,23 +1447,25 @@ const PublicContractSigning = () => {
 
     return (
         <div className="min-h-screen bg-slate-50 w-full" style={{ width: '100vw', margin: 0, padding: 0 }}>
-            <Card className="w-full bg-white p-4 md:p-8 shadow-lg" style={{ width: '100%', maxWidth: '100%', margin: 0 }}>
-                <div className="mb-6 flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-slate-900">Contract Agreement</h1>
+            <Card className="w-full bg-white p-3 sm:p-4 md:p-8 shadow-lg" style={{ width: '100%', maxWidth: '100%', margin: 0 }}>
+                <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex-1">
+                        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Contract Agreement</h1>
                         {collaborationId && (
-                            <p className="text-sm font-medium text-slate-700 mt-1">
+                            <p className="text-xs sm:text-sm font-medium text-slate-700 mt-1 break-all">
                                 Collaboration ID: {collaborationId}
                             </p>
                         )}
-                        <p className="text-sm text-slate-500 mt-2">
+                        <p className="text-xs sm:text-sm text-slate-500 mt-2">
                             {isSigned ? "Contract has been signed." : "Please review and sign the contract below."}
                         </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                         {contractPreviewHtml && (
                             <Button
                                 variant="outline"
+                                size="sm"
+                                className="w-full sm:w-auto"
                                 onClick={() => {
                                     // Print functionality with font preservation
                                     const printWindow = window.open('', '_blank');
@@ -1605,14 +1607,14 @@ const PublicContractSigning = () => {
                             </Button>
                         )}
                         {isSigned ? (
-                            <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <div className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-green-100 text-green-800 rounded-lg w-full sm:w-auto">
+                                <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                 </svg>
-                                <span className="font-semibold">Contract Signed</span>
+                                <span className="text-xs sm:text-sm font-semibold">Contract Signed</span>
                             </div>
                         ) : (
-                            <Button onClick={handleUpdateContract} className="bg-primary text-white">
+                            <Button onClick={handleUpdateContract} className="bg-primary text-white w-full sm:w-auto text-sm sm:text-base">
                                 Submit Signed Contract
                             </Button>
                         )}
@@ -1623,29 +1625,49 @@ const PublicContractSigning = () => {
                     .contract-preview-container .tiptap-rendered .signature-box,
                     .contract-preview-container .tiptap-rendered [data-signature="true"] {
                       display: inline-block !important;
-                      width: 200px !important;
-                      height: 140px !important;
+                      width: 150px !important;
+                      height: 100px !important;
                       border: 1px solid #9ca3af !important;
                       background-color: transparent !important;
                       border-radius: 3px !important;
                       padding: 2px !important;
                       text-align: center !important;
                       vertical-align: middle !important;
-                      line-height: 136px !important;
-                      font-size: 10px !important;
+                      line-height: 96px !important;
+                      font-size: 9px !important;
                       color: #6b7280 !important;
                       box-sizing: border-box !important;
-                      margin-top: 20px !important;
-                      margin-bottom: 20px !important;
-                      margin-left: 25px !important;
-                      margin-right: 25px !important;
-                      min-width: 200px !important;
+                      margin-top: 15px !important;
+                      margin-bottom: 15px !important;
+                      margin-left: 10px !important;
+                      margin-right: 10px !important;
+                      min-width: 150px !important;
                       white-space: nowrap !important;
                       flex-shrink: 0 !important;
                     }
+                    @media (min-width: 640px) {
+                      .contract-preview-container .tiptap-rendered .signature-box,
+                      .contract-preview-container .tiptap-rendered [data-signature="true"] {
+                        width: 200px !important;
+                        height: 140px !important;
+                        line-height: 136px !important;
+                        font-size: 10px !important;
+                        margin-top: 20px !important;
+                        margin-bottom: 20px !important;
+                        margin-left: 25px !important;
+                        margin-right: 25px !important;
+                        min-width: 200px !important;
+                      }
+                    }
                     .contract-preview-container .tiptap-rendered .signature-box + .signature-box,
                     .contract-preview-container .tiptap-rendered [data-signature="true"] + [data-signature="true"] {
-                      margin-left: 50px !important;
+                      margin-left: 20px !important;
+                    }
+                    @media (min-width: 640px) {
+                      .contract-preview-container .tiptap-rendered .signature-box + .signature-box,
+                      .contract-preview-container .tiptap-rendered [data-signature="true"] + [data-signature="true"] {
+                        margin-left: 50px !important;
+                      }
                     }
                     .contract-preview-container .tiptap-rendered span[style*="font-size: 10px"] {
                       white-space: nowrap !important;
@@ -1676,11 +1698,17 @@ const PublicContractSigning = () => {
                     }
                     .contract-preview-container .tiptap-rendered {
                       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                      font-size: 11.5pt;
-                      line-height: 1.7;
+                      font-size: 10pt !important;
+                      line-height: 1.6;
                       color: #111827;
                       word-break: break-word;
                       white-space: pre-wrap !important; /* Preserve whitespace and line breaks */
+                    }
+                    @media (min-width: 640px) {
+                      .contract-preview-container .tiptap-rendered {
+                        font-size: 11.5pt !important;
+                        line-height: 1.7;
+                      }
                     }
                     /* Preserve spacing in paragraphs */
                     .contract-preview-container .tiptap-rendered p {
@@ -1703,27 +1731,27 @@ const PublicContractSigning = () => {
                     }
                 `}</style>
                 <div 
-                    className="contract-preview-container rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-inner min-h-[60vh] w-full relative" 
+                    className="contract-preview-container rounded-2xl sm:rounded-3xl border border-slate-200 bg-white/95 p-3 sm:p-4 md:p-6 shadow-inner min-h-[50vh] sm:min-h-[60vh] w-full relative overflow-x-auto" 
                     style={{ width: '100%', maxWidth: '100%' }}
                 >
                     {isSigned && showSignedOverlay && (
-                        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-3xl">
-                            <div className="bg-green-50 border-2 border-green-200 rounded-lg px-6 py-4 shadow-lg max-w-md">
+                        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl sm:rounded-3xl p-4">
+                            <div className="bg-green-50 border-2 border-green-200 rounded-lg px-4 sm:px-6 py-4 shadow-lg max-w-md w-full mx-4">
                                 <div className="flex flex-col items-center gap-4">
-                                    <div className="flex items-center gap-3">
-                                        <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
+                                        <svg className="w-6 h-6 sm:w-8 sm:h-8 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
-                                        <div className="text-center">
-                                            <p className="text-lg font-semibold text-green-800">Contract Already Signed</p>
-                                            <p className="text-sm text-green-600">This contract has been signed and is now read-only.</p>
+                                        <div>
+                                            <p className="text-base sm:text-lg font-semibold text-green-800">Contract Already Signed</p>
+                                            <p className="text-xs sm:text-sm text-green-600 mt-1">This contract has been signed and is now read-only.</p>
                                         </div>
                                     </div>
                                     <Button
                                         onClick={() => {
                                             setShowSignedOverlay(false);
                                         }}
-                                        className="bg-green-600 hover:bg-green-700 text-white"
+                                        className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
                                     >
                                         OK
                                     </Button>
@@ -1821,15 +1849,15 @@ const PublicContractSigning = () => {
 
             {/* Signature Dialog - Copied & Simplified */}
             <Dialog open={isSignatureDialogOpen} onOpenChange={setIsSignatureDialogOpen}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="w-[95vw] sm:w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>Add Signature</DialogTitle>
-                        <DialogDescription>
+                        <DialogTitle className="text-lg sm:text-xl">Add Signature</DialogTitle>
+                        <DialogDescription className="text-sm">
                             Draw or type your signature below.
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="flex items-center justify-center gap-4 py-4">
+                    <div className="flex items-center justify-center gap-2 sm:gap-4 py-3 sm:py-4">
                         <Button variant={signatureMode === 'draw' ? 'default' : 'outline'} onClick={() => {
                             setSignatureMode('draw');
                             // Force canvas re-initialization when switching to draw mode
@@ -1852,9 +1880,9 @@ const PublicContractSigning = () => {
                             <div 
                                 className="relative border-2 border-slate-300 rounded-lg bg-white overflow-hidden" 
                                 style={{ 
-                                    height: '200px', 
+                                    height: '180px', 
                                     width: '100%', 
-                                    minWidth: '400px', 
+                                    minWidth: '100%', 
                                     position: 'relative',
                                     backgroundColor: '#ffffff'
                                 }}
@@ -1955,29 +1983,30 @@ const PublicContractSigning = () => {
                             </div>
                         </div>
                     ) : (
-                        <div className="space-y-4">
+                        <div className="space-y-3 sm:space-y-4">
                             <Input
                                 placeholder="Type your name"
                                 value={signatureValue}
                                 onChange={(e) => setSignatureValue(e.target.value)}
+                                className="text-sm sm:text-base"
                             />
                             <Select value={signatureFont} onValueChange={setSignatureFont}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectTrigger className="text-sm sm:text-base"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="Dancing Script">Dancing Script</SelectItem>
                                     <SelectItem value="Great Vibes">Great Vibes</SelectItem>
                                     <SelectItem value="Pacifico">Pacifico</SelectItem>
                                 </SelectContent>
                             </Select>
-                            <div className="p-4 border rounded text-center text-2xl" style={{ fontFamily: signatureFont }}>
+                            <div className="p-3 sm:p-4 border rounded text-center text-xl sm:text-2xl" style={{ fontFamily: signatureFont }}>
                                 {signatureValue || "Preview"}
                             </div>
                         </div>
                     )}
 
-                    <div className="flex justify-end gap-2">
-                        <Button variant="outline" onClick={() => setIsSignatureDialogOpen(false)}>Cancel</Button>
-                        <Button onClick={handleSaveSignature}>Save Signature</Button>
+                    <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
+                        <Button variant="outline" onClick={() => setIsSignatureDialogOpen(false)} className="w-full sm:w-auto text-sm sm:text-base">Cancel</Button>
+                        <Button onClick={handleSaveSignature} className="w-full sm:w-auto text-sm sm:text-base">Save Signature</Button>
                     </div>
                 </DialogContent>
             </Dialog>
