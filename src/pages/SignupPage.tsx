@@ -10,7 +10,13 @@ const SignupPage: React.FC = () => {
     contactNo: "",
     email: "",
     password: "",
-    confirmPassword: ""
+    confirmPassword: "",
+    address_line1: "",
+    address_line2: "",
+    address_landmark: "",
+    address_city: "",
+    address_pincode: "",
+    address_country: ""
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -120,7 +126,13 @@ const SignupPage: React.FC = () => {
                 .update({
                   user_name: fullName,
                     contact_no: formData.contactNo.trim(),
-                    email: formData.email
+                    email: formData.email,
+                    address_line1: formData.address_line1.trim() || null,
+                    address_line2: formData.address_line2.trim() || null,
+                    address_landmark: formData.address_landmark.trim() || null,
+                    address_city: formData.address_city.trim() || null,
+                    address_pincode: formData.address_pincode.trim() || null,
+                    address_country: formData.address_country.trim() || null
                 })
                 .eq('user_id', data.user.id);
 
@@ -140,7 +152,13 @@ const SignupPage: React.FC = () => {
                     contact_no: formData.contactNo.trim(),
                     role: 'user',
                     status: 'active',
-                    approval_status: 'pending'
+                    approval_status: 'pending',
+                    address_line1: formData.address_line1.trim() || null,
+                    address_line2: formData.address_line2.trim() || null,
+                    address_landmark: formData.address_landmark.trim() || null,
+                    address_city: formData.address_city.trim() || null,
+                    address_pincode: formData.address_pincode.trim() || null,
+                    address_country: formData.address_country.trim() || null
                   });
 
                 if (!insertError) {
@@ -346,6 +364,95 @@ const SignupPage: React.FC = () => {
                 required
                 disabled={loading}
                 placeholder="Enter your email address"
+              />
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 mt-2">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">Address Information</h3>
+            </div>
+
+            <div>
+              <label htmlFor="address_line1" className="block text-xs font-medium text-gray-500 mb-1">Address Line 1</label>
+              <input
+                id="address_line1"
+                name="address_line1"
+                type="text"
+                value={formData.address_line1}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-gray-50 text-gray-700 text-sm transition"
+                disabled={loading}
+                placeholder="Street address, P.O. box"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="address_line2" className="block text-xs font-medium text-gray-500 mb-1">Address Line 2</label>
+              <input
+                id="address_line2"
+                name="address_line2"
+                type="text"
+                value={formData.address_line2}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-gray-50 text-gray-700 text-sm transition"
+                disabled={loading}
+                placeholder="Apartment, suite, unit, building, floor, etc."
+              />
+            </div>
+
+            <div>
+              <label htmlFor="address_landmark" className="block text-xs font-medium text-gray-500 mb-1">Landmark</label>
+              <input
+                id="address_landmark"
+                name="address_landmark"
+                type="text"
+                value={formData.address_landmark}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-gray-50 text-gray-700 text-sm transition"
+                disabled={loading}
+                placeholder="Nearby landmark"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="address_city" className="block text-xs font-medium text-gray-500 mb-1">City</label>
+                <input
+                  id="address_city"
+                  name="address_city"
+                  type="text"
+                  value={formData.address_city}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-gray-50 text-gray-700 text-sm transition"
+                  disabled={loading}
+                  placeholder="City"
+                />
+              </div>
+              <div>
+                <label htmlFor="address_pincode" className="block text-xs font-medium text-gray-500 mb-1">Pincode</label>
+                <input
+                  id="address_pincode"
+                  name="address_pincode"
+                  type="text"
+                  value={formData.address_pincode}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-gray-50 text-gray-700 text-sm transition"
+                  disabled={loading}
+                  placeholder="Postal code"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="address_country" className="block text-xs font-medium text-gray-500 mb-1">Country</label>
+              <input
+                id="address_country"
+                name="address_country"
+                type="text"
+                value={formData.address_country}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-200 bg-gray-50 text-gray-700 text-sm transition"
+                disabled={loading}
+                placeholder="Country"
               />
             </div>
 

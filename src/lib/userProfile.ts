@@ -17,6 +17,12 @@ export interface UserProfile {
   hold_duration_days?: number | null;
   hold_end_time?: string | null;
   last_seen?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  address_landmark?: string | null;
+  address_city?: string | null;
+  address_pincode?: string | null;
+  address_country?: string | null;
 }
 
 interface ProfileCache {

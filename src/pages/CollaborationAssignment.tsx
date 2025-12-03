@@ -1017,16 +1017,40 @@ const CollaborationAssignment = () => {
     }
   };
 
+  // Helper function to map display names back to actual keys
+  const getActualKeyFromDisplayName = (displayName: string): string => {
+    if (displayName === 'Influencer Name') return 'name.influencer';
+    if (displayName === 'Product Name') return 'name.product';
+    if (displayName === 'Companies Name') return 'name.companies';
+    if (displayName === 'User Name') return 'name.user';
+    return displayName;
+  };
+
+  // Helper function to get display name from actual key
+  const getDisplayNameFromKey = (key: string): string => {
+    if (key === 'name.influencer') return 'Influencer Name';
+    if (key === 'name.product') return 'Product Name';
+    if (key === 'name.companies') return 'Companies Name';
+    if (key === 'name.user') return 'User Name';
+    return key;
+  };
+
   const normalizeVariableKey = (rawKey: string | null | undefined): string => {
     if (!rawKey) {
       return "";
     }
-    return rawKey
+    let cleaned = rawKey
       .replace(/var\[\s*/i, "")
       .replace(/\s*\]/, "")
       .replace(/^\{\{/, "")
       .replace(/\}\}$/, "")
       .trim();
+    
+    // Remove index part like [1], [2], etc. from the new format
+    cleaned = cleaned.replace(/\s*\[\s*\d+\s*\]\s*$/, "").trim();
+    
+    // Map display names to actual keys
+    return getActualKeyFromDisplayName(cleaned);
   };
 
   const extractRenderedHtml = (html: string | null | undefined): string | null => {
@@ -1094,8 +1118,82 @@ const CollaborationAssignment = () => {
           }
         >();
 
+        // Track which base keys already have indexed entries to avoid duplicates
+        // Track both display names and normalized keys
+        const indexedBaseKeys = new Set<string>();
+        const indexedNormalizedKeys = new Set<string>();
+        
         if (contractData.variables && typeof contractData.variables === "object") {
           Object.entries(contractData.variables).forEach(([rawKey, rawValue]) => {
+            // Check if this is already an indexed key (e.g., "User Name_1", "User Name_2")
+            const indexedMatch = rawKey.match(/^(.+)_(\d+)$/);
+            if (indexedMatch) {
+              // This is an indexed entry - process it directly
+              const baseKey = indexedMatch[1];
+              const index = parseInt(indexedMatch[2], 10);
+              
+              // Track both display name and normalized key
+              indexedBaseKeys.add(baseKey);
+              const normalizedBaseKey = getActualKeyFromDisplayName(baseKey);
+              if (normalizedBaseKey !== baseKey) {
+                indexedNormalizedKeys.add(normalizedBaseKey);
+              } else {
+                indexedNormalizedKeys.add(baseKey);
+              }
+              
+              if (rawValue && typeof rawValue === "object" && rawValue !== null) {
+                const entry = rawValue as { 
+                  descriptors?: unknown; 
+                  descriptions?: unknown;
+                  index?: unknown;
+                };
+                
+                let descriptors: string[] = [];
+                let descriptions: string[] = [];
+                
+                if (Array.isArray(entry.descriptors)) {
+                  descriptors = entry.descriptors
+                    .map((item) => (typeof item === "string" ? item : ""))
+                    .map((item) => item.trim())
+                    .filter(Boolean);
+                }
+                
+                if (Array.isArray(entry.descriptions)) {
+                  descriptions = entry.descriptions
+                    .map((item) => (typeof item === "string" ? item : ""))
+                    .map((item) => item.trim());
+                }
+                
+                // Ensure arrays have at least one element
+                if (descriptors.length === 0) {
+                  descriptors = [""];
+                }
+                if (descriptions.length === 0) {
+                  descriptions = [""];
+                }
+                
+                // Use the first descriptor and description for this indexed entry
+                const descriptor = descriptors[0] || "";
+                const description = descriptions[0] || "";
+                
+                // Build description for display
+                const descriptionParts: string[] = [];
+                if (descriptor) {
+                  descriptionParts.push(descriptor);
+                }
+                if (description) {
+                  descriptionParts.push(description);
+                }
+                
+                // Store with the indexed key
+                collected.set(rawKey, {
+                  description: descriptionParts.length > 0 ? descriptionParts.join(" • ") : undefined,
+                  descriptors: descriptor ? [descriptor] : [],
+                });
+              }
+              return; // Skip further processing for indexed entries
+            }
+            
             const normalizedKey = normalizeVariableKey(rawKey);
             if (!normalizedKey) {
               return;
@@ -1105,12 +1203,38 @@ const CollaborationAssignment = () => {
             if (normalizedKey === "signature" || normalizedKey === "plain_text" || normalizedKey === "date") {
               return;
             }
+            
+            // Skip if this base key already has indexed entries
+            // Check both normalized key and display name
+            const displayName = getDisplayNameFromKey(normalizedKey);
+            if (indexedNormalizedKeys.has(normalizedKey) || indexedBaseKeys.has(displayName) || indexedBaseKeys.has(normalizedKey)) {
+              return;
+            }
 
             let descriptors: string[] = [];
+            let descriptions: string[] = [];
             let occurrences: number | undefined;
+            let variableDescription: string | undefined;
 
             if (rawValue && typeof rawValue === "object" && rawValue !== null) {
-              const entry = rawValue as { descriptor?: string; descriptors?: unknown; occurrences?: number };
+              const entry = rawValue as { 
+                descriptor?: string; 
+                descriptors?: unknown; 
+                occurrences?: number; 
+                description?: string;
+                descriptions?: unknown;
+              };
+              
+              // Handle new format with descriptions array
+              if (Array.isArray(entry.descriptions)) {
+                descriptions = entry.descriptions
+                  .map((item) => (typeof item === "string" ? item : ""))
+                  .map((item) => item.trim());
+              } else if (typeof entry.description === "string" && entry.description.trim().length) {
+                // Legacy format: single description
+                descriptions = [entry.description.trim()];
+              }
+              
               if (Array.isArray(entry.descriptors)) {
                 descriptors = entry.descriptors
                   .map((item) => (typeof item === "string" ? item : ""))
@@ -1129,58 +1253,149 @@ const CollaborationAssignment = () => {
               }
             } else if (typeof rawValue === "string" && rawValue.trim().length) {
               descriptors = [rawValue.trim()];
+              descriptions = [""];
             }
 
-            const uniqueDescriptors = Array.from(new Set(descriptors)).filter(Boolean);
-            const descriptionParts: string[] = [];
-
-            if (uniqueDescriptors.length === 1) {
-              descriptionParts.push(uniqueDescriptors[0]);
-            } else if (uniqueDescriptors.length > 1) {
-              descriptionParts.push(uniqueDescriptors.join(" • "));
+            // Ensure descriptors and descriptions arrays match in length
+            const maxLength = Math.max(descriptors.length, descriptions.length, 1);
+            while (descriptors.length < maxLength) {
+              descriptors.push("");
+            }
+            while (descriptions.length < maxLength) {
+              descriptions.push("");
             }
 
-            const countHint = occurrences ?? (uniqueDescriptors.length ? uniqueDescriptors.length : undefined);
-            if (countHint && countHint > (uniqueDescriptors.length || 1)) {
-              descriptionParts.push(`used ${countHint} times`);
-            } else if (countHint && countHint > 1 && uniqueDescriptors.length <= 1) {
-              descriptionParts.push(`used ${countHint} times`);
+            // Auto-add source descriptor for name variables if not already present
+            if (descriptors.length === 0 || descriptors.every(d => !d || d.trim() === "")) {
+              if (normalizedKey === 'name.influencer') {
+                descriptors = Array(maxLength).fill('source:public.influencers.name');
+              } else if (normalizedKey === 'name.user') {
+                descriptors = Array(maxLength).fill('source:public.user_profiles.user_name');
+              } else if (normalizedKey === 'name.product') {
+                descriptors = Array(maxLength).fill('source:public.products.name');
+              } else if (normalizedKey === 'name.companies') {
+                descriptors = Array(maxLength).fill('source:public.companies.name');
+              }
             }
 
-            const combinedDescription = descriptionParts.length ? descriptionParts.join(" • ") : undefined;
+            // If we have multiple occurrences (descriptors/descriptions arrays with length > 1),
+            // create separate indexed entries for each occurrence
+            if (maxLength > 1) {
+              for (let i = 0; i < maxLength; i++) {
+                const indexedKey = `${normalizedKey}_${i}`;
+                const occurrenceDescriptor = descriptors[i] || "";
+                const occurrenceDescription = descriptions[i] || "";
+                
+                // Build description for this occurrence
+                const descriptionParts: string[] = [];
+                if (occurrenceDescriptor) {
+                  descriptionParts.push(occurrenceDescriptor);
+                }
+                if (occurrenceDescription) {
+                  descriptionParts.push(occurrenceDescription);
+                }
+                descriptionParts.push(`(occurrence ${i + 1})`);
+                
+                collected.set(indexedKey, {
+                  description: descriptionParts.join(" • "),
+                  descriptors: occurrenceDescriptor ? [occurrenceDescriptor] : [],
+                });
+              }
+            } else {
+              // Single occurrence - use original logic
+              const uniqueDescriptors = Array.from(new Set(descriptors)).filter(Boolean);
+              const descriptionParts: string[] = [];
 
-            const existing = collected.get(normalizedKey);
-            // Preserve order: keep existing descriptors first, then add new ones (avoiding duplicates)
-            const mergedDescriptors = existing
-              ? (() => {
-                const existingSet = new Set(existing.descriptors);
-                const newUnique = uniqueDescriptors.filter(d => !existingSet.has(d));
-                return [...existing.descriptors, ...newUnique];
-              })()
-              : uniqueDescriptors;
-            const description = existing?.description
-              ? existing.description
-              : combinedDescription;
+              if (uniqueDescriptors.length === 1) {
+                descriptionParts.push(uniqueDescriptors[0]);
+              } else if (uniqueDescriptors.length > 1) {
+                descriptionParts.push(uniqueDescriptors.join(" • "));
+              }
 
-            collected.set(normalizedKey, {
-              description,
-              descriptors: mergedDescriptors,
-            });
+              if (descriptions[0] && descriptions[0].trim()) {
+                descriptionParts.push(descriptions[0].trim());
+              }
+
+              const combinedDescription = descriptionParts.length ? descriptionParts.join(" • ") : undefined;
+
+              const existing = collected.get(normalizedKey);
+              
+              // Preserve order: keep existing descriptors first, then add new ones (avoiding duplicates)
+              const mergedDescriptors = existing
+                ? (() => {
+                  const existingSet = new Set(existing.descriptors);
+                  const newUnique = uniqueDescriptors.filter(d => !existingSet.has(d));
+                  return [...existing.descriptors, ...newUnique];
+                })()
+                : uniqueDescriptors;
+
+              collected.set(normalizedKey, {
+                description: combinedDescription || existing?.description,
+                descriptors: mergedDescriptors,
+              });
+            }
           });
         }
 
+        // First, try to extract keys from data-variable-key attributes
         if (typeof contractData.content === "string" && contractData.content.trim().length) {
-          const regex = /var\[\s*\{\{\s*([^}\s]+(?:[^}]*)?)\s*\}\}\s*\]/gi;
+          const dataKeyRegex = /data-variable-key=["']([^"']+)["']/gi;
+          let dataKeyMatch: RegExpExecArray | null;
+          while ((dataKeyMatch = dataKeyRegex.exec(contractData.content)) !== null) {
+            const actualKey = dataKeyMatch[1].trim();
+            if (actualKey && !collected.has(actualKey)) {
+              // Skip if this key already has indexed entries
+              const displayName = getDisplayNameFromKey(actualKey);
+              if (indexedNormalizedKeys.has(actualKey) || indexedBaseKeys.has(displayName) || indexedBaseKeys.has(actualKey)) {
+                continue; // Skip if indexed entries already exist
+              }
+              
+              // Auto-add source descriptor for name variables
+              let descriptors: string[] = [];
+              if (actualKey === 'name.influencer') {
+                descriptors = ['source:public.influencers.name'];
+              } else if (actualKey === 'name.user') {
+                descriptors = ['source:public.user_profiles.user_name'];
+              } else if (actualKey === 'name.product') {
+                descriptors = ['source:public.products.name'];
+              } else if (actualKey === 'name.companies') {
+                descriptors = ['source:public.companies.name'];
+              }
+              
+              collected.set(actualKey, { 
+                description: undefined, 
+                descriptors: descriptors 
+              });
+            }
+          }
+        }
+
+        if (typeof contractData.content === "string" && contractData.content.trim().length) {
+          // Updated regex to match both old format: var[{{User Name}}] and new format: var[{{User Name [1]}}]
+          const regex = /var\[\s*\{\{\s*([^}\[]+?)(?:\s*\[\s*\d+\s*\])?\s*\}\}\s*\]/gi;
           let match: RegExpExecArray | null;
 
-          // Track occurrences of plain_text, signature, and date separately
+          // Track occurrences of plain_text, signature, date, and name variables separately
           const plainTextOccurrences = new Map<string, number>();
           const signatureOccurrences = new Map<string, number>();
           const dateOccurrences = new Map<string, number>();
+          const nameVariableOccurrences = new Map<string, number>();
 
           while ((match = regex.exec(contractData.content)) !== null) {
-            const normalizedKey = normalizeVariableKey(match[1]);
+            const rawKey = match[1]?.trim();
+            const normalizedKey = normalizeVariableKey(rawKey);
             if (normalizedKey) {
+              // Check if this variable already has indexed entries (check both raw key and normalized key)
+              const rawKeyDisplayName = rawKey; // Raw key might be display name like "User Name"
+              const normalizedDisplayName = getDisplayNameFromKey(normalizedKey);
+              
+              // Skip if indexed entries exist for this variable
+              if (indexedBaseKeys.has(rawKeyDisplayName) || 
+                  indexedBaseKeys.has(normalizedDisplayName) || 
+                  indexedNormalizedKeys.has(normalizedKey)) {
+                continue; // Skip processing from content if indexed entries already exist
+              }
+              
               // For plain_text, create separate entries for each occurrence
               if (normalizedKey === "plain_text") {
                 const currentCount = plainTextOccurrences.get("plain_text") ?? 0;
@@ -1212,11 +1427,19 @@ const CollaborationAssignment = () => {
                 dateOccurrences.set("date", currentCount + 1);
 
                 if (!collected.has(indexedKey)) {
-                  // Get the descriptors from the variables object if available
+                  // Get the descriptors and descriptions from the variables object if available
                   const variableData = contractData.variables?.[normalizedKey];
                   let allDescriptors: string[] = [];
+                  let allDescriptions: string[] = [];
+                  
                   if (variableData && typeof variableData === "object" && variableData !== null) {
-                    const entry = variableData as { descriptor?: string; descriptors?: unknown };
+                    const entry = variableData as { 
+                      descriptor?: string; 
+                      descriptors?: unknown;
+                      description?: string;
+                      descriptions?: unknown;
+                    };
+                    
                     if (Array.isArray(entry.descriptors)) {
                       allDescriptors = entry.descriptors
                         .map((item) => (typeof item === "string" ? item : ""))
@@ -1225,34 +1448,219 @@ const CollaborationAssignment = () => {
                     } else if (typeof entry.descriptor === "string" && entry.descriptor.trim().length) {
                       allDescriptors = [entry.descriptor.trim()];
                     }
+                    
+                    if (Array.isArray(entry.descriptions)) {
+                      allDescriptions = entry.descriptions
+                        .map((item) => (typeof item === "string" ? item : ""))
+                        .map((item) => item.trim());
+                    } else if (typeof entry.description === "string" && entry.description.trim().length) {
+                      allDescriptions = [entry.description.trim()];
+                    }
                   }
                   
-                  // Assign descriptor for this occurrence (cycle through if more occurrences than descriptors)
-                  const descriptorIndex = currentCount % (allDescriptors.length || 1);
-                  const occurrenceDescriptors = allDescriptors.length > 0 
-                    ? [allDescriptors[descriptorIndex] || allDescriptors[0]] 
+                  // Ensure arrays match length
+                  const maxLen = Math.max(allDescriptors.length, allDescriptions.length, 1);
+                  while (allDescriptors.length < maxLen) {
+                    allDescriptors.push(allDescriptors[0] || "");
+                  }
+                  while (allDescriptions.length < maxLen) {
+                    allDescriptions.push("");
+                  }
+                  
+                  // Assign descriptor and description for this occurrence
+                  const descriptorIndex = currentCount % maxLen;
+                  const occurrenceDescriptors = allDescriptors.length > 0 && allDescriptors[descriptorIndex]
+                    ? [allDescriptors[descriptorIndex]] 
                     : [];
+                  const occurrenceDescription = allDescriptions[descriptorIndex] || "";
                   
                   const descriptionParts: string[] = [];
                   if (occurrenceDescriptors.length > 0) {
                     descriptionParts.push(occurrenceDescriptors.join(" • "));
                   }
+                  if (occurrenceDescription) {
+                    descriptionParts.push(occurrenceDescription);
+                  }
                   descriptionParts.push(`(occurrence ${currentCount + 1})`);
                   
                   collected.set(indexedKey, {
-                    description: descriptionParts.join(" "),
+                    description: descriptionParts.join(" • "),
+                    descriptors: occurrenceDescriptors
+                  });
+                }
+              } else if (normalizedKey.startsWith('name.')) {
+                // For name variables (name.product, name.influencer, etc.), create separate entries for each occurrence
+                // (Note: We already checked for indexed entries at the top of the loop)
+                const currentCount = nameVariableOccurrences.get(normalizedKey) ?? 0;
+                nameVariableOccurrences.set(normalizedKey, currentCount + 1);
+
+                // Get the descriptors and descriptions from the variables object if available
+                const variableData = contractData.variables?.[normalizedKey];
+                let allDescriptors: string[] = [];
+                let allDescriptions: string[] = [];
+                
+                if (variableData && typeof variableData === "object" && variableData !== null) {
+                  const entry = variableData as { 
+                    descriptor?: string; 
+                    descriptors?: unknown;
+                    description?: string;
+                    descriptions?: unknown;
+                  };
+                  
+                  if (Array.isArray(entry.descriptors)) {
+                    allDescriptors = entry.descriptors
+                      .map((item) => (typeof item === "string" ? item : ""))
+                      .map((item) => item.trim())
+                      .filter(Boolean);
+                  } else if (typeof entry.descriptor === "string" && entry.descriptor.trim().length) {
+                    allDescriptors = [entry.descriptor.trim()];
+                  }
+                  
+                  if (Array.isArray(entry.descriptions)) {
+                    allDescriptions = entry.descriptions
+                      .map((item) => (typeof item === "string" ? item : ""))
+                      .map((item) => item.trim());
+                  } else if (typeof entry.description === "string" && entry.description.trim().length) {
+                    allDescriptions = [entry.description.trim()];
+                  }
+                }
+                
+                // Auto-add source descriptor if not present
+                if (allDescriptors.length === 0 || allDescriptors.every(d => !d || d.trim() === "")) {
+                  if (normalizedKey === 'name.influencer') {
+                    allDescriptors = ['source:public.influencers.name'];
+                  } else if (normalizedKey === 'name.user') {
+                    allDescriptors = ['source:public.user_profiles.user_name'];
+                  } else if (normalizedKey === 'name.product') {
+                    allDescriptors = ['source:public.products.name'];
+                  } else if (normalizedKey === 'name.companies') {
+                    allDescriptors = ['source:public.companies.name'];
+                  }
+                }
+                
+                // Ensure arrays match length
+                const maxLen = Math.max(allDescriptors.length, allDescriptions.length, 1);
+                while (allDescriptors.length < maxLen) {
+                  allDescriptors.push(allDescriptors[0] || "");
+                }
+                while (allDescriptions.length < maxLen) {
+                  allDescriptions.push("");
+                }
+                
+                // Assign descriptor and description for this occurrence
+                const descriptorIndex = currentCount % maxLen;
+                const occurrenceDescriptors = allDescriptors.length > 0 && allDescriptors[descriptorIndex]
+                  ? [allDescriptors[descriptorIndex]] 
+                  : [];
+                const occurrenceDescription = allDescriptions[descriptorIndex] || "";
+                
+                // Always use indexed key during processing, we'll clean up single occurrences later
+                const indexedKey = `${normalizedKey}_${currentCount}`;
+                
+                if (!collected.has(indexedKey)) {
+                  const descriptionParts: string[] = [];
+                  if (occurrenceDescriptors.length > 0) {
+                    descriptionParts.push(occurrenceDescriptors.join(" • "));
+                  }
+                  if (occurrenceDescription) {
+                    descriptionParts.push(occurrenceDescription);
+                  }
+                  descriptionParts.push(`(occurrence ${currentCount + 1})`);
+                  
+                  collected.set(indexedKey, {
+                    description: descriptionParts.join(" • "),
                     descriptors: occurrenceDescriptors
                   });
                 }
               } else {
                 // For other variables, use the original logic
-                if (!collected.has(normalizedKey)) {
-                  collected.set(normalizedKey, { description: undefined, descriptors: [] });
+                const existing = collected.get(normalizedKey);
+                
+                if (!existing) {
+                  // Auto-add source descriptor for name variables if creating new entry
+                  let descriptors: string[] = [];
+                  if (normalizedKey === 'name.influencer') {
+                    descriptors = ['source:public.influencers.name'];
+                  } else if (normalizedKey === 'name.user') {
+                    descriptors = ['source:public.user_profiles.user_name'];
+                  } else if (normalizedKey === 'name.product') {
+                    descriptors = ['source:public.products.name'];
+                  } else if (normalizedKey === 'name.companies') {
+                    descriptors = ['source:public.companies.name'];
+                  }
+                  
+                  collected.set(normalizedKey, { 
+                    description: undefined, 
+                    descriptors: descriptors 
+                  });
+                } else {
+                  // If key already exists, preserve its description and merge descriptors if needed
+                  // Auto-add source descriptor for name variables if not already present
+                  let descriptorsToAdd: string[] = [];
+                  if (normalizedKey === 'name.influencer' && !existing.descriptors.some(d => d.includes('influencers.name'))) {
+                    descriptorsToAdd = ['source:public.influencers.name'];
+                  } else if (normalizedKey === 'name.user' && !existing.descriptors.some(d => d.includes('user_profiles.user_name'))) {
+                    descriptorsToAdd = ['source:public.user_profiles.user_name'];
+                  } else if (normalizedKey === 'name.product' && !existing.descriptors.some(d => d.includes('products.name'))) {
+                    descriptorsToAdd = ['source:public.products.name'];
+                  } else if (normalizedKey === 'name.companies' && !existing.descriptors.some(d => d.includes('companies.name'))) {
+                    descriptorsToAdd = ['source:public.companies.name'];
+                  }
+                  
+                  if (descriptorsToAdd.length > 0) {
+                    const mergedDescriptors = [...existing.descriptors, ...descriptorsToAdd];
+                    collected.set(normalizedKey, {
+                      description: existing.description, // Preserve existing description
+                      descriptors: mergedDescriptors
+                    });
+                  }
+                  // If no descriptors to add, just preserve the existing entry (description is already there)
                 }
               }
             }
           }
         }
+
+        // Cleanup: Convert single-occurrence indexed name variables to base entries (remove "(occurrence 1)" suffix)
+        const nameVariableBaseKeys = ['name.influencer', 'name.user', 'name.product', 'name.companies'];
+        nameVariableBaseKeys.forEach(baseKey => {
+          const indexedEntries = Array.from(collected.entries()).filter(([key]) => 
+            key.startsWith(`${baseKey}_`)
+          );
+          
+          if (indexedEntries.length === 1) {
+            // Only one occurrence - convert to base entry
+            const [indexedKey, indexedValue] = indexedEntries[0];
+            let description = indexedValue.description || "";
+            
+            // Remove "(occurrence 1)" or "• (occurrence 1)" from description if present
+            description = description
+              .replace(/\s*•\s*\(occurrence\s+1\)\s*$/i, '')
+              .replace(/\s*\(occurrence\s+1\)\s*$/i, '')
+              .trim();
+            
+            // Check if base entry already exists (from variables object processing)
+            const existingBase = collected.get(baseKey);
+            if (existingBase) {
+              // Merge: prefer the description with more information (longer or non-empty)
+              const existingDesc = existingBase.description || "";
+              const newDesc = description || "";
+              const finalDescription = newDesc.length > existingDesc.length ? newDesc : (existingDesc || newDesc);
+              
+              collected.set(baseKey, {
+                description: finalDescription,
+                descriptors: existingBase.descriptors.length > 0 ? existingBase.descriptors : indexedValue.descriptors
+              });
+            } else {
+              collected.set(baseKey, {
+                description: description,
+                descriptors: indexedValue.descriptors
+              });
+            }
+            
+            collected.delete(indexedKey);
+          }
+        });
 
         if (!collected.size) {
           setContractVariableEntries(DEFAULT_CONTRACT_VARIABLE_HINTS);
@@ -1390,11 +1798,15 @@ const CollaborationAssignment = () => {
 
         const formatResolvedValue = (rawValue: any): string => {
           if (rawValue === undefined || rawValue === null) {
-            return "--";
+            return ""; // Return empty string instead of "--" for blank values
           }
           if (typeof rawValue === "string") {
             const trimmed = rawValue.trim();
-            return trimmed.length ? trimmed : "--";
+            // Treat "--" as blank value - return empty string
+            if (trimmed === "--") {
+              return "";
+            }
+            return trimmed.length ? trimmed : ""; // Return empty string instead of "--" for blank values
           }
           if (typeof rawValue === "number" || typeof rawValue === "boolean") {
             return String(rawValue);
@@ -1437,31 +1849,55 @@ const CollaborationAssignment = () => {
             const columnLabel = parsed.column.split(".").pop() ?? parsed.column;
 
             if (!row) {
-              rendered.push(`${columnLabel}: --`);
+              // Don't add anything to rendered if row is not found (skip blank values)
               continue;
             }
 
             const rawValue = resolveColumnValue(row, parsed.column);
             const valueText = formatResolvedValue(rawValue);
-            rendered.push(`${columnLabel}: ${valueText}`);
+            
+            // Always add to rawValues (even if empty) so we can detect "--" values
+            // But only add to rendered if valueText is not empty (not blank)
+            if (valueText && valueText.trim().length > 0) {
+              rendered.push(`${columnLabel}: ${valueText}`);
+            }
+            // Always push to rawValues, even if empty, so we know the field exists
+            // This helps us detect "--" values that should be replaced with blank
+            rawValues.push(valueText || "");
+          }
 
-            if (valueText && valueText !== "--") {
-              rawValues.push(valueText);
+          // Filter out empty values and values containing "--"
+          const displayParts = rendered.filter((value) => {
+            if (!value || !value.trim()) return false;
+            // Remove values that end with ": --" or are just "--"
+            const trimmed = value.trim();
+            return trimmed !== "--" && !trimmed.endsWith(": --") && trimmed.length > 0;
+          });
+
+          // Clean up display string - remove any remaining "--" patterns
+          let displayString = displayParts.length ? displayParts.join(" • ") : undefined;
+          if (displayString) {
+            // Remove patterns like "columnLabel: --" from the display string
+            displayString = displayString.replace(/\w+:\s*--/g, '').replace(/\s*•\s*•/g, ' • ').trim();
+            if (displayString.length === 0) {
+              displayString = undefined;
             }
           }
 
-          const displayParts = rendered.filter((value) => value && value.trim().length > 0);
-
           return {
-            display: displayParts.length ? displayParts.join(" • ") : undefined,
+            display: displayString,
             rawValues,
           };
         };
 
-        // Filter out base "signature", "plain_text", and "date" entries if we have indexed versions
+        // Filter out base "signature", "plain_text", "date", and name variables if we have indexed versions
         const hasIndexedSignatures = Array.from(collected.keys()).some(k => k.startsWith("signature_"));
         const hasIndexedPlainText = Array.from(collected.keys()).some(k => k.startsWith("plain_text_"));
         const hasIndexedDates = Array.from(collected.keys()).some(k => k.startsWith("date_"));
+        const hasIndexedNameVariables = Array.from(collected.keys()).some(k => {
+          const parts = k.split('_');
+          return parts.length > 1 && parts[0].startsWith('name.') && !isNaN(Number(parts[parts.length - 1]));
+        });
 
         const filteredCollected = new Map(collected);
         if (hasIndexedSignatures && filteredCollected.has("signature")) {
@@ -1473,12 +1909,41 @@ const CollaborationAssignment = () => {
         if (hasIndexedDates && filteredCollected.has("date")) {
           filteredCollected.delete("date");
         }
+        // Filter out base name variables if we have indexed versions
+        if (hasIndexedNameVariables) {
+          ['name.influencer', 'name.user', 'name.product', 'name.companies'].forEach(baseKey => {
+            if (filteredCollected.has(baseKey)) {
+              const hasIndexed = Array.from(filteredCollected.keys()).some(k => k.startsWith(`${baseKey}_`));
+              if (hasIndexed) {
+                filteredCollected.delete(baseKey);
+              }
+            }
+          });
+        }
 
         // Helper function to check if a variable is a date variable
         const isDateVariable = (key: string): boolean => {
           const normalizedKey = key.toLowerCase();
           return normalizedKey === "date" || normalizedKey.includes("date") || normalizedKey.includes("_date");
         };
+
+        // Extract actual date indices from content for correct mapping
+        const dateIndicesFromContent: number[] = [];
+        if (contractData.content) {
+          const dateIndexRegex = /var\[\s*\{\{\s*date\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
+          let dateMatch: RegExpExecArray | null;
+          while ((dateMatch = dateIndexRegex.exec(contractData.content)) !== null) {
+            const contentIndex = parseInt(dateMatch[1], 10);
+            if (!dateIndicesFromContent.includes(contentIndex)) {
+              dateIndicesFromContent.push(contentIndex);
+            }
+          }
+          dateIndicesFromContent.sort((a, b) => a - b);
+        }
+
+        // Track date entries for sequential indexing
+        const dateEntryMap = new Map<string, number>(); // Maps originalKey to sequential display index
+        let dateEntryCounter = 0;
 
         const preparedEntries = await Promise.all(
           Array.from(filteredCollected.entries()).map(async ([key, info]) => {
@@ -1489,8 +1954,8 @@ const CollaborationAssignment = () => {
             const isSignature = key === "signature" || key.startsWith("signature_") || key === "signature.user" || key === "signature.influencer";
             // Check if this is a date variable
             const isDate = isDateVariable(key);
-            // Check if this is a product variable
-            const isProduct = key === "product" || key.startsWith("product_");
+            // Check if this is a product variable (including name.product and indexed versions)
+            const isProduct = key === "product" || key.startsWith("product_") || key === "name.product" || key.startsWith("name.product_");
             const isEditable = isPlainText || isSignature || isDate || isProduct;
 
             // Normalize key for placeholder (remove index suffix)
@@ -1503,11 +1968,47 @@ const CollaborationAssignment = () => {
               placeholderKey = "date";
             } else if (key.startsWith("product_")) {
               placeholderKey = "product";
+            } else if (key.startsWith("name.product_")) {
+              placeholderKey = "name.product";
+            } else if (key.startsWith("name.influencer_")) {
+              placeholderKey = "name.influencer";
+            } else if (key.startsWith("name.user_")) {
+              placeholderKey = "name.user";
+            } else if (key.startsWith("name.companies_")) {
+              placeholderKey = "name.companies";
+            }
+
+            // Get display name for name variables
+            const displayName = getDisplayNameFromKey(placeholderKey);
+            const displayKey = displayName !== placeholderKey ? displayName : placeholderKey;
+
+            // Check if this is an indexed entry (e.g., User Name_1, User Name_2, date_0, date_1)
+            const indexedMatch = key.match(/^(.+)_(\d+)$/);
+            let finalKey = `var[{{${displayKey}}}]`;
+            
+            if (indexedMatch) {
+              // Extract the index from the key (e.g., "User Name_1" -> index 1, "date_0" -> index 0)
+              let index = parseInt(indexedMatch[2], 10);
+              
+              // For date variables, use sequential display index (1, 2, 3...) for UI
+              // but we'll store the actual content index separately for replacement
+              if (key.startsWith("date_")) {
+                // Assign sequential display index
+                dateEntryCounter++;
+                dateEntryMap.set(key, dateEntryCounter);
+                index = dateEntryCounter; // Use sequential index for display (1, 2, 3...)
+              } else if (key.startsWith("plain_text_") || key.startsWith("signature_")) {
+                // For plain_text and signature, convert 0-indexed to 1-indexed
+                index = index + 1;
+              }
+              
+              // Create key with index: var[{{User Name [1]}}] or var[{{date [1]}}]
+              finalKey = `var[{{${displayKey} [${index}]}}]`;
             }
 
             return {
-              key: `var[{{${placeholderKey}}}]`, // Use base key in placeholder, but keep indexed key for tracking
-              originalKey: key, // Store original key for tracking (e.g., signature_0, signature_1)
+              key: finalKey, // Use display name with index if applicable
+              originalKey: key, // Store original key for tracking (e.g., signature_0, signature_1, name.product_0, name.product_1, User Name_1, User Name_2)
               description: info.description,
               value: resolved.display,
               rawValues: resolved.rawValues,
@@ -1572,15 +2073,21 @@ const CollaborationAssignment = () => {
                     ? JSON.parse(override.value)
                     : override.value;
                   Object.entries(variablesObj).forEach(([key, value]) => {
-                    if (value) {
-                      overrideMap.set(key, String(value));
+                    // Only add non-empty values that are not "--"
+                    const stringValue = String(value).trim();
+                    if (stringValue && stringValue !== "--" && stringValue.length > 0) {
+                      overrideMap.set(key, stringValue);
                     }
                   });
                 } catch (e) {
                   console.error("Failed to parse all_variables", e);
                 }
               } else {
-                overrideMap.set(override.variable_key, override.value);
+                // Only add non-empty values that are not "--"
+                const stringValue = String(override.value).trim();
+                if (stringValue && stringValue !== "--" && stringValue.length > 0) {
+                  overrideMap.set(override.variable_key, stringValue);
+                }
               }
             }
           });
@@ -1596,15 +2103,58 @@ const CollaborationAssignment = () => {
         }
 
         const finalEntries = preparedEntries.map((entry) => {
-          // Check for override using both key and originalKey
-          const overrideValue = overrideMap.get(entry.originalKey || entry.key) || overrideMap.get(entry.key);
+          // Check for override using multiple key formats to handle all cases
+          let overrideValue: string | undefined = undefined;
+          
+          // Try originalKey first (most specific, e.g., "Address Line 1_1")
+          if (entry.originalKey) {
+            overrideValue = overrideMap.get(entry.originalKey);
+          }
+          
+          // Try key if originalKey didn't match (e.g., "var[{{Address Line 1 [1]}}]")
+          if (overrideValue === undefined && entry.key) {
+            overrideValue = overrideMap.get(entry.key);
+          }
+          
+          // Try extracting display name from key and matching (e.g., "Address Line 1" from "var[{{Address Line 1 [1]}}]")
+          if (overrideValue === undefined && entry.key) {
+            const keyMatch = entry.key.match(/var\[\s*\{\{\s*([^}\[]+?)(?:\s*\[\s*\d+\s*\])?\s*\}\}\s*\]/);
+            if (keyMatch && keyMatch[1]) {
+              const displayName = keyMatch[1].trim();
+              // Try matching with display name
+              overrideValue = overrideMap.get(displayName);
+              // Try matching with indexed format (e.g., "Address Line 1_1")
+              if (overrideValue === undefined && entry.originalKey) {
+                const indexedMatch = entry.originalKey.match(/^(.+)_(\d+)$/);
+                if (indexedMatch) {
+                  const baseKey = indexedMatch[1];
+                  overrideValue = overrideMap.get(baseKey);
+                }
+              }
+            }
+          }
+          
+          // Try matching with base key if originalKey is indexed
+          if (overrideValue === undefined && entry.originalKey) {
+            const indexedMatch = entry.originalKey.match(/^(.+)_(\d+)$/);
+            if (indexedMatch) {
+              const baseKey = indexedMatch[1];
+              overrideValue = overrideMap.get(baseKey);
+            }
+          }
+          
           if (overrideValue !== undefined) {
+            // Clean up overrideValue - remove "--" and empty values
+            const cleanedValue = overrideValue && overrideValue.trim() !== "--" && overrideValue.trim().length > 0
+              ? overrideValue.trim()
+              : undefined;
+            
             return {
               ...entry,
-              value: overrideValue,
-              rawValues: overrideValue ? [overrideValue] : [],
-              // For editable entries (plain_text, signature), also set inputValue
-              inputValue: entry.editable ? overrideValue : entry.inputValue,
+              value: cleanedValue,
+              rawValues: cleanedValue ? [cleanedValue] : [],
+              // For editable entries (plain_text, signature, address fields, etc.), also set inputValue
+              inputValue: entry.editable ? cleanedValue : entry.inputValue,
             };
           }
           return entry;
@@ -1865,7 +2415,20 @@ const CollaborationAssignment = () => {
         return;
       }
 
-      let previewHtml = contractContent;
+      // First, extract the actual HTML content and normalize placeholders
+      // Remove HTML wrapper tags around placeholders to make replacement easier
+      let previewHtml = contractContent || "";
+      
+      // Normalize placeholders wrapped in span tags: <span ...>var[{{...}}]</span> -> var[{{...}}]
+      // This helps ensure our regex patterns can match placeholders regardless of HTML wrapping
+      // Handle both data-variable-key and style-based spans
+      previewHtml = previewHtml
+        .replace(/<span[^>]*data-variable-key[^>]*>([^<]*var\[\s*\{\{[^}]+\}\}\s*\][^<]*)<\/span>/gi, '$1')
+        .replace(/<span[^>]*style[^>]*background-color[^>]*#fef3c7[^>]*>([^<]*var\[\s*\{\{[^}]+\}\}\s*\][^<]*)<\/span>/gi, '$1');
+      
+      // Track which placeholders have been replaced to avoid final cleanup replacing them
+      const replacedPlaceholders = new Set<string>();
+      
       const variablesMap: Record<string, string | null> = {};
 
       // Group plain_text entries by their index for sequential replacement
@@ -1880,20 +2443,28 @@ const CollaborationAssignment = () => {
 
       // Group date entries by their index for sequential replacement
       const dateEntries = contractVariableEntries
-        .filter(e => e.originalKey?.startsWith("date_"))
+        .filter(e => {
+          const originalKey = e.originalKey || '';
+          const key = e.key || '';
+          // Check if it's a date variable (date_0, date_1, etc. or key contains date)
+          return originalKey.startsWith("date_") || 
+                 (originalKey.toLowerCase().includes("date") && !originalKey.startsWith("name.")) ||
+                 (key.toLowerCase().includes("date") && key.includes("var[{{"));
+        })
         .sort((a, b) => {
           // Sort by index: date_0, date_1, etc.
-          const aIndex = parseInt(a.originalKey?.replace("date_", "") || "0", 10);
-          const bIndex = parseInt(b.originalKey?.replace("date_", "") || "0", 10);
+          const aKey = a.originalKey || '';
+          const bKey = b.originalKey || '';
+          const aIndex = aKey.startsWith("date_") 
+            ? parseInt(aKey.replace("date_", "") || "0", 10)
+            : 0;
+          const bIndex = bKey.startsWith("date_")
+            ? parseInt(bKey.replace("date_", "") || "0", 10)
+            : 0;
           return aIndex - bIndex;
         });
       // Process date entries sequentially - replace each occurrence with its corresponding value
       if (dateEntries.length > 0) {
-        const placeholder = "var[{{date}}]";
-        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex = new RegExp(escapedPlaceholder, "g");
-        const matches: Array<{ index: number; value: string }> = [];
-
         // Format date values for display (YYYY-MM-DD to readable format)
         const formatValueForDisplay = (value: string): string => {
           if (!value) return "--";
@@ -1910,14 +2481,238 @@ const CollaborationAssignment = () => {
         };
 
         // Collect all date values in order
+        // Extract actual indices from content to match correctly
+        const dateIndexMap = new Map<string, number>(); // Maps entry.originalKey to actual content index
+        if (contractContent) {
+          // Extract all date indices from content: var[{{date [1]}}], var[{{date [2]}}], etc.
+          const dateIndexRegex = /var\[\s*\{\{\s*date\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
+          let dateMatch: RegExpExecArray | null;
+          const foundIndices: number[] = [];
+          while ((dateMatch = dateIndexRegex.exec(contractContent)) !== null) {
+            const contentIndex = parseInt(dateMatch[1], 10);
+            foundIndices.push(contentIndex);
+          }
+          // Sort found indices
+          foundIndices.sort((a, b) => a - b);
+          
+          // Map date entries to content indices based on their order (sorted by originalKey index)
+          dateEntries.forEach((entry, idx) => {
+            if (idx < foundIndices.length) {
+              dateIndexMap.set(entry.originalKey || entry.key, foundIndices[idx]);
+            } else {
+              // If more entries than indices in content, use sequential based on entryIndex
+              const originalKey = entry.originalKey || '';
+              let entryIndex = 0;
+              if (originalKey.startsWith("date_")) {
+                entryIndex = parseInt(originalKey.replace("date_", "") || "0", 10);
+              }
+              dateIndexMap.set(originalKey, entryIndex + 1);
+            }
+          });
+        }
+        
+        const matches: Array<{ index: number; value: string; contentIndex: number }> = [];
         dateEntries.forEach((entry) => {
-          const input = entry.inputValue?.trim() ?? "";
+          // Get input value - check both inputValue and value fields
+          let input = entry.inputValue?.trim() ?? "";
+          if (!input && entry.value) {
+            input = entry.value.trim();
+          }
+          
           const formattedValue = formatValueForDisplay(input);
           const sanitizedValue = formattedValue ? escapeHtml(formattedValue) : "--";
-          const entryIndex = parseInt(entry.originalKey?.replace("date_", "") || "0", 10);
-          matches.push({ index: entryIndex, value: sanitizedValue });
+          
+          // Extract index from originalKey (date_0, date_1, etc.)
+          const originalKey = entry.originalKey || '';
+          let entryIndex = 0;
+          if (originalKey.startsWith("date_")) {
+            entryIndex = parseInt(originalKey.replace("date_", "") || "0", 10);
+          }
+          
+          // Get actual content index from map, or calculate from entryIndex
+          let contentIndex = dateIndexMap.get(originalKey);
+          if (contentIndex === undefined) {
+            // Fallback: use entryIndex + 1 (0-indexed to 1-indexed conversion)
+            contentIndex = entryIndex + 1;
+          }
+          
+          matches.push({ index: entryIndex, contentIndex, value: sanitizedValue });
 
           // Store value for this specific occurrence (keep YYYY-MM-DD format for storage)
+          variablesMap[entry.originalKey || entry.key] = input || null;
+        });
+        
+        // Sort matches by contentIndex to ensure correct order
+        matches.sort((a, b) => a.contentIndex - b.contentIndex);
+
+        // Try indexed format first: var[{{date [1]}}], var[{{date [2]}}], etc.
+        // Match: var[{{date [1]}}], var[{{date [2]}}], etc. (case insensitive, with flexible spacing)
+        const indexedPlaceholderPattern = `var\\[\\s*\\{\\{\\s*date\\s*\\[\\s*(\\d+)\\s*\\]\\s*\\}\\}\\s*\\]`;
+        const indexedRegex = new RegExp(indexedPlaceholderPattern, "gi");
+        
+        // Replace indexed format occurrences (content uses 1-indexed format)
+        // The global flag should replace all matches, but let's ensure it works correctly
+        previewHtml = previewHtml.replace(indexedRegex, (match, capturedIndex) => {
+          const placeholderIndex = parseInt(capturedIndex, 10); // This is 1-indexed from content
+          const foundMatch = matches.find(m => m.contentIndex === placeholderIndex);
+          if (foundMatch) {
+            return foundMatch.value;
+          }
+          // If no match found, return "--"
+          return "--";
+        });
+
+        // Also handle old format: var[{{date}}] (for backward compatibility)
+        const oldPlaceholder = "var[{{date}}]";
+        const escapedPlaceholder = oldPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const oldRegex = new RegExp(escapedPlaceholder, "g");
+        let occurrenceIndex = 0;
+        previewHtml = previewHtml.replace(oldRegex, () => {
+          const match = matches.find(m => m.index === occurrenceIndex);
+          occurrenceIndex++;
+          return match ? match.value : "--";
+        });
+      }
+
+      // Process indexed name variables (User Name_1, User Name_2, Influencer Name_1, etc.) sequentially
+      const indexedNameEntries = contractVariableEntries
+        .filter(e => {
+          const originalKey = e.originalKey || '';
+          // Check if it's an indexed name variable (e.g., User Name_1, Influencer Name_2, etc.)
+          // but not name.product (which is handled separately)
+          const indexedMatch = originalKey.match(/^(.+)_(\d+)$/);
+          if (!indexedMatch) return false;
+          
+          const baseKey = indexedMatch[1];
+          // Check if it's a name variable (User Name, Influencer Name, Companies Name)
+          // but exclude name.product which is handled separately
+          return (baseKey === 'User Name' || baseKey === 'Influencer Name' || baseKey === 'Companies Name') &&
+                 !originalKey.startsWith('name.product');
+        })
+        .sort((a, b) => {
+          // Sort by base key first, then by index
+          const aMatch = (a.originalKey || '').match(/^(.+)_(\d+)$/);
+          const bMatch = (b.originalKey || '').match(/^(.+)_(\d+)$/);
+          
+          if (!aMatch || !bMatch) return 0;
+          
+          const aBase = aMatch[1];
+          const bBase = bMatch[1];
+          const aIndex = parseInt(aMatch[2], 10);
+          const bIndex = parseInt(bMatch[2], 10);
+          
+          if (aBase !== bBase) {
+            return aBase.localeCompare(bBase);
+          }
+          return aIndex - bIndex;
+        });
+
+      // Process each group of indexed name variables separately
+      const nameVariableGroups = new Map<string, typeof indexedNameEntries>();
+      indexedNameEntries.forEach(entry => {
+        const match = (entry.originalKey || '').match(/^(.+)_(\d+)$/);
+        if (match) {
+          const baseKey = match[1];
+          if (!nameVariableGroups.has(baseKey)) {
+            nameVariableGroups.set(baseKey, []);
+          }
+          nameVariableGroups.get(baseKey)!.push(entry);
+        }
+      });
+
+      // Process each group
+      nameVariableGroups.forEach((entries, baseKey) => {
+        // Get display name for this base key
+        const displayName = baseKey; // Already a display name like "User Name"
+        
+        // Create regex to match indexed format: var[{{User Name [1]}}], var[{{User Name [2]}}], etc.
+        // The regex should match: var[{{User Name [1]}}], var[{{User Name [2]}}], etc.
+        // Escape special regex characters in displayName
+        const escapedDisplayName = displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        // Pattern: var[{{DisplayName [number]}}]
+        const placeholderPattern = `var\\[\\s*\\{\\{\\s*${escapedDisplayName}\\s*\\[\\s*(\\d+)\\s*\\]\\s*\\}\\}\\s*\\]`;
+        const regex = new RegExp(placeholderPattern, "gi");
+        const matches: Array<{ index: number; value: string }> = [];
+
+        // Collect all values in order
+        entries.forEach((entry) => {
+          const match = (entry.originalKey || '').match(/^(.+)_(\d+)$/);
+          if (match) {
+            const entryIndex = parseInt(match[2], 10);
+            let value = "";
+            
+            if (entry.editable) {
+              value = entry.inputValue?.trim() ?? "";
+            } else if (entry.rawValues && entry.rawValues.length) {
+              value = entry.rawValues[0];
+            } else if (entry.value) {
+              value = entry.value;
+            }
+            
+            const sanitizedValue = value ? escapeHtml(value) : "--";
+            matches.push({ index: entryIndex, value: sanitizedValue });
+            variablesMap[entry.originalKey || entry.key] = value || null;
+          }
+        });
+
+        // Replace occurrences sequentially by matching the index in the placeholder
+        previewHtml = previewHtml.replace(regex, (match, capturedIndex) => {
+          // Use the captured index from the regex (capture group 1)
+          const placeholderIndex = parseInt(capturedIndex, 10);
+          const foundMatch = matches.find(m => m.index === placeholderIndex);
+          return foundMatch ? foundMatch.value : "--";
+        });
+      });
+
+      const otherEntries = contractVariableEntries.filter(e =>
+        !e.originalKey?.startsWith("plain_text_") && 
+        !e.originalKey?.startsWith("date_") && 
+        !e.key.includes("signature") &&
+        !(e.originalKey || e.key).toLowerCase().includes('product') &&
+        // Exclude indexed name variables (already processed above)
+        !(() => {
+          const originalKey = e.originalKey || '';
+          const indexedMatch = originalKey.match(/^(.+)_(\d+)$/);
+          if (!indexedMatch) return false;
+          const baseKey = indexedMatch[1];
+          return (baseKey === 'User Name' || baseKey === 'Influencer Name' || baseKey === 'Companies Name') &&
+                 !originalKey.startsWith('name.product');
+        })()
+      );
+      
+      // Process indexed name variables (name.product_0, name.product_1, etc.) sequentially
+      const indexedNameProductEntries = contractVariableEntries
+        .filter(e => e.originalKey?.startsWith("name.product_"))
+        .sort((a, b) => {
+          const aIndex = parseInt(a.originalKey?.replace("name.product_", "") || "0", 10);
+          const bIndex = parseInt(b.originalKey?.replace("name.product_", "") || "0", 10);
+          return aIndex - bIndex;
+        });
+
+      if (indexedNameProductEntries.length > 0) {
+        const placeholder = "var[{{Product Name}}]";
+        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escapedPlaceholder, "g");
+        const matches: Array<{ index: number; value: string }> = [];
+
+        // Collect all product name values in order
+        indexedNameProductEntries.forEach((entry) => {
+          const input = entry.inputValue?.trim() ?? "";
+          const entryIndex = parseInt(entry.originalKey?.replace("name.product_", "") || "0", 10);
+          
+          // Format products as bullet list if multiple products exist
+          let sanitizedValue = "--";
+          if (input) {
+            const products = input.split(',').map(p => p.trim()).filter(Boolean);
+            if (products.length > 0) {
+              sanitizedValue = products.map(product => {
+                const escapedProduct = escapeHtml(product);
+                return `• ${escapedProduct}`;
+              }).join('<br />');
+            }
+          }
+          
+          matches.push({ index: entryIndex, value: sanitizedValue });
           variablesMap[entry.originalKey || entry.key] = input || null;
         });
 
@@ -1930,16 +2725,10 @@ const CollaborationAssignment = () => {
         });
       }
 
-      const otherEntries = contractVariableEntries.filter(e =>
-        !e.originalKey?.startsWith("plain_text_") && 
-        !e.originalKey?.startsWith("date_") && 
-        !e.key.includes("signature") &&
-        !(e.originalKey || e.key).toLowerCase().includes('product')
-      );
-      
-      // Process product entries
+      // Process product entries (non-indexed or legacy format)
       const productEntries = contractVariableEntries.filter(e =>
-        (e.originalKey || e.key).toLowerCase().includes('product')
+        (e.originalKey || e.key).toLowerCase().includes('product') && 
+        !e.originalKey?.startsWith("name.product_")
       );
       
       if (productEntries.length > 0) {
@@ -1975,25 +2764,39 @@ const CollaborationAssignment = () => {
 
       // Process plain_text entries sequentially - replace each occurrence with its corresponding value
       if (plainTextEntries.length > 0) {
-        const placeholder = "var[{{plain_text}}]";
-        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex = new RegExp(escapedPlaceholder, "g");
-        const matches: Array<{ index: number; value: string }> = [];
+        const matches: Array<{ index: number; contentIndex: number; value: string }> = [];
 
         // Collect all plain_text values in order
+        // Note: plain_text_0, plain_text_1 are 0-indexed in variables, but content uses plain_text [1], plain_text [2] (1-indexed)
         plainTextEntries.forEach((entry) => {
           const input = entry.inputValue?.trim() ?? "";
           let sanitizedValue = input ? escapeHtml(input).replace(/\r?\n/g, "<br />") : "--";
           const entryIndex = parseInt(entry.originalKey?.replace("plain_text_", "") || "0", 10);
-          matches.push({ index: entryIndex, value: sanitizedValue });
+          // contentIndex is 1-indexed (for matching with var[{{plain_text [1]}}])
+          const contentIndex = entryIndex + 1;
+          matches.push({ index: entryIndex, contentIndex, value: sanitizedValue });
 
           // Store value for this specific occurrence
           variablesMap[entry.originalKey || entry.key] = input || null;
         });
 
-        // Replace occurrences sequentially
+        // Try indexed format first: var[{{plain_text [1]}}], var[{{plain_text [2]}}], etc.
+        const indexedPlaceholderPattern = `var\\[\\s*\\{\\{\\s*plain_text\\s*\\[\\s*(\\d+)\\s*\\]\\s*\\}\\}\\s*\\]`;
+        const indexedRegex = new RegExp(indexedPlaceholderPattern, "gi");
+        
+        // Replace indexed format occurrences (content uses 1-indexed format)
+        previewHtml = previewHtml.replace(indexedRegex, (match, capturedIndex) => {
+          const placeholderIndex = parseInt(capturedIndex, 10); // This is 1-indexed from content
+          const foundMatch = matches.find(m => m.contentIndex === placeholderIndex);
+          return foundMatch ? foundMatch.value : "--";
+        });
+
+        // Also handle old format: var[{{plain_text}}] (for backward compatibility)
+        const oldPlaceholder = "var[{{plain_text}}]";
+        const escapedPlaceholder = oldPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const oldRegex = new RegExp(escapedPlaceholder, "g");
         let occurrenceIndex = 0;
-        previewHtml = previewHtml.replace(regex, () => {
+        previewHtml = previewHtml.replace(oldRegex, () => {
           const match = matches.find(m => m.index === occurrenceIndex);
           occurrenceIndex++;
           return match ? match.value : "--";
@@ -2225,12 +3028,136 @@ const CollaborationAssignment = () => {
         let values: string[] = [];
 
         if (entry.editable) {
-          const input = entry.inputValue?.trim() ?? "";
-          values = input ? [input] : [];
-        } else if (entry.rawValues && entry.rawValues.length) {
-          values = entry.rawValues;
-        } else if (entry.value) {
-          values = [entry.value];
+          // For editable entries, prioritize inputValue (user input), fallback to value
+          const input = (entry.inputValue?.trim() ?? entry.value?.trim() ?? "");
+          if (input.length > 0) {
+            values = [input];
+          }
+        } else {
+          // For non-editable entries, check rawValues first, then value
+          if (entry.rawValues && entry.rawValues.length > 0) {
+            // Convert "--" to empty string, filter out null/undefined
+            // Also handle format "key: value" or "key: --"
+            const processedRawValues = entry.rawValues.map(v => {
+              if (!v) return "";
+              let trimmed = String(v).trim();
+              
+              // Handle cases where value might be in format "key: value" or "key: --"
+              const colonMatch = trimmed.match(/^[^:]+:\s*(.+)$/);
+              if (colonMatch) {
+                trimmed = colonMatch[1].trim();
+              }
+              
+              // Convert "--" to empty string
+              return trimmed === "--" ? "" : trimmed;
+            }).filter(v => v !== null && v !== undefined);
+            
+            // Only use if we have at least one non-empty value
+            const nonEmptyValues = processedRawValues.filter(v => v && v.length > 0);
+            if (nonEmptyValues.length > 0) {
+              values = nonEmptyValues;
+            } else if (processedRawValues.some(v => v === "")) {
+              // If we have empty strings (from "--"), use them to replace with blank
+              values = [""];
+            }
+          }
+          
+          // If no rawValues, check value field
+          if (values.length === 0 && entry.value) {
+            let valueStr = String(entry.value).trim();
+            
+            // Handle cases where value might be in format "key: value" or "key: --"
+            // Also handle format like "value1 • value2 • key: --" (multiple values joined)
+            // Extract just the value part if it's in that format
+            const colonMatch = valueStr.match(/^[^:]+:\s*(.+)$/);
+            if (colonMatch) {
+              valueStr = colonMatch[1].trim();
+            } else {
+              // Check if value contains " • " (multiple values) and one of them is "key: --"
+              // Extract the last part after " • " if it matches "key: --"
+              const parts = valueStr.split(" • ");
+              if (parts.length > 1) {
+                const lastPart = parts[parts.length - 1].trim();
+                const lastColonMatch = lastPart.match(/^[^:]+:\s*(.+)$/);
+                if (lastColonMatch && lastColonMatch[1].trim() === "--") {
+                  // If the last part is "key: --", use empty string
+                  valueStr = "";
+                } else {
+                  // Otherwise, try to extract from the full string
+                  const fullColonMatch = valueStr.match(/[^•]+:\s*(--)\s*$/);
+                  if (fullColonMatch) {
+                    valueStr = "--";
+                  }
+                }
+              }
+            }
+            
+            // If value is "--", treat it as empty (will result in blank replacement)
+            if (valueStr === "--") {
+              values = [""]; // Empty string to replace placeholder with blank
+            } else if (valueStr.length > 0 && valueStr !== "--") {
+              values = [valueStr];
+            }
+          }
+        }
+        
+        // Debug logging for address fields
+        if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+          console.log('[Address Field] Processing:', {
+            originalKey: entry.originalKey,
+            key: entry.key,
+            placeholder: placeholder,
+            inputValue: entry.inputValue,
+            value: entry.value,
+            editable: entry.editable,
+            rawValues: entry.rawValues,
+            values: values,
+            hasValues: values.length > 0
+          });
+        }
+        
+        // If no values but we have an entry, check if value was "--" - if so, replace with blank
+        if (values.length === 0) {
+          // Check if the value was explicitly "--" - if so, replace with blank
+          let hasDashDashValue = false;
+          
+          // Check entry.value
+          if (entry.value) {
+            let valueStr = String(entry.value).trim();
+            // Handle "key: --" format
+            const colonMatch = valueStr.match(/^[^:]+:\s*(.+)$/);
+            if (colonMatch) {
+              valueStr = colonMatch[1].trim();
+            }
+            hasDashDashValue = valueStr === "--";
+          }
+          
+          // Check rawValues
+          if (!hasDashDashValue && entry.rawValues && entry.rawValues.length > 0) {
+            hasDashDashValue = entry.rawValues.some(v => {
+              let val = String(v).trim();
+              const colonMatch = val.match(/^[^:]+:\s*(.+)$/);
+              if (colonMatch) {
+                val = colonMatch[1].trim();
+              }
+              return val === "--";
+            });
+          }
+          
+          if (hasDashDashValue) {
+            values = [""]; // Replace "--" with blank in preview
+          } else {
+            // For truly empty values, skip replacement (will be handled by final cleanup)
+            if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+              console.warn('[Address] Skipping - no values:', {
+                originalKey: entry.originalKey,
+                inputValue: entry.inputValue,
+                value: entry.value,
+                rawValues: entry.rawValues
+              });
+            }
+            return;
+          }
         }
 
         // Check if this is a date variable
@@ -2253,11 +3180,52 @@ const CollaborationAssignment = () => {
           return value;
         };
 
+        // Extract base key and index from originalKey if it's indexed (e.g., "Address Line 1_1" -> base: "Address Line 1", index: 1)
+        const originalKey = entry.originalKey || '';
+        const indexedMatch = originalKey.match(/^(.+)_(\d+)$/);
+        const baseKey = indexedMatch ? indexedMatch[1] : (entry.originalKey || entry.key.replace(/var\[\{\{|\}\}\]/g, '').trim());
+        const variableIndex = indexedMatch ? parseInt(indexedMatch[2], 10) : null;
+        
+        // Extract display name from placeholder (e.g., "var[{{Address Line 1 [1]}}]" -> "Address Line 1")
+        // Handle both formats: var[{{Address Line 1 [1]}}] and var[{{Address Line 1}}]
+        const placeholderMatch = placeholder.match(/var\[\s*\{\{\s*([^}\[]+?)(?:\s*\[\s*\d+\s*\])?\s*\}\}\s*\]/);
+        let displayName = placeholderMatch ? placeholderMatch[1].trim() : baseKey;
+        
+        // Clean up display name - remove any trailing index brackets
+        displayName = displayName.replace(/\s*\[\s*\d+\s*\]\s*$/, '').trim();
+        
+        // Also try to match with the originalKey format (e.g., "Address City_1" -> try "Address City" and "Address City_1")
+        // This handles cases where the HTML has "Address City [1]" but originalKey is "Address City_1"
+        const possibleDisplayNames = [displayName, baseKey];
+        if (indexedMatch) {
+          // If indexed, also try without the index suffix
+          possibleDisplayNames.push(indexedMatch[1]);
+        }
+        
+        // Create regex patterns for both indexed and non-indexed formats
+        // Pattern 1: var[{{Address Line 1 [1]}}] (indexed format)
+        // Pattern 2: var[{{Address Line 1}}] (non-indexed format)
+        const indexedPlaceholderPattern = variableIndex !== null 
+          ? `var\\[\\s*\\{\\{\\s*${displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\[\\s*${variableIndex}\\s*\\]\\s*\\}\\}\\s*\\]`
+          : null;
+        const nonIndexedPlaceholderPattern = `var\\[\\s*\\{\\{\\s*${displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\}\\}\\s*\\]`;
+        
+        // Also create regex for actual key format (if different from display name)
+        const actualKey = entry.originalKey || entry.key.replace(/var\[\{\{|\}\}\]/g, '').trim();
+        let actualKeyPlaceholder: string | null = null;
+        let actualKeyRegex: RegExp | null = null;
+        if (actualKey !== displayName && !indexedMatch) {
+          // If originalKey is different (e.g., name.influencer vs Influencer Name), create regex for both
+          actualKeyPlaceholder = `var[{{${actualKey}}}]`;
+          const escapedActualPlaceholder = actualKeyPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          actualKeyRegex = new RegExp(escapedActualPlaceholder, "gi");
+        }
+
         // If multiple values exist, replace occurrences sequentially
         // First occurrence gets first value, second gets second, etc.
         if (values.length > 1) {
           const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const regex = new RegExp(escapedPlaceholder, "g");
+          const regex = new RegExp(escapedPlaceholder, "gi");
           let occurrenceIndex = 0;
 
           previewHtml = previewHtml.replace(regex, () => {
@@ -2267,15 +3235,161 @@ const CollaborationAssignment = () => {
             occurrenceIndex++;
             return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
           });
+          
+          // Also replace indexed format if applicable
+          if (indexedPlaceholderPattern) {
+            const indexedRegex = new RegExp(indexedPlaceholderPattern, "gi");
+            previewHtml = previewHtml.replace(indexedRegex, () => {
+              const selectedValue = values[0] || "";
+              const formattedValue = formatValueForDisplay(selectedValue);
+              return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
+            });
+          }
+          
+          // Also replace actual key format if different
+          if (actualKeyRegex) {
+            let actualOccurrenceIndex = 0;
+            previewHtml = previewHtml.replace(actualKeyRegex, () => {
+              const valueIndex = actualOccurrenceIndex % values.length;
+              const selectedValue = values[valueIndex];
+              const formattedValue = formatValueForDisplay(selectedValue);
+              actualOccurrenceIndex++;
+              return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
+            });
+          }
         } else {
           // Single value: replace all occurrences with the same value
           const displayValue = values.length ? formatValueForDisplay(values[0]) : "";
           const sanitizedValue = displayValue
             ? escapeHtml(displayValue).replace(/\r?\n/g, "<br />")
-            : "--";
+            : "";
 
-          const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          previewHtml = previewHtml.replace(new RegExp(escapedPlaceholder, "g"), sanitizedValue);
+          // Always replace - if value was "--", sanitizedValue will be empty string (blank)
+          // This ensures "--" values show as blank in preview instead of "--"
+          if (sanitizedValue !== undefined) {
+            let replaced = false;
+            
+            // Helper function to replace placeholders that might be wrapped in HTML tags
+            const replaceWithHtmlWrapping = (pattern: string, replacement: string): boolean => {
+              // First try direct replacement
+              const directRegex = new RegExp(pattern, "gi");
+              const before = previewHtml;
+              previewHtml = previewHtml.replace(directRegex, (match) => {
+                replacedPlaceholders.add(match);
+                return replacement;
+              });
+              if (previewHtml !== before) {
+                return true;
+              }
+              
+              // If direct replacement didn't work, try with HTML wrapper
+              // Pattern: <span[^>]*>var[{{...}}]</span>
+              const wrappedPattern = `<span[^>]*>${pattern}</span>`;
+              const wrappedRegex = new RegExp(wrappedPattern, "gi");
+              const beforeWrapped = previewHtml;
+              previewHtml = previewHtml.replace(wrappedRegex, (match) => {
+                replacedPlaceholders.add(match);
+                return replacement;
+              });
+              if (previewHtml !== beforeWrapped) {
+                return true;
+              }
+              
+              // Also try with data-variable-key attribute
+              const dataKeyPattern = `<span[^>]*data-variable-key=["'][^"']*["'][^>]*>${pattern}</span>`;
+              const dataKeyRegex = new RegExp(dataKeyPattern, "gi");
+              const beforeDataKey = previewHtml;
+              previewHtml = previewHtml.replace(dataKeyRegex, (match) => {
+                replacedPlaceholders.add(match);
+                return replacement;
+              });
+              return previewHtml !== beforeDataKey;
+            };
+            
+            // Try multiple placeholder formats to ensure we catch all variations
+            // 1. Replace indexed format first (e.g., var[{{Address Line 1 [1]}}])
+            if (indexedPlaceholderPattern) {
+              if (replaceWithHtmlWrapping(indexedPlaceholderPattern, sanitizedValue)) {
+                replaced = true;
+                if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+                  console.log('[Address] ✓ Replaced indexed format:', indexedPlaceholderPattern, 'with:', sanitizedValue);
+                }
+              }
+            }
+            
+            // 2. Replace exact placeholder match (from entry.key)
+            const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            if (replaceWithHtmlWrapping(escapedPlaceholder, sanitizedValue)) {
+              replaced = true;
+              if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+                console.log('[Address] ✓ Replaced exact placeholder:', escapedPlaceholder, 'with:', sanitizedValue);
+              }
+            }
+            
+            // 3. Try all possible display name variations
+            for (const name of possibleDisplayNames) {
+              if (!name || name === displayName) continue; // Skip if already tried
+              
+              // Try indexed format with this name
+              if (variableIndex !== null) {
+                const altIndexedPattern = `var\\[\\s*\\{\\{\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\[\\s*${variableIndex}\\s*\\]\\s*\\}\\}\\s*\\]`;
+                if (replaceWithHtmlWrapping(altIndexedPattern, sanitizedValue)) {
+                  replaced = true;
+                  if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+                    console.log('[Address] ✓ Replaced alt indexed format:', altIndexedPattern, 'with:', sanitizedValue);
+                  }
+                }
+              }
+              
+              // Try non-indexed format with this name
+              const altNonIndexedPattern = `var\\[\\s*\\{\\{\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\}\\}\\s*\\]`;
+              if (replaceWithHtmlWrapping(altNonIndexedPattern, sanitizedValue)) {
+                replaced = true;
+                if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+                  console.log('[Address] ✓ Replaced alt display name format:', altNonIndexedPattern, 'with:', sanitizedValue);
+                }
+              }
+            }
+            
+            // 4. Replace non-indexed display name format (e.g., var[{{Address Line 1}}])
+            if (replaceWithHtmlWrapping(nonIndexedPlaceholderPattern, sanitizedValue)) {
+              replaced = true;
+              if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+                console.log('[Address] ✓ Replaced display name format:', nonIndexedPlaceholderPattern, 'with:', sanitizedValue);
+              }
+            }
+            
+            // 5. Replace actual key format if different (e.g., var[{{address.user.address_line1}}])
+            if (actualKeyRegex) {
+              const actualKeyPattern = actualKeyRegex.source;
+              if (replaceWithHtmlWrapping(actualKeyPattern, sanitizedValue)) {
+                replaced = true;
+                if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+                  console.log('[Address] ✓ Replaced actual key format with:', sanitizedValue);
+                }
+              }
+            }
+            
+            if (!replaced && (entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+              console.warn('[Address] No replacement made for:', {
+                originalKey: entry.originalKey,
+                key: entry.key,
+                placeholder: placeholder,
+                indexedPattern: indexedPlaceholderPattern,
+                nonIndexedPattern: nonIndexedPlaceholderPattern,
+                displayName: displayName,
+                sanitizedValue: sanitizedValue
+              });
+            }
+          } else if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
+            console.warn('[Address] No value to replace:', {
+              originalKey: entry.originalKey,
+              key: entry.key,
+              inputValue: entry.inputValue,
+              value: entry.value,
+              editable: entry.editable
+            });
+          }
         }
 
         // Store variable value for saving (all values joined)
@@ -2285,14 +3399,41 @@ const CollaborationAssignment = () => {
             ? entry.rawValues.join("\n")
             : entry.value ?? null;
 
-        variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
+        // Use originalKey if available (for proper key format), otherwise use key
+        // This ensures indexed variables (like Address Line 1_1) are stored correctly
+        const keyToUse = entry.originalKey || entry.key;
+        variablesMap[keyToUse] = storedValue && storedValue.length ? storedValue : null;
+        
+        // Also store using the display key format for backward compatibility
+        if (entry.originalKey && entry.originalKey !== entry.key) {
+          variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
+        }
       });
 
       // Replace remaining placeholders with --, but keep signature placeholders as var[{{signature}}]
+      // Also skip placeholders that have already been replaced
       previewHtml = previewHtml.replace(/var\[\s*\{\{([^}]+)\}\}\s*\]/g, (match, variableName) => {
         // Keep signature placeholders as is
-        if (variableName.trim() === "signature") {
+        if (variableName.trim() === "signature" || variableName.trim().includes("signature.")) {
           return match; // Keep var[{{signature}}] as is
+        }
+        // Skip if this placeholder was already replaced
+        if (replacedPlaceholders.has(match)) {
+          return match; // Keep the replaced value
+        }
+        // Replace other placeholders with --
+        return "--";
+      });
+      
+      // Also handle placeholders that might still be wrapped in HTML tags
+      previewHtml = previewHtml.replace(/<span[^>]*>var\[\s*\{\{([^}]+)\}\}\s*\]<\/span>/gi, (match, variableName) => {
+        // Keep signature placeholders as is
+        if (variableName.trim() === "signature" || variableName.trim().includes("signature.")) {
+          return match;
+        }
+        // Skip if this placeholder was already replaced
+        if (replacedPlaceholders.has(match)) {
+          return match;
         }
         // Replace other placeholders with --
         return "--";
@@ -2447,6 +3588,32 @@ const CollaborationAssignment = () => {
     /* Ensure parent divs don't break signature boxes */
     .contract-preview-container .tiptap-rendered div {
       white-space: normal !important;
+    }
+    
+    /* Reduce spacing between all paragraphs */
+    .contract-preview-container .tiptap-rendered p {
+      margin: 0 0 4px 0 !important;
+      line-height: 1.4 !important;
+    }
+    
+    /* Further reduce spacing for paragraphs containing address fields */
+    .contract-preview-container .tiptap-rendered p:has(span[data-variable-key*="address"]) {
+      margin-bottom: 1px !important;
+      margin-top: 0 !important;
+      line-height: 1.2 !important;
+      padding: 0 !important;
+    }
+    
+    /* Reduce spacing between consecutive paragraphs that contain address fields */
+    .contract-preview-container .tiptap-rendered p:has(span[data-variable-key*="address"]) + p:has(span[data-variable-key*="address"]) {
+      margin-top: 0 !important;
+      margin-bottom: 1px !important;
+    }
+    
+    /* Target address field spans directly to reduce their spacing */
+    .contract-preview-container .tiptap-rendered span[data-variable-key*="address"] {
+      line-height: 1.2 !important;
+      display: inline !important;
     }
   </style>
   ${allStyles}
@@ -3599,17 +4766,190 @@ const CollaborationAssignment = () => {
                       {contractVariablesError}
                     </div>
                   ) : contractVariableEntries.length ? (
-                    contractVariableEntries
-                      .filter((item) => {
-                        // Filter out signature.influencer from the dialog
-                        const key = item.originalKey || item.key || '';
-                        return !key.includes('signature.influencer');
-                      })
-                      .map((item, idx) => {
+                    ((): React.ReactNode => {
+                      // Group address fields together
+                      const addressFieldPatterns = [
+                        'Address Line 1',
+                        'Address Line 2',
+                        'Address Landmark',
+                        'Address City',
+                        'Address Pincode',
+                        'Address Country'
+                      ];
+                      
+                      // Separate address fields from other variables
+                      const addressGroups = new Map<string, ContractVariableEntry[]>();
+                      const nonAddressEntries: ContractVariableEntry[] = [];
+                      
+                      contractVariableEntries
+                        .filter((item) => {
+                          // Filter out signature.influencer from the dialog
+                          const key = item.originalKey || item.key || '';
+                          return !key.includes('signature.influencer');
+                        })
+                        .forEach((item) => {
+                          const originalKey = item.originalKey || '';
+                          const displayKey = item.key || '';
+                          
+                          // Check if this is an address field
+                          const isAddressField = addressFieldPatterns.some(pattern => {
+                            return originalKey.includes(pattern) || displayKey.includes(pattern);
+                          });
+                          
+                          if (isAddressField) {
+                            // Extract address type and index from originalKey (e.g., "Address City_1" -> type: "influencer", index: "1")
+                            // or from descriptors/rawValues
+                            let addressType = 'user'; // default
+                            let index = '1'; // default
+                            
+                            // Try to extract from originalKey (e.g., "Address City_1")
+                            const indexMatch = originalKey.match(/_(\d+)$/);
+                            if (indexMatch) {
+                              index = indexMatch[1];
+                            }
+                            
+                            // Try to determine address type from source/descriptors
+                            const description = item.description || '';
+                            const rawValues = item.rawValues || [];
+                            const allText = [description, ...rawValues].join(' ');
+                            
+                            if (allText.includes('influencers.address') || allText.includes('influencer')) {
+                              addressType = 'influencer';
+                            } else if (allText.includes('user_profiles.address') || allText.includes('user')) {
+                              addressType = 'user';
+                            } else if (allText.includes('companies.address') || allText.includes('company')) {
+                              addressType = 'companies';
+                            }
+                            
+                            const groupKey = `${addressType}_${index}`;
+                            if (!addressGroups.has(groupKey)) {
+                              addressGroups.set(groupKey, []);
+                            }
+                            addressGroups.get(groupKey)!.push(item);
+                          } else {
+                            nonAddressEntries.push(item);
+                          }
+                        });
+                      
+                      // Convert address groups to display format
+                      const groupedAddressEntries: Array<{
+                        type: 'address';
+                        addressType: string;
+                        index: string;
+                        fields: ContractVariableEntry[];
+                        source: string;
+                      }> = [];
+                      
+                      addressGroups.forEach((fields, groupKey) => {
+                        const [addressType, index] = groupKey.split('_');
+                        // Get source from first field's description or rawValues
+                        const firstField = fields[0];
+                        let source = '';
+                        
+                        // Try to extract source from description (e.g., "source:public.influencers.address_line1")
+                        if (firstField.description) {
+                          const sourceMatch = firstField.description.match(/source:([^\s|]+)/);
+                          if (sourceMatch) {
+                            source = sourceMatch[1];
+                          } else {
+                            source = firstField.description;
+                          }
+                        }
+                        
+                        // If no source found, try rawValues
+                        if (!source && firstField.rawValues && firstField.rawValues.length > 0) {
+                          const rawValue = firstField.rawValues[0];
+                          const sourceMatch = String(rawValue).match(/source:([^\s|]+)/);
+                          if (sourceMatch) {
+                            source = sourceMatch[1];
+                          }
+                        }
+                        
+                        groupedAddressEntries.push({
+                          type: 'address',
+                          addressType,
+                          index,
+                          fields,
+                          source
+                        });
+                      });
+                      
+                      // Sort grouped addresses by type and index
+                      groupedAddressEntries.sort((a, b) => {
+                        if (a.addressType !== b.addressType) {
+                          return a.addressType.localeCompare(b.addressType);
+                        }
+                        return parseInt(a.index) - parseInt(b.index);
+                      });
+                      
+                      // Combine non-address entries with grouped address entries
+                      const allEntries: Array<ContractVariableEntry | { type: 'address'; addressType: string; index: string; fields: ContractVariableEntry[]; source: string }> = [
+                        ...nonAddressEntries,
+                        ...groupedAddressEntries
+                      ];
+                      
+                      return allEntries.map((entry, idx) => {
+                        // Handle grouped address entry
+                        if (typeof entry === 'object' && 'type' in entry && entry.type === 'address') {
+                          const { addressType, fields, source } = entry;
+                          const addressTypeLabel = addressType === 'user' ? 'User' : addressType === 'influencer' ? 'Influencer' : 'Company';
+                          
+                          // Order fields: Line 1, Line 2, Landmark, City, Pincode, Country
+                          const fieldOrder = ['Address Line 1', 'Address Line 2', 'Address Landmark', 'Address City', 'Address Pincode', 'Address Country'];
+                          const orderedFields = fieldOrder.map(fieldName => 
+                            fields.find(f => {
+                              const key = f.originalKey || f.key || '';
+                              return key.includes(fieldName);
+                            })
+                          ).filter(Boolean) as ContractVariableEntry[];
+                          
+                          // Format source for display
+                          const displaySource = source ? (source.startsWith('source:') ? source : `source:${source}`) : '';
+                          
+                          return (
+                            <div key={`address-${addressType}-${entry.index}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm space-y-2">
+                              <div>
+                                <p className="font-semibold text-slate-800">{addressTypeLabel} Address:</p>
+                                {displaySource && (
+                                  <p className="text-xs text-slate-500 mt-0.5">{displaySource}</p>
+                                )}
+                              </div>
+                              <div className="space-y-1">
+                                {orderedFields.map((field, fieldIdx) => {
+                                  const fieldValue = field.inputValue || field.value || '';
+                                  // Remove "key: " prefix if present (e.g., "address_landmark: --" -> "--")
+                                  let cleanValue = fieldValue.replace(/^[^:]+:\s*/, '').trim();
+                                  // Convert "--" to empty string
+                                  if (cleanValue === '--' || cleanValue.trim() === '') {
+                                    cleanValue = '';
+                                  }
+                                  
+                                  return (
+                                    <div key={fieldIdx} className="text-xs text-slate-600">
+                                      {cleanValue || <span className="text-slate-400 italic">(blank)</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        }
+                        
+                        // Handle regular entry
+                        const item = entry as ContractVariableEntry;
                       const uniqueKey = item.originalKey || item.key || `var-${idx}`;
+                      // Extract display name from key (e.g., "var[{{Influencer Name}}]" -> "Influencer Name")
+                      const extractDisplayName = (key: string): string => {
+                        const match = key.match(/var\[\{\{([^}]+)\}\}\]/);
+                        if (match && match[1]) {
+                          return match[1].trim();
+                        }
+                        return key;
+                      };
+                      const displayName = extractDisplayName(item.key);
                       return (
                         <div key={uniqueKey} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm space-y-1">
-                          <p className="font-semibold text-slate-800">{item.key}</p>
+                          <p className="font-semibold text-slate-800">{displayName}</p>
                           {item.description && <p className="text-xs text-slate-500">{item.description}</p>}
                           {item.editable ? (
                             item.key.includes('signature') ? (
@@ -3650,7 +4990,15 @@ const CollaborationAssignment = () => {
                                   setIsSignatureDialogOpen(true);
                                 }}
                               >
-                                {item.inputValue ? '✓' : `var[{{${item.key}}}]`}
+                                {item.inputValue ? '✓' : (() => {
+                                  // Extract display name from key if it's in var[{{...}}] format
+                                  const match = item.key.match(/var\[\{\{([^}]+)\}\}\]/);
+                                  if (match && match[1]) {
+                                    return match[1].trim();
+                                  }
+                                  // For signatures, show the key as is if not in var format
+                                  return item.key.includes('var[{{') ? item.key : `var[{{${item.key}}}]`;
+                                })()}
                               </div>
                             ) : (() => {
                               // Check if this is a date variable
@@ -3728,9 +5076,20 @@ const CollaborationAssignment = () => {
                               }
                               
                               // Check if this is a product variable
-                              const itemKey = item.originalKey || item.key || '';
-                              const productKey = itemKey.toLowerCase();
-                              const isProduct = productKey === 'product' || productKey.includes('product') || itemKey.includes('var[{{product}}]');
+                              // Check both originalKey and key to handle all cases
+                              const originalKey = item.originalKey || '';
+                              const displayKey = item.key || '';
+                              const originalKeyLower = originalKey.toLowerCase();
+                              const displayKeyLower = displayKey.toLowerCase();
+                              
+                              // Check for product variable: name.product, product, or any key containing 'product'
+                              const isProduct = originalKeyLower === 'name.product'
+                                || originalKeyLower === 'product'
+                                || originalKeyLower.includes('product')
+                                || displayKeyLower.includes('product name')
+                                || displayKey.includes('Product Name')
+                                || displayKey.includes('var[{{product}}]')
+                                || displayKey.includes('var[{{Product Name}}]');
                               
                               if (isProduct) {
                                 const currentSelected = item.inputValue ? item.inputValue.split(',').filter(Boolean) : [];
@@ -3823,11 +5182,14 @@ const CollaborationAssignment = () => {
                               );
                             })()
                           ) : (
-                            item.value && <p className="text-xs text-emerald-600">{item.value}</p>
+                            item.value && item.value !== "--" && item.value.trim() !== "--" && (
+                              <p className="text-xs text-emerald-600">{item.value}</p>
+                            )
                           )}
                         </div>
                       );
-                    })
+                      });
+                    })()
                   ) : (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
                       No variables are configured yet. You can add placeholders from the contract editor.
@@ -4014,6 +5376,28 @@ const CollaborationAssignment = () => {
               background-color: rgba(59, 130, 246, 0.1) !important;
               border-color: #3b82f6 !important;
             }
+            /* Reduce spacing between all paragraphs */
+            .contract-preview-container .tiptap-rendered p {
+              margin: 0 0 4px 0 !important;
+              line-height: 1.4 !important;
+            }
+            /* Further reduce spacing for paragraphs containing address fields */
+            .contract-preview-container .tiptap-rendered p:has(span[data-variable-key*="address"]) {
+              margin-bottom: 1px !important;
+              margin-top: 0 !important;
+              line-height: 1.2 !important;
+              padding: 0 !important;
+            }
+            /* Reduce spacing between consecutive paragraphs that contain address fields */
+            .contract-preview-container .tiptap-rendered p:has(span[data-variable-key*="address"]) + p:has(span[data-variable-key*="address"]) {
+              margin-top: 0 !important;
+              margin-bottom: 1px !important;
+            }
+            /* Target address field spans directly to reduce their spacing */
+            .contract-preview-container .tiptap-rendered span[data-variable-key*="address"] {
+              line-height: 1.2 !important;
+              display: inline !important;
+            }
           `}</style>
           {contractPreviewHtml ? (
             <ScrollArea className="contract-preview-container max-h-[70vh] rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-inner">
@@ -4096,6 +5480,21 @@ const CollaborationAssignment = () => {
             .contract-preview-container .tiptap-rendered p {
               white-space: pre-wrap !important;
               margin: 0 0 14px 0;
+            }
+            /* Reduce spacing for paragraphs containing address fields */
+            .contract-preview-container .tiptap-rendered p:has(span[data-variable-key*="address"]) {
+              margin-bottom: 2px !important;
+              line-height: 1.3 !important;
+            }
+            /* Reduce spacing between consecutive address field paragraphs */
+            .contract-preview-container .tiptap-rendered p:has(span[data-variable-key*="address"]) + p:has(span[data-variable-key*="address"]) {
+              margin-top: 0 !important;
+              margin-bottom: 1px !important;
+            }
+            /* Target address field spans directly to reduce their spacing */
+            .contract-preview-container .tiptap-rendered span[data-variable-key*="address"] {
+              line-height: 1.2 !important;
+              display: inline !important;
             }
             /* Preserve spacing in divs */
             .contract-preview-container .tiptap-rendered div {

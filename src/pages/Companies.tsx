@@ -24,6 +24,12 @@ type CompanyRecord = {
   manager_name: string | null;
   manager_contact: string | null;
   categories: string[] | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  address_landmark?: string | null;
+  address_city?: string | null;
+  address_pincode?: string | null;
+  address_country?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -34,6 +40,12 @@ type CompanyFormState = {
   manager_name: string;
   manager_contact: string;
   categories: string;
+  address_line1: string;
+  address_line2: string;
+  address_landmark: string;
+  address_city: string;
+  address_pincode: string;
+  address_country: string;
 };
 
 const Companies = () => {
@@ -51,6 +63,12 @@ const Companies = () => {
     manager_name: "",
     manager_contact: "",
     categories: "",
+    address_line1: "",
+    address_line2: "",
+    address_landmark: "",
+    address_city: "",
+    address_pincode: "",
+    address_country: "",
   });
   const [companies, setCompanies] = useState<CompanyRecord[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -64,6 +82,12 @@ const Companies = () => {
     manager_name: "",
     manager_contact: "",
     categories: "",
+    address_line1: "",
+    address_line2: "",
+    address_landmark: "",
+    address_city: "",
+    address_pincode: "",
+    address_country: "",
   });
   const [isEditDialogOpen, setIsEditDialogOpen] = useState<boolean>(false);
   const [deleteTarget, setDeleteTarget] = useState<CompanyRecord | null>(null);
@@ -225,6 +249,12 @@ const Companies = () => {
       manager_name: "",
       manager_contact: "",
       categories: "",
+      address_line1: "",
+      address_line2: "",
+      address_landmark: "",
+      address_city: "",
+      address_pincode: "",
+      address_country: "",
     });
   };
 
@@ -235,6 +265,12 @@ const Companies = () => {
       manager_name: "",
       manager_contact: "",
       categories: "",
+      address_line1: "",
+      address_line2: "",
+      address_landmark: "",
+      address_city: "",
+      address_pincode: "",
+      address_country: "",
     });
     setEditingCompany(null);
   };
@@ -264,6 +300,12 @@ const Companies = () => {
       manager_name: formData.manager_name.trim() || null,
       manager_contact: formData.manager_contact.trim() || null,
       categories: categoriesArray.length > 0 ? categoriesArray : null,
+      address_line1: formData.address_line1.trim() || null,
+      address_line2: formData.address_line2.trim() || null,
+      address_landmark: formData.address_landmark.trim() || null,
+      address_city: formData.address_city.trim() || null,
+      address_pincode: formData.address_pincode.trim() || null,
+      address_country: formData.address_country.trim() || null,
     };
 
     try {
@@ -306,6 +348,12 @@ const Companies = () => {
       manager_name: company.manager_name ?? "",
       manager_contact: company.manager_contact ?? "",
       categories: company.categories?.join(', ') ?? "",
+      address_line1: company.address_line1 ?? "",
+      address_line2: company.address_line2 ?? "",
+      address_landmark: company.address_landmark ?? "",
+      address_city: company.address_city ?? "",
+      address_pincode: company.address_pincode ?? "",
+      address_country: company.address_country ?? "",
     });
     setIsEditDialogOpen(true);
   };
@@ -337,6 +385,12 @@ const Companies = () => {
       manager_name: editFormData.manager_name.trim() || null,
       manager_contact: editFormData.manager_contact.trim() || null,
       categories: categoriesArray.length > 0 ? categoriesArray : null,
+      address_line1: editFormData.address_line1.trim() || null,
+      address_line2: editFormData.address_line2.trim() || null,
+      address_landmark: editFormData.address_landmark.trim() || null,
+      address_city: editFormData.address_city.trim() || null,
+      address_pincode: editFormData.address_pincode.trim() || null,
+      address_country: editFormData.address_country.trim() || null,
     };
 
     try {
@@ -843,6 +897,65 @@ const Companies = () => {
                             />
                             <p className="text-xs text-muted-foreground">Example: Technology, Healthcare, Finance</p>
                           </div>
+                          <div className="space-y-4 border-t pt-4">
+                            <h3 className="text-sm font-semibold">Address Details</h3>
+                            <div className="space-y-1">
+                              <Label htmlFor="address_line1">Address Line 1</Label>
+                              <Input
+                                id="address_line1"
+                                value={formData.address_line1}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, address_line1: e.target.value }))}
+                                placeholder="Enter address line 1"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="address_line2">Address Line 2</Label>
+                              <Input
+                                id="address_line2"
+                                value={formData.address_line2}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, address_line2: e.target.value }))}
+                                placeholder="Enter address line 2"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="address_landmark">Landmark</Label>
+                              <Input
+                                id="address_landmark"
+                                value={formData.address_landmark}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, address_landmark: e.target.value }))}
+                                placeholder="Enter landmark"
+                              />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-1">
+                                <Label htmlFor="address_city">City</Label>
+                                <Input
+                                  id="address_city"
+                                  value={formData.address_city}
+                                  onChange={(e) => setFormData((prev) => ({ ...prev, address_city: e.target.value }))}
+                                  placeholder="Enter city"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label htmlFor="address_pincode">Pincode</Label>
+                                <Input
+                                  id="address_pincode"
+                                  value={formData.address_pincode}
+                                  onChange={(e) => setFormData((prev) => ({ ...prev, address_pincode: e.target.value }))}
+                                  placeholder="Enter pincode"
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="address_country">Country</Label>
+                              <Input
+                                id="address_country"
+                                value={formData.address_country}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, address_country: e.target.value }))}
+                                placeholder="Enter country"
+                              />
+                            </div>
+                          </div>
                           <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={isSaving}>
                               Cancel
@@ -1094,6 +1207,65 @@ const Companies = () => {
                   placeholder="Enter categories (comma-separated)"
                 />
                 <p className="text-xs text-muted-foreground">Example: Technology, Healthcare, Finance</p>
+              </div>
+              <div className="space-y-4 border-t pt-4">
+                <h3 className="text-sm font-semibold">Address Details</h3>
+                <div className="space-y-1">
+                  <Label htmlFor="edit-address_line1">Address Line 1</Label>
+                  <Input
+                    id="edit-address_line1"
+                    value={editFormData.address_line1}
+                    onChange={(e) => setEditFormData((prev) => ({ ...prev, address_line1: e.target.value }))}
+                    placeholder="Enter address line 1"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="edit-address_line2">Address Line 2</Label>
+                  <Input
+                    id="edit-address_line2"
+                    value={editFormData.address_line2}
+                    onChange={(e) => setEditFormData((prev) => ({ ...prev, address_line2: e.target.value }))}
+                    placeholder="Enter address line 2"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="edit-address_landmark">Landmark</Label>
+                  <Input
+                    id="edit-address_landmark"
+                    value={editFormData.address_landmark}
+                    onChange={(e) => setEditFormData((prev) => ({ ...prev, address_landmark: e.target.value }))}
+                    placeholder="Enter landmark"
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="edit-address_city">City</Label>
+                    <Input
+                      id="edit-address_city"
+                      value={editFormData.address_city}
+                      onChange={(e) => setEditFormData((prev) => ({ ...prev, address_city: e.target.value }))}
+                      placeholder="Enter city"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="edit-address_pincode">Pincode</Label>
+                    <Input
+                      id="edit-address_pincode"
+                      value={editFormData.address_pincode}
+                      onChange={(e) => setEditFormData((prev) => ({ ...prev, address_pincode: e.target.value }))}
+                      placeholder="Enter pincode"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="edit-address_country">Country</Label>
+                  <Input
+                    id="edit-address_country"
+                    value={editFormData.address_country}
+                    onChange={(e) => setEditFormData((prev) => ({ ...prev, address_country: e.target.value }))}
+                    placeholder="Enter country"
+                  />
+                </div>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isUpdating}>

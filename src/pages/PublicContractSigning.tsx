@@ -337,11 +337,41 @@ const PublicContractSigning = () => {
         }
     }, [contractContent, campaign, influencer, variablesLoadedFromDb]);
 
+    // Helper function to map display names back to actual keys
+    const getActualKeyFromDisplayName = (displayName: string): string => {
+        if (displayName === 'Influencer Name') return 'name.influencer';
+        if (displayName === 'Product Name') return 'name.product';
+        if (displayName === 'Companies Name') return 'name.companies';
+        if (displayName === 'User Name') return 'name.user';
+        return displayName;
+    };
+
+    // Helper function to get display name from actual key
+    const getDisplayNameFromKey = (key: string): string => {
+        if (key === 'name.influencer') return 'Influencer Name';
+        if (key === 'name.product') return 'Product Name';
+        if (key === 'name.companies') return 'Companies Name';
+        if (key === 'name.user') return 'User Name';
+        return key;
+    };
+
     const loadContractVariables = () => {
-        // Regex to find all var[{{...}}]
+        const foundKeys = new Set<string>();
+
+        // First, try to extract keys from data-variable-key attributes
+        const dataKeyRegex = /data-variable-key=["']([^"']+)["']/g;
+        const dataKeyMatches = Array.from(contractContent.matchAll(dataKeyRegex));
+        dataKeyMatches.forEach(m => foundKeys.add(m[1]));
+
+        // Then, parse from var[{{...}}] text (for backward compatibility and cases without data attributes)
         const regex = /var\[\{\{(.*?)\}\}\]/g;
         const matches = Array.from(contractContent.matchAll(regex));
-        const foundKeys = new Set(matches.map(m => m[1]));
+        matches.forEach(m => {
+            const displayName = m[1];
+            // Map display name to actual key if needed
+            const actualKey = getActualKeyFromDisplayName(displayName);
+            foundKeys.add(actualKey);
+        });
 
         const newEntries: ContractVariableEntry[] = [];
 
@@ -352,6 +382,7 @@ const PublicContractSigning = () => {
 
             // Auto-fill logic
             if (key === "influencer_name" && influencer) value = influencer.name;
+            else if (key === "name.influencer" && influencer) value = influencer.name;
             else if (key === "campaign_name" && campaign) value = campaign.name;
             else if (key === "company_name") value = "Growik"; // Placeholder
             else if (key === "signature.influencer") {
@@ -391,6 +422,15 @@ const PublicContractSigning = () => {
             // Escape for regex
             const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             const regex = new RegExp(escapedPlaceholder, "g");
+
+            // Also create regex for display name format (if applicable)
+            const displayName = getDisplayNameFromKey(entry.key);
+            let displayNameRegex: RegExp | null = null;
+            if (displayName !== entry.key) {
+                const displayPlaceholder = `var[{{${displayName}}}]`;
+                const escapedDisplayPlaceholder = displayPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                displayNameRegex = new RegExp(escapedDisplayPlaceholder, "g");
+            }
 
             // Handle Signatures
             if (entry.key.includes("signature")) {
@@ -464,6 +504,10 @@ const PublicContractSigning = () => {
                 // Non-signature variables
                 const replacement = entry.inputValue || entry.value || placeholder;
                 html = html.replace(regex, replacement);
+                // Also replace display name format if it exists
+                if (displayNameRegex) {
+                    html = html.replace(displayNameRegex, replacement);
+                }
             }
         });
 

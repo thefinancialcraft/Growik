@@ -9,6 +9,7 @@ import MobileNav from "@/components/MobileNav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
@@ -77,13 +78,10 @@ const VARIABLE_KEY_DEFAULT = 'plain_text';
 const VARIABLE_KEY_OPTIONS = [
   { label: 'Plain Text', value: 'plain_text' },
   { label: 'User Id', value: 'user_id' },
-  { label: 'User Name', value: 'user_name' },
-  { label: 'Influencer Name', value: 'influencer_name' },
+  { label: 'Name', value: 'name' },
   { label: 'address', value: 'address' },
   { label: 'Phone No', value: 'phone_no' },
   { label: 'Date', value: 'date' },
-  { label: 'Product', value: 'product' },
-  { label: 'Company name', value: 'company_name' },
   { label: 'Signature', value: 'signature' },
   { label: 'Custom', value: 'custom' },
 ] as const;
@@ -100,8 +98,7 @@ const VARIABLE_DEFAULT_SOURCES: Partial<
     }
   >
 > = {
-  user_id: { table: "user_profiles", column: "user_id", schema: "public" },
-  user_name: { table: "user_profiles", column: "user_name", schema: "public" },
+  user_id: { table: "user_profiles", column: "employee_id", schema: "public" },
 };
 
 const DEFAULT_TABLE_SUGGESTIONS: Array<{ name: string; schema?: string }> = [
@@ -146,6 +143,8 @@ const extractContractPidNumber = (pid?: string | null): number => {
 
 type VariableEntry = {
   descriptors: string[];
+  descriptions: string[]; // Array of descriptions, one per occurrence
+  index?: number[]; // Array of occurrence indices (e.g., [1, 2, 3])
 };
 
 const normalizeVariablesFromServer = (
@@ -161,31 +160,151 @@ const normalizeVariablesFromServer = (
     if (!key) {
       return;
     }
+    
+    // Check if key already has index suffix (new format: "User Name_1", "User Name_2")
+    const indexMatch = key.match(/^(.+)_(\d+)$/);
+    if (indexMatch) {
+      // Already in new format - store as is
+      const baseKey = indexMatch[1];
+      const index = parseInt(indexMatch[2], 10);
+      
     if (value && typeof value === "object" && value !== null) {
-      const entry = value as { descriptors?: unknown; descriptor?: unknown; occurrences?: unknown };
+        const entry = value as { 
+          descriptors?: unknown; 
+          descriptions?: unknown;
+          index?: unknown;
+        };
+        
+        let descriptors: string[] = [];
+        let descriptions: string[] = [];
+        
       if (Array.isArray(entry.descriptors)) {
-        const descriptors = entry.descriptors
+          descriptors = entry.descriptors
+            .map((item) => (typeof item === "string" ? item : ""))
+            .map((item) => item.trim())
+            .filter(Boolean);
+        }
+        
+        if (Array.isArray(entry.descriptions)) {
+          descriptions = entry.descriptions
           .map((item) => (typeof item === "string" ? item : ""))
           .map((item) => item.trim());
-        normalized[key] = { descriptors };
+        }
+        
+        // Ensure arrays have at least one element
+        if (descriptors.length === 0) {
+          descriptors = [""];
+        }
+        if (descriptions.length === 0) {
+          descriptions = [""];
+        }
+        
+        // Ensure descriptions matches descriptors length
+        while (descriptions.length < descriptors.length) {
+          descriptions.push("");
+        }
+        if (descriptions.length > descriptors.length) {
+          descriptions = descriptions.slice(0, descriptors.length);
+        }
+        
+        normalized[key] = { 
+          descriptors, 
+          descriptions,
+          index: [index]
+        };
+      }
         return;
       }
-      if (typeof entry.descriptor === "string") {
+    
+    // Old format - convert to new indexed format
+    if (value && typeof value === "object" && value !== null) {
+      const entry = value as { 
+        descriptors?: unknown; 
+        descriptor?: unknown; 
+        occurrences?: unknown; 
+        description?: string;
+        descriptions?: unknown;
+      };
+      
+      // Handle descriptions array (new format) or single description (old format)
+      let descriptions: string[] = [];
+      if (Array.isArray(entry.descriptions)) {
+        descriptions = entry.descriptions
+          .map((item) => (typeof item === "string" ? item : ""))
+          .map((item) => item.trim());
+      } else if (typeof entry.description === "string") {
+        // Legacy format: convert single description to array
+        const singleDescription = entry.description.trim();
+        descriptions = [singleDescription];
+      }
+      
+      let descriptors: string[] = [];
+      if (Array.isArray(entry.descriptors)) {
+        descriptors = entry.descriptors
+          .map((item) => (typeof item === "string" ? item : ""))
+          .map((item) => item.trim())
+          .filter(Boolean);
+      } else if (typeof entry.descriptor === "string") {
         const descriptor = entry.descriptor.trim();
         const occurrenceCount =
           typeof entry.occurrences === "number" && Number.isFinite(entry.occurrences) && entry.occurrences > 1
             ? Math.floor(entry.occurrences)
             : 1;
-        const descriptors = Array.from({ length: occurrenceCount }, () => descriptor);
-        normalized[key] = { descriptors };
-        return;
+        descriptors = Array.from({ length: occurrenceCount }, () => descriptor);
       }
+      
+      // Ensure arrays match length
+      const maxLength = Math.max(descriptors.length, descriptions.length, 1);
+      while (descriptors.length < maxLength) {
+        descriptors.push(descriptors[0] || "");
+      }
+      while (descriptions.length < maxLength) {
+        descriptions.push("");
+      }
+      
+      // Convert to indexed format: create separate entry for each occurrence
+      for (let i = 0; i < maxLength; i++) {
+        const indexedKey = `${key}_${i + 1}`;
+        normalized[indexedKey] = {
+          descriptors: [descriptors[i] || ""],
+          descriptions: [descriptions[i] || ""],
+          index: [i + 1]
+        };
+      }
+      return;
     }
+    
     // legacy string format fallback
     const descriptor = typeof value === "string" ? value.trim() : "";
-    normalized[key] = { descriptors: descriptor ? [descriptor] : [] };
+    normalized[`${key}_1`] = { 
+      descriptors: descriptor ? [descriptor] : [""], 
+      descriptions: [""],
+      index: [1]
+    };
   });
 
+  return normalized;
+};
+
+const ensureVariablesHaveDescription = (
+  variables: Record<string, VariableEntry>,
+): Record<string, VariableEntry> => {
+  const normalized: Record<string, VariableEntry> = {};
+  Object.entries(variables).forEach(([key, entry]) => {
+    // Ensure descriptions array exists and matches descriptors length
+    let descriptions = entry.descriptions || [];
+    while (descriptions.length < entry.descriptors.length) {
+      descriptions.push("");
+    }
+    if (descriptions.length > entry.descriptors.length) {
+      descriptions = descriptions.slice(0, entry.descriptors.length);
+    }
+    normalized[key] = {
+      descriptors: entry.descriptors,
+      descriptions: descriptions,
+      index: entry.index, // Preserve index if present
+    };
+  });
   return normalized;
 };
 
@@ -441,24 +560,113 @@ const wrapContentForStorage = (html: string): string => {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><style>${TIPTAP_STORAGE_STYLE}</style></head><body><div class="tiptap-rendered">${safeHtml}</div></body></html>`;
 };
 
-const extractVariableKeysFromContent = (content: string): Map<string, number> => {
-  const counts = new Map<string, number>();
+const extractVariableKeysFromContent = (content: string): Map<string, { count: number; indices: number[] }> => {
+  const result = new Map<string, { count: number; indices: number[] }>();
   if (!content) {
-    return counts;
+    return result;
   }
 
-  const regex = /var\[\s*\{\{\s*([^}\s]+(?:[^}]*)?)\s*\}\}\s*\]/gi;
+  // Updated regex to match both old format: var[{{User Name}}] and new format: var[{{User Name [1]}}]
+  const regex = /var\[\s*\{\{\s*([^}\[]+?)(?:\s*\[\s*(\d+)\s*\])?\s*\}\}\s*\]/gi;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(content)) !== null) {
     const rawKey = match[1]?.trim();
+    const indexStr = match[2]?.trim();
+    
     if (rawKey) {
-      const current = counts.get(rawKey) ?? 0;
-      counts.set(rawKey, current + 1);
+      // Normalize the key to display format (e.g., user_id -> User Id)
+      // But preserve special mappings first
+      let normalizedKey = rawKey;
+      if (rawKey === 'name.influencer') {
+        normalizedKey = 'Influencer Name';
+      } else if (rawKey === 'name.product') {
+        normalizedKey = 'Product Name';
+      } else if (rawKey === 'name.companies') {
+        normalizedKey = 'Companies Name';
+      } else if (rawKey === 'name.user') {
+        normalizedKey = 'User Name';
+      } else if (rawKey === 'address.user') {
+        normalizedKey = 'User Address';
+      } else if (rawKey === 'address.influencer') {
+        normalizedKey = 'Influencer Address';
+      } else if (rawKey === 'address.companies') {
+        normalizedKey = 'Company Address';
+      } else if (rawKey.startsWith('address.user.')) {
+        // Handle address field keys (e.g., address.user.address_line1 -> Address Line 1)
+        const field = rawKey.replace('address.user.', '');
+        normalizedKey = prettifyKey(field);
+      } else if (rawKey.startsWith('address.influencer.')) {
+        // Handle influencer address field keys (e.g., address.influencer.address_line1 -> Address Line 1)
+        const field = rawKey.replace('address.influencer.', '');
+        normalizedKey = prettifyKey(field);
+      } else {
+        // Use prettifyKey for other keys (e.g., user_id -> User Id)
+        normalizedKey = prettifyKey(rawKey);
+      }
+      
+      const existing = result.get(normalizedKey) || { count: 0, indices: [] };
+      existing.count += 1;
+      
+      if (indexStr) {
+        const index = parseInt(indexStr, 10);
+        if (!isNaN(index) && !existing.indices.includes(index)) {
+          existing.indices.push(index);
+        }
+      }
+      
+      result.set(normalizedKey, existing);
     }
   }
 
-  return counts;
+  return result;
+};
+
+const normalizeVariablePlaceholdersInContent = (content: string): string => {
+  if (!content) return content;
+  
+  // Replace variable placeholders with normalized display names
+  // Match: var[{{user_id}}] or var[{{user_id [1]}}]
+  return content.replace(/var\[\s*\{\{\s*([^}\[]+?)(?:\s*\[\s*(\d+)\s*\])?\s*\}\}\s*\]/gi, (match, rawKey, indexStr) => {
+    const trimmedKey = rawKey?.trim();
+    if (!trimmedKey) return match;
+    
+    // Normalize the key to display format
+    let normalizedKey = trimmedKey;
+    if (trimmedKey === 'name.influencer') {
+      normalizedKey = 'Influencer Name';
+    } else if (trimmedKey === 'name.product') {
+      normalizedKey = 'Product Name';
+    } else if (trimmedKey === 'name.companies') {
+      normalizedKey = 'Companies Name';
+    } else if (trimmedKey === 'name.user') {
+      normalizedKey = 'User Name';
+    } else if (trimmedKey === 'address.user') {
+      normalizedKey = 'User Address';
+    } else if (trimmedKey === 'address.influencer') {
+      normalizedKey = 'Influencer Address';
+    } else if (trimmedKey === 'address.companies') {
+      normalizedKey = 'Company Address';
+    } else if (trimmedKey.startsWith('address.user.')) {
+      // Handle address field keys (e.g., address.user.address_line1 -> Address Line 1)
+      const field = trimmedKey.replace('address.user.', '');
+      normalizedKey = prettifyKey(field);
+    } else if (trimmedKey.startsWith('address.influencer.')) {
+      // Handle influencer address field keys (e.g., address.influencer.address_line1 -> Address Line 1)
+      const field = trimmedKey.replace('address.influencer.', '');
+      normalizedKey = prettifyKey(field);
+    } else {
+      // Use prettifyKey for other keys (e.g., user_id -> User Id)
+      normalizedKey = prettifyKey(trimmedKey);
+    }
+    
+    // Reconstruct the placeholder with normalized key
+    if (indexStr) {
+      return `var[{{${normalizedKey} [${indexStr}]}}]`;
+    } else {
+      return `var[{{${normalizedKey}}}]`;
+    }
+  });
 };
 
 const unwrapContentFromStorage = (html?: string | null): string => {
@@ -889,6 +1097,9 @@ const ContractEditor = () => {
   const [variableSourceColumn, setVariableSourceColumn] = useState<string>("");
   const [variableSourceSchema, setVariableSourceSchema] = useState<string>("");
   const [signatureType, setSignatureType] = useState<'influencer' | 'user' | ''>('');
+  const [nameType, setNameType] = useState<'user' | 'influencer' | 'product' | 'companies' | ''>('');
+  const [addressType, setAddressType] = useState<'user' | 'influencer' | 'companies' | ''>('');
+  const [variableDescription, setVariableDescription] = useState<string>("");
   const [variableTables, setVariableTables] = useState<SupabaseTableMetadata[]>([]);
   const [variableTablesLoading, setVariableTablesLoading] = useState<boolean>(false);
   const [variableTablesError, setVariableTablesError] = useState<string | null>(null);
@@ -960,6 +1171,7 @@ const ContractEditor = () => {
   const [isAutoSaving, setIsAutoSaving] = useState<boolean>(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const previousContentRef = useRef<string>("");
   const [supabaseMentionState, setSupabaseMentionState] = useState<{
     anchor: { left: number; top: number };
     range: { from: number; to: number };
@@ -1054,6 +1266,7 @@ const ContractEditor = () => {
     setVariableSourceTable('');
     setVariableSourceColumn('');
     setVariableSourceSchema('');
+    setVariableDescription('');
     setIsVariableDialogOpen(true);
   }, []);
 
@@ -1066,11 +1279,14 @@ const ContractEditor = () => {
         setVariableSourceTable('');
         setVariableSourceColumn('');
         setVariableSourceSchema('');
+        setVariableDescription('');
         setVariableTables([]);
         setVariableTablesError(null);
         setVariableColumns([]);
         setVariableColumnsError(null);
         setSignatureType(''); // Reset signature type when dialog closes
+        setNameType(''); // Reset name type when dialog closes
+        setAddressType(''); // Reset address type when dialog closes
       }
     },
     []
@@ -1089,6 +1305,20 @@ const ContractEditor = () => {
       setSignatureType(''); // Reset to empty, user will select
     } else {
       setSignatureType('');
+    }
+    
+    // Reset name type when name is selected/deselected
+    if (value === 'name') {
+      setNameType(''); // Reset to empty, user will select
+    } else {
+      setNameType('');
+    }
+    
+    // Reset address type when address is selected/deselected
+    if (value === 'address') {
+      setAddressType(''); // Reset to empty, user will select
+    } else {
+      setAddressType('');
     }
     
     const defaults = VARIABLE_DEFAULT_SOURCES[value];
@@ -1731,6 +1961,7 @@ const ContractEditor = () => {
     setIsAutoSaving(true);
     try {
       const styledContent = wrapContentForStorage(contractContent);
+      const variablesWithDescription = ensureVariablesHaveDescription(variables);
       const { error } = await supabase
         .from('contracts')
         // @ts-ignore - Supabase type inference issue
@@ -1738,7 +1969,7 @@ const ContractEditor = () => {
           contract_name: contractName.trim(),
           description: contractDescription.trim() || null,
           content: styledContent,
-          variables: variables,
+          variables: variablesWithDescription,
           updated_at: new Date().toISOString(),
           updated_by: user.id,
         })
@@ -1784,66 +2015,193 @@ const ContractEditor = () => {
   useEffect(() => {
     setVariables((prev) => {
       const keyCounts = extractVariableKeysFromContent(contractContent);
+      const previousContent = previousContentRef.current;
+      
+      // Helper function to find all occurrences of a variable in content with their positions and indices
+      const findVariableOccurrences = (content: string, variableKey: string): Array<{ occurrenceNumber: number; position: number; index: number }> => {
+        const occurrences: Array<{ occurrenceNumber: number; position: number; index: number }> = [];
+        // Updated regex to match both old format: var[{{User Name}}] and new format: var[{{User Name [1]}}]
+        const regex = /var\[\s*\{\{\s*([^}\[]+?)(?:\s*\[\s*(\d+)\s*\])?\s*\}\}\s*\]/gi;
+        let match: RegExpExecArray | null;
+        let occurrenceNumber = 1;
+        
+        while ((match = regex.exec(content)) !== null) {
+          const rawKey = match[1]?.trim();
+          const indexStr = match[2]?.trim();
+          
+          if (rawKey === variableKey) {
+            // Use the index from content if available, otherwise use sequential occurrence number
+            const index = indexStr ? parseInt(indexStr, 10) : occurrenceNumber;
+            occurrences.push({ occurrenceNumber, position: match.index, index });
+            occurrenceNumber++;
+          }
+        }
+        
+        return occurrences;
+      };
 
       if (keyCounts.size === 0) {
         if (Object.keys(prev).length === 0) {
+          previousContentRef.current = contractContent;
           return prev;
         }
+        previousContentRef.current = contractContent;
         return {};
       }
 
       let changed = false;
-      const next: Record<string, VariableEntry> = { ...prev };
+      const next: Record<string, VariableEntry> = {};
 
-      keyCounts.forEach((count, key) => {
-        const existing = prev[key];
+      keyCounts.forEach((data, key) => {
         const defaults = VARIABLE_DEFAULT_SOURCES[key as VariableKeyOptionValue];
 
-        const nextEntry: VariableEntry = {
-          descriptors: existing ? [...existing.descriptors] : [],
-        };
-
-        if (nextEntry.descriptors.length > count) {
-          nextEntry.descriptors.length = count;
-          changed = true;
-        }
-
-        while (nextEntry.descriptors.length < count) {
-          nextEntry.descriptors.push("");
-          changed = true;
-        }
-
-        if (defaults) {
-          const tablePath = defaults.schema ? `${defaults.schema}.${defaults.table}` : defaults.table;
-          const defaultDescriptor = `source:${tablePath}.${defaults.column}`;
-          nextEntry.descriptors = nextEntry.descriptors.map((descriptor) => {
-            if (descriptor && descriptor.trim().length > 0) {
-              return descriptor;
+        // Find all current occurrences in content (with indices from content)
+        const currOccurrences = findVariableOccurrences(contractContent, key);
+        
+        // Get all existing indexed entries for this variable (e.g., "User Name_1", "User Name_2")
+        const existingIndexedEntries = Object.entries(prev).filter(([prevKey]) => {
+          const match = prevKey.match(/^(.+)_(\d+)$/);
+          return match && match[1] === key;
+        });
+        
+        // Create a map of existing entries by their index
+        const existingByIndex = new Map<number, VariableEntry>();
+        existingIndexedEntries.forEach(([prevKey, entry]) => {
+          const match = prevKey.match(/^(.+)_(\d+)$/);
+          if (match) {
+            const index = parseInt(match[2], 10);
+            existingByIndex.set(index, entry);
+          }
+        });
+        
+        // Match current occurrences with previous ones by position
+        const matchedIndices = new Map<number, number>(); // Maps current occurrence number to previous index
+        
+        if (previousContent) {
+          const prevOccurrences = findVariableOccurrences(previousContent, key);
+          
+          currOccurrences.forEach((currOcc) => {
+            // Find the closest previous occurrence by position
+            let closestPrevIndex = -1;
+            let minDistance = Infinity;
+            
+            prevOccurrences.forEach((prevOcc) => {
+              const distance = Math.abs(currOcc.position - prevOcc.position);
+              if (distance < minDistance && distance < 100) { // Tolerance of 100 chars
+                minDistance = distance;
+                closestPrevIndex = prevOcc.occurrenceNumber;
+              }
+            });
+            
+            if (closestPrevIndex !== -1) {
+              matchedIndices.set(currOcc.occurrenceNumber, closestPrevIndex);
             }
-            changed = true;
-            return defaultDescriptor;
           });
         }
-
-        if (
-          !existing ||
-          existing.descriptors.length !== nextEntry.descriptors.length ||
-          existing.descriptors.some((value, index) => value !== nextEntry.descriptors[index])
-        ) {
-          next[key] = nextEntry;
+        
+        // Create indexed entries for each current occurrence
+        // Use a set to track which previous indices have been matched
+        const usedPrevIndices = new Set<number>();
+        
+        currOccurrences.forEach((currOcc) => {
+          // Use the index from content (e.g., from [1], [2], etc.) instead of sequential occurrence number
+          const contentIndex = currOcc.index;
+          const indexedKey = `${key}_${contentIndex}`;
+          
+          // Try to match by index first (most reliable)
+          const matchedPrevIndex = existingByIndex.has(contentIndex) ? contentIndex : matchedIndices.get(currOcc.occurrenceNumber);
+          
+          // Check if this indexed entry already exists (e.g., from handleAddVariable)
+          const existingCurrentEntry = prev[indexedKey];
+          
+          let descriptor = "";
+          let description = "";
+          
+          // If entry already exists for this index, preserve it
+          if (existingCurrentEntry && existingCurrentEntry.descriptors.length > 0 && existingCurrentEntry.descriptors[0]) {
+            descriptor = existingCurrentEntry.descriptors[0];
+            description = existingCurrentEntry.descriptions[0] || "";
+          }
+          // Try to get from existing entry by index (most reliable match)
+          else if (existingByIndex.has(contentIndex) && !usedPrevIndices.has(contentIndex)) {
+            const existingEntry = existingByIndex.get(contentIndex)!;
+            descriptor = existingEntry.descriptors[0] || "";
+            description = existingEntry.descriptions[0] || "";
+            usedPrevIndices.add(contentIndex);
+          }
+          // Try to get from existing entry if matched by position
+          else if (matchedPrevIndex !== undefined && existingByIndex.has(matchedPrevIndex) && !usedPrevIndices.has(matchedPrevIndex)) {
+            const existingEntry = existingByIndex.get(matchedPrevIndex)!;
+            descriptor = existingEntry.descriptors[0] || "";
+            description = existingEntry.descriptions[0] || "";
+            usedPrevIndices.add(matchedPrevIndex);
+          } else {
+            // Try to get from any unused existing entry for this variable (fallback)
+            for (const [prevKey, entry] of existingIndexedEntries) {
+              const match = prevKey.match(/^(.+)_(\d+)$/);
+              if (match) {
+                const prevIndex = parseInt(match[2], 10);
+                if (!usedPrevIndices.has(prevIndex) && entry.descriptors.length > 0 && entry.descriptors[0]) {
+                  descriptor = entry.descriptors[0] || "";
+                  description = entry.descriptions[0] || "";
+                  usedPrevIndices.add(prevIndex);
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Apply default descriptor if empty and defaults exist
+          if (!descriptor && defaults) {
+            const tablePath = defaults.schema ? `${defaults.schema}.${defaults.table}` : defaults.table;
+            descriptor = `source:${tablePath}.${defaults.column}`;
+          }
+          
+          next[indexedKey] = {
+            descriptors: [descriptor],
+            descriptions: [description],
+            index: [contentIndex]
+          };
+        });
+        
+        // Mark as changed if we created new entries or removed old ones
+        const existingKeys = new Set(existingIndexedEntries.map(([k]) => k));
+        const newKeys = new Set(Object.keys(next).filter(k => k.startsWith(`${key}_`)));
+        
+        if (existingKeys.size !== newKeys.size || 
+            Array.from(existingKeys).some(k => !newKeys.has(k)) ||
+            Array.from(newKeys).some(k => !existingKeys.has(k))) {
           changed = true;
         }
       });
 
-      Object.keys(prev).forEach((key) => {
-        if (!keyCounts.has(key)) {
-          delete next[key];
+      // Remove entries for variables that no longer exist in content
+      Object.keys(prev).forEach((prevKey) => {
+        const match = prevKey.match(/^(.+)_(\d+)$/);
+        if (match) {
+          const baseKey = match[1];
+          if (!keyCounts.has(baseKey)) {
+            // Variable completely removed
+            changed = true;
+          } else {
+            // Check if this specific indexed entry still exists
+            if (!next[prevKey]) {
           changed = true;
+            }
+          }
+        } else {
+          // Old format entry without index - should be removed
+          if (!keyCounts.has(prevKey)) {
+            changed = true;
+          }
         }
       });
 
       return changed ? next : prev;
     });
+    
+    // Update previous content ref after state update
+    previousContentRef.current = contractContent;
   }, [contractContent]);
 
   useEffect(() => {
@@ -2169,7 +2527,11 @@ const ContractEditor = () => {
           setContractPid(contractData.pid ?? null);
           setContractName(contractData.contract_name || '');
           setContractDescription((contractData as ContractData).description || '');
-          setContractContent(unwrapContentFromStorage(contractData.content));
+          const unwrappedContent = unwrapContentFromStorage(contractData.content);
+          // Normalize variable placeholders (e.g., user_id -> User Id)
+          const normalizedContent = normalizeVariablePlaceholdersInContent(unwrappedContent);
+          setContractContent(normalizedContent);
+          previousContentRef.current = normalizedContent; // Initialize ref with loaded content
           setVariables(normalizeVariablesFromServer(contractData.variables as Record<string, any> | null));
           setLastSaved(new Date(contractData.updated_at));
         } else {
@@ -2231,6 +2593,7 @@ const ContractEditor = () => {
     }
 
     const styledContent = wrapContentForStorage(contractContent);
+    const variablesWithDescription = ensureVariablesHaveDescription(variables);
     setIsSaving(true);
     try {
       if (contractId) {
@@ -2243,7 +2606,7 @@ const ContractEditor = () => {
             description: contractDescription.trim() || null,
             content: styledContent,
             status: 'active',
-            variables: variables,
+            variables: variablesWithDescription,
             updated_at: new Date().toISOString(),
             updated_by: user.id,
           })
@@ -2282,7 +2645,7 @@ const ContractEditor = () => {
             content: styledContent,
             status: 'active',
             created_by: user.id,
-            variables: variables,
+            variables: variablesWithDescription,
           })
           .select()
           .single();
@@ -2336,6 +2699,7 @@ const ContractEditor = () => {
     }
 
     const styledContent = wrapContentForStorage(contractContent);
+    const variablesWithDescription = ensureVariablesHaveDescription(variables);
     setIsSavingDraft(true);
     try {
       if (contractId) {
@@ -2348,7 +2712,7 @@ const ContractEditor = () => {
             description: contractDescription.trim() || null,
             content: styledContent || '',
             status: 'draft',
-            variables: variables,
+            variables: variablesWithDescription,
             updated_at: new Date().toISOString(),
             updated_by: user.id,
           })
@@ -2387,7 +2751,7 @@ const ContractEditor = () => {
             content: styledContent || '',
             status: 'draft',
             created_by: user.id,
-            variables: variables,
+            variables: variablesWithDescription,
           })
           .select()
           .single();
@@ -2421,6 +2785,28 @@ const ContractEditor = () => {
     }
   };
 
+  // Helper function to get display name for variable keys
+  const getVariableDisplayName = (key: string): string => {
+    if (key === 'name.influencer') return 'Influencer Name';
+    if (key === 'name.product') return 'Product Name';
+    if (key === 'name.companies') return 'Companies Name';
+    if (key === 'name.user') return 'User Name';
+    if (key === 'address.user') return 'User Address';
+    if (key === 'address.influencer') return 'Influencer Address';
+    if (key === 'address.companies') return 'Company Address';
+    // Handle address field keys
+    if (key.startsWith('address.user.')) {
+      const field = key.replace('address.user.', '');
+      return prettifyKey(field);
+    }
+    if (key.startsWith('address.influencer.')) {
+      const field = key.replace('address.influencer.', '');
+      return prettifyKey(field);
+    }
+    // Use prettifyKey to convert keys like user_id to User Id
+    return prettifyKey(key);
+  };
+
   // Handle variable insertion
   const handleAddVariable = () => {
     if (!variableKey.trim()) {
@@ -2442,8 +2828,28 @@ const ContractEditor = () => {
       return;
     }
 
-    // For non-signature variables, check source table/column consistency
-    if (variableKey.trim() !== 'signature') {
+    // For name, require name type selection
+    if (variableKey.trim() === 'name' && !nameType) {
+      toast({
+        title: "Name Type Required",
+        description: "Please select whether this name is for user, influencer, product, or companies.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // For address, require address type selection
+    if (variableKey.trim() === 'address' && !addressType) {
+      toast({
+        title: "Address Type Required",
+        description: "Please select whether this address is for user, influencer, or companies.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // For non-signature, non-name, and non-address variables, check source table/column consistency
+    if (variableKey.trim() !== 'signature' && variableKey.trim() !== 'name' && variableKey.trim() !== 'address') {
       if ((variableSourceTable && !variableSourceColumn) || (!variableSourceTable && variableSourceColumn)) {
         toast({
           title: "Incomplete source selection",
@@ -2462,12 +2868,144 @@ const ContractEditor = () => {
       trimmedKey = `signature.${signatureType}`;
     }
     
+    // Special handling for name variable - use name.user, name.influencer, name.product, or name.companies
+    if (trimmedKey === 'name' && nameType) {
+      trimmedKey = `name.${nameType}`;
+    }
+    
+    // Special handling for address variable - use address.user, address.influencer, or address.companies
+    if (trimmedKey === 'address' && addressType) {
+      trimmedKey = `address.${addressType}`;
+    }
+    
+    // Special handling: If address type is 'user', 'influencer', or 'companies', insert all address fields
+    if (variableKey.trim() === 'address' && (addressType === 'user' || addressType === 'influencer' || addressType === 'companies')) {
+      const addressFields = [
+        { key: 'address_line1', display: 'Address Line 1', column: 'address_line1' },
+        { key: 'address_line2', display: 'Address Line 2', column: 'address_line2' },
+        { key: 'address_landmark', display: 'Address Landmark', column: 'address_landmark' },
+        { key: 'address_city', display: 'Address City', column: 'address_city' },
+        { key: 'address_pincode', display: 'Address Pincode', column: 'address_pincode' },
+        { key: 'address_country', display: 'Address Country', column: 'address_country' }
+      ];
+
+      const currentKeyCounts = extractVariableKeysFromContent(contractContent);
+      let nextIndex = 1;
+      
+      // Find the next available index for all address fields
+      addressFields.forEach(field => {
+        const existingData = currentKeyCounts.get(field.display);
+        const existingIndices = existingData?.indices || [];
+        if (existingIndices.length > 0) {
+          const maxIndex = Math.max(...existingIndices);
+          if (maxIndex >= nextIndex) {
+            nextIndex = maxIndex + 1;
+          }
+        }
+      });
+
+      // Determine table and prefix based on address type
+      let tableName: string;
+      let addressPrefix: string;
+      let addressTypeLabel: string;
+      
+      if (addressType === 'user') {
+        tableName = 'user_profiles';
+        addressPrefix = 'address.user';
+        addressTypeLabel = 'user';
+      } else if (addressType === 'influencer') {
+        tableName = 'influencers';
+        addressPrefix = 'address.influencer';
+        addressTypeLabel = 'influencer';
+      } else {
+        // companies
+        tableName = 'companies';
+        addressPrefix = 'address.companies';
+        addressTypeLabel = 'company';
+      }
+
+      // Build content to insert all address fields (each on a new line)
+      let addressContent = '';
+      const newVariables: Record<string, VariableEntry> = {};
+
+      addressFields.forEach((field, index) => {
+        const variableWithIndex = `${field.display} [${nextIndex}]`;
+        const variablePlaceholder = `<span data-variable-key="${addressPrefix}.${field.key}" data-variable-index="${nextIndex}" style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">var[{{${variableWithIndex}}}]</span>`;
+        
+        // Wrap each field in a paragraph tag to put each on a new line
+        addressContent += `<p>${variablePlaceholder}</p>`;
+
+        // Store variable in state
+        const tablePath = `public.${tableName}`;
+        const descriptor = `source:${tablePath}.${field.column}`;
+        const newDescription = variableDescription.trim() || "";
+
+        newVariables[`${field.display}_${nextIndex}`] = {
+          descriptors: [descriptor],
+          descriptions: [newDescription],
+          index: [nextIndex]
+        };
+      });
+
+      // Insert all address fields into editor (each on a new line)
+      if (editor) {
+        editor
+          .chain()
+          .focus()
+          .insertContent(addressContent)
+          .run();
+      } else {
+        // For fallback, add line breaks between fields
+        const fallbackContent = addressFields.map((field) => {
+          const variableWithIndex = `${field.display} [${nextIndex}]`;
+          return `var[{{${variableWithIndex}}}]`;
+        }).join('\n');
+        setContractContent((prev) => prev + '\n' + fallbackContent + '\n');
+      }
+
+      // Update variables state
+      setVariables((prev) => ({
+        ...prev,
+        ...newVariables
+      }));
+
+      toast({
+        title: "Address Fields Added",
+        description: `All ${addressTypeLabel} address fields have been added to the document (${addressFields.length} fields).`,
+      });
+
+      // Reset form and close dialog
+      handleVariableDialogOpenChange(false);
+      return;
+    }
+    
+    // Get display name for the variable
+    const displayName = getVariableDisplayName(trimmedKey);
+    
+    // Use displayName as the key for storing variables (since that's what's extracted from content)
+    const variableKeyForStorage = displayName;
+    
+    // Count current occurrences to determine the next index
+    const currentKeyCounts = extractVariableKeysFromContent(contractContent);
+    const existingData = currentKeyCounts.get(variableKeyForStorage);
+    const existingIndices = existingData?.indices || [];
+    
+    // Find the next available index (1-indexed)
+    let nextIndex = 1;
+    // If we have existing indices (new format with [1], [2], etc.), find the next available index
+    if (existingIndices.length > 0) {
+      const maxIndex = Math.max(...existingIndices);
+      nextIndex = maxIndex + 1;
+    }
+    // If no indices exist, start from 1 (this handles both: no variables at all, or old format variables)
+    
     // Special handling for signature variable - create a box
     let variablePlaceholder: string;
+    const variableWithIndex = `${displayName} [${nextIndex}]`;
     if (variableKey.trim() === 'signature' && signatureType) {
-      variablePlaceholder = `<span class="signature-box" data-signature="true" style="display: inline-block !important; width: 200px !important; height: 140px !important; border: 1px solid #9ca3af !important; background-color: transparent !important; border-radius: 3px !important; padding: 2px !important; text-align: center !important; vertical-align: middle !important; line-height: 136px !important; font-size: 10px !important; color: #6b7280 !important; box-sizing: border-box !important; margin-top: 20px !important; margin-bottom: 20px !important; margin-left: 25px !important; margin-right: 25px !important;">var[{{${trimmedKey}}}]</span>`;
+      variablePlaceholder = `<span class="signature-box" data-signature="true" data-variable-key="${trimmedKey}" data-variable-index="${nextIndex}" style="display: inline-block !important; width: 200px !important; height: 140px !important; border: 1px solid #9ca3af !important; background-color: transparent !important; border-radius: 3px !important; padding: 2px !important; text-align: center !important; vertical-align: middle !important; line-height: 136px !important; font-size: 10px !important; color: #6b7280 !important; box-sizing: border-box !important; margin-top: 20px !important; margin-bottom: 20px !important; margin-left: 25px !important; margin-right: 25px !important;">var[{{${variableWithIndex}}}]</span>`;
     } else {
-      variablePlaceholder = `<span style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">var[{{${trimmedKey}}}]</span>`;
+      variablePlaceholder = `<span data-variable-key="${trimmedKey}" data-variable-index="${nextIndex}" style="background-color: #fef3c7; padding: 2px 4px; border-radius: 3px; font-weight: 500;">var[{{${variableWithIndex}}}]</span>`;
     }
 
     if (editor) {
@@ -2486,52 +3024,98 @@ const ContractEditor = () => {
     
     // Store variable in state
     const descriptorParts: string[] = [];
-    if (variableSourceTable && variableSourceColumn) {
-      const tablePath = variableSourceSchema
-        ? `${variableSourceSchema}.${variableSourceTable}`
-        : variableSourceTable;
-      descriptorParts.push(`source:${tablePath}.${variableSourceColumn}`);
-    }
-    setVariables((prev) => {
-      const descriptor = descriptorParts.join(" | ");
-      const existing = prev[trimmedKey];
-
-      if (existing) {
-        const descriptors = [...existing.descriptors];
-        const emptyIndex = descriptors.findIndex((value) => !value || !value.trim());
-
-        if (descriptor) {
-          if (descriptors.includes(descriptor)) {
-            return prev;
-          }
-          if (emptyIndex !== -1) {
-            descriptors[emptyIndex] = descriptor;
-          } else {
-            descriptors.push(descriptor);
-          }
-        } else if (emptyIndex === -1) {
-          descriptors.push("");
+    
+    // For name variables, ensure source is set based on nameType
+    let finalSourceTable = variableSourceTable;
+    let finalSourceColumn = variableSourceColumn;
+    let finalSourceSchema = variableSourceSchema;
+    
+    if (trimmedKey.startsWith('name.') && nameType) {
+      if (!finalSourceTable || !finalSourceColumn) {
+        // Set source based on nameType if not already set
+        finalSourceSchema = 'public';
+        if (nameType === 'user') {
+          finalSourceTable = 'user_profiles';
+          finalSourceColumn = 'user_name';
+        } else if (nameType === 'influencer') {
+          finalSourceTable = 'influencers';
+          finalSourceColumn = 'name';
+        } else if (nameType === 'product') {
+          finalSourceTable = 'products';
+          finalSourceColumn = 'name';
+        } else if (nameType === 'companies') {
+          finalSourceTable = 'companies';
+          finalSourceColumn = 'name';
         }
-
+      }
+    }
+    
+    // For address variables, ensure source is set based on addressType
+    if (trimmedKey.startsWith('address.') && addressType) {
+      if (!finalSourceTable || !finalSourceColumn) {
+        // Set source based on addressType if not already set
+        finalSourceSchema = 'public';
+        if (addressType === 'user') {
+          finalSourceTable = 'user_profiles';
+          finalSourceColumn = 'address';
+        } else if (addressType === 'influencer') {
+          finalSourceTable = 'influencers';
+          finalSourceColumn = 'address';
+        } else if (addressType === 'companies') {
+          finalSourceTable = 'companies';
+          finalSourceColumn = 'address';
+        }
+      }
+    }
+    
+    if (finalSourceTable && finalSourceColumn) {
+      const tablePath = finalSourceSchema
+        ? `${finalSourceSchema}.${finalSourceTable}`
+        : finalSourceTable;
+      descriptorParts.push(`source:${tablePath}.${finalSourceColumn}`);
+    }
+    
+    const descriptor = descriptorParts.join(" | ");
+    const newDescription = variableDescription.trim() || "";
+    
+    // The occurrence number for the newly inserted variable (already calculated above)
+    const newOccurrenceNumber = nextIndex;
+    
+    setVariables((prev) => {
+      // Create indexed key for this occurrence
+      const indexedKey = `${variableKeyForStorage}_${newOccurrenceNumber}`;
+      
+      // Check if this indexed entry already exists (shouldn't happen for new insertions, but handle it)
+      const existingIndexed = prev[indexedKey];
+      
+      if (existingIndexed) {
+        // Update existing indexed entry
         return {
           ...prev,
-          [trimmedKey]: { descriptors },
+          [indexedKey]: {
+            descriptors: descriptor ? [descriptor] : existingIndexed.descriptors.length > 0 ? existingIndexed.descriptors : [""],
+            descriptions: [newDescription],
+            index: [newOccurrenceNumber]
+          }
         };
       }
-
+      
+      // Create new indexed entry
       return {
         ...prev,
-        [trimmedKey]: {
+        [indexedKey]: {
           descriptors: descriptor ? [descriptor] : [""],
-        },
+          descriptions: [newDescription],
+          index: [newOccurrenceNumber]
+        }
       };
     });
 
     toast({
       title: "Variable Added",
       description: variableSourceTable && variableSourceColumn
-        ? `Variable "${trimmedKey}" linked to ${variableSourceTable}.${variableSourceColumn}.`
-        : `Variable "${trimmedKey}" has been added to the document.`,
+        ? `Variable "${variableKeyForStorage}" linked to ${variableSourceTable}.${variableSourceColumn}.`
+        : `Variable "${variableKeyForStorage}" has been added to the document.`,
     });
 
     // Reset form and close dialog
@@ -3023,6 +3607,14 @@ Use the toolbar above to format text, add headings, lists, and more."
                 <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
                   {`var[{{signature.${signatureType}}}]`}
                 </div>
+              ) : variableKeyOption === 'name' && nameType ? (
+                <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
+                  {`var[{{${getVariableDisplayName(`name.${nameType}`)}}}]`}
+                </div>
+              ) : variableKeyOption === 'address' && addressType ? (
+                <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
+                  {`var[{{${getVariableDisplayName(`address.${addressType}`)}}}]`}
+                </div>
               ) : (
                 <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
                   {`var[{{${variableKey}}}]`}
@@ -3032,7 +3624,7 @@ Use the toolbar above to format text, add headings, lists, and more."
                 Select a preset placeholder or choose Custom to define your own key.
               </p>
             </div>
-            {/* Show signature type selector for signature variable, date picker for date, otherwise show source table/column */}
+            {/* Show signature type selector for signature variable, name type selector for name variable, date picker for date, otherwise show source table/column */}
             {variableKeyOption === 'signature' ? (
               <div className="space-y-2">
                 <Label>Signature Type *</Label>
@@ -3054,6 +3646,108 @@ Use the toolbar above to format text, add headings, lists, and more."
                 {signatureType && (
                   <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
                     {`var[{{signature.${signatureType}}}]`}
+                  </div>
+                )}
+              </div>
+            ) : variableKeyOption === 'name' ? (
+              <div className="space-y-2">
+                <Label>Name Type *</Label>
+                <Select
+                  value={nameType || undefined}
+                  onValueChange={(value: 'user' | 'influencer' | 'product' | 'companies') => {
+                    setNameType(value);
+                    // Automatically set source table and column based on name type
+                    if (value === 'user') {
+                      setVariableSourceSchema('public');
+                      setVariableSourceTable('user_profiles');
+                      setVariableSourceColumn('user_name');
+                    } else if (value === 'influencer') {
+                      setVariableSourceSchema('public');
+                      setVariableSourceTable('influencers');
+                      setVariableSourceColumn('name');
+                    } else if (value === 'product') {
+                      setVariableSourceSchema('public');
+                      setVariableSourceTable('products');
+                      setVariableSourceColumn('name');
+                    } else if (value === 'companies') {
+                      setVariableSourceSchema('public');
+                      setVariableSourceTable('companies');
+                      setVariableSourceColumn('name');
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select name type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">User</SelectItem>
+                    <SelectItem value="influencer">Influencer</SelectItem>
+                    <SelectItem value="product">Product</SelectItem>
+                    <SelectItem value="companies">Companies</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Select whether this name is for user, influencer, product, or companies.
+                </p>
+                {nameType && (
+                  <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
+                    {`var[{{${getVariableDisplayName(`name.${nameType}`)}}}]`}
+                  </div>
+                )}
+                {nameType && (
+                  <div className="rounded-md border border-green-200 bg-green-50/60 px-3 py-2 text-xs text-green-700">
+                    Source: {nameType === 'user' ? 'public.user_profiles.user_name' : 
+                             nameType === 'influencer' ? 'public.influencers.name' :
+                             nameType === 'product' ? 'public.products.name' :
+                             'public.companies.name'}
+                  </div>
+                )}
+              </div>
+            ) : variableKeyOption === 'address' ? (
+              <div className="space-y-2">
+                <Label>Address Type *</Label>
+                <Select
+                  value={addressType || undefined}
+                  onValueChange={(value: 'user' | 'influencer' | 'companies') => {
+                    setAddressType(value);
+                    // Automatically set source table and column based on address type
+                    if (value === 'user') {
+                      setVariableSourceSchema('public');
+                      setVariableSourceTable('user_profiles');
+                      setVariableSourceColumn('address');
+                    } else if (value === 'influencer') {
+                      setVariableSourceSchema('public');
+                      setVariableSourceTable('influencers');
+                      setVariableSourceColumn('address');
+                    } else if (value === 'companies') {
+                      setVariableSourceSchema('public');
+                      setVariableSourceTable('companies');
+                      setVariableSourceColumn('address');
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select address type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">User Address</SelectItem>
+                    <SelectItem value="influencer">Influencer Address</SelectItem>
+                    <SelectItem value="companies">Company Address</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Select whether this address is for user, influencer, or companies.
+                </p>
+                {addressType && (
+                  <div className="rounded-md border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs font-semibold text-indigo-600">
+                    {`var[{{${getVariableDisplayName(`address.${addressType}`)}}}]`}
+                  </div>
+                )}
+                {addressType && (
+                  <div className="rounded-md border border-green-200 bg-green-50/60 px-3 py-2 text-xs text-green-700">
+                    Source: {addressType === 'user' ? 'public.user_profiles.address' : 
+                             addressType === 'influencer' ? 'public.influencers.address' :
+                             'public.companies.address'}
                   </div>
                 )}
               </div>
@@ -3165,6 +3859,20 @@ Use the toolbar above to format text, add headings, lists, and more."
                 </div>
               </>
             )}
+            <div className="space-y-2">
+              <Label htmlFor="variableDescription">Description (Optional)</Label>
+              <Textarea
+                id="variableDescription"
+                value={variableDescription}
+                onChange={(e) => setVariableDescription(e.target.value)}
+                placeholder="Add a description for this variable (shown in Available Contract Variables)"
+                className="min-h-[80px] text-sm"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                This description will be shown in the Available Contract Variables sheet but will not appear in the contract content.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button

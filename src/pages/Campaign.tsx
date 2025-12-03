@@ -1389,8 +1389,8 @@ const Campaign = () => {
             <Card className="border outline-indigo-200 bg-white/95 backdrop-blur">
               <div className="p-4 sm:p-5 lg:p-6 space-y-4 sm:space-y-6">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="w-full lg:max-w-xl">
-                    <div className="relative">
+                  <div className="w-full lg:max-w-xl flex items-center gap-3">
+                    <div className="relative flex-1">
                       <Search className="absolute left-2.5 sm:left-3 top-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         value={searchTerm}
@@ -1399,6 +1399,15 @@ const Campaign = () => {
                         className="pl-8 sm:pl-10 h-9 sm:h-11 w-full rounded-xl sm:rounded-2xl border border-slate-200 bg-slate-50/80 text-xs sm:text-sm focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
                       />
                     </div>
+                    {(userRole === 'admin' || userRole === 'super_admin') && (
+                      <Button
+                        onClick={handleOpenCreateDialog}
+                        className="hidden lg:flex bg-primary text-white hover:bg-primary/90 shadow-lg h-11 px-5 rounded-full font-semibold flex items-center gap-2 shrink-0"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Create Campaign
+                      </Button>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 sm:gap-3">
                     <div className="flex items-center rounded-lg sm:rounded-xl border border-border/60 bg-background p-1 shadow-sm">

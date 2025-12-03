@@ -32,12 +32,24 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
     status_reason TEXT,
     hold_duration_days INTEGER,
     hold_end_time TIMESTAMP WITH TIME ZONE,
-    last_seen TIMESTAMP WITH TIME ZONE DEFAULT now()
+    last_seen TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    address_line1 TEXT,
+    address_line2 TEXT,
+    address_landmark TEXT,
+    address_city TEXT,
+    address_pincode TEXT,
+    address_country TEXT
 );
 
 COMMENT ON COLUMN public.user_profiles.status_reason IS 'Reason for status change provided by admin';
 COMMENT ON COLUMN public.user_profiles.hold_duration_days IS 'Number of days for hold status';
 COMMENT ON COLUMN public.user_profiles.hold_end_time IS 'End time for hold status';
+COMMENT ON COLUMN public.user_profiles.address_line1 IS 'First line of address';
+COMMENT ON COLUMN public.user_profiles.address_line2 IS 'Second line of address';
+COMMENT ON COLUMN public.user_profiles.address_landmark IS 'Landmark near the address';
+COMMENT ON COLUMN public.user_profiles.address_city IS 'City name';
+COMMENT ON COLUMN public.user_profiles.address_pincode IS 'Postal/ZIP code';
+COMMENT ON COLUMN public.user_profiles.address_country IS 'Country name';
 
 -- Table: admin_members
 CREATE TABLE IF NOT EXISTS public.admin_members (
