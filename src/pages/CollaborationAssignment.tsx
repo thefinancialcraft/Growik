@@ -1951,7 +1951,13 @@ const CollaborationAssignment = () => {
             // Check if this is a plain_text entry (with or without index)
             const isPlainText = key === "plain_text" || key.startsWith("plain_text_");
             // Check if this is a signature entry (with or without index)
-            const isSignature = key === "signature" || key.startsWith("signature_") || key === "signature.user" || key === "signature.influencer";
+            // Handle formats: signature, signature_0, signature.user, signature.influencer, Signature.Influencer_1, Signature.User_1
+            const isSignature = key === "signature" || 
+                               key.startsWith("signature_") || 
+                               key === "signature.user" || 
+                               key === "signature.influencer" ||
+                               /^signature\.(user|influencer)(_\d+)?$/i.test(key) ||
+                               /^Signature\.(User|Influencer)_\d+$/i.test(key);
             // Check if this is a date variable
             const isDate = isDateVariable(key);
             // Check if this is a product variable (including name.product and indexed versions)
@@ -1997,9 +2003,27 @@ const CollaborationAssignment = () => {
                 dateEntryCounter++;
                 dateEntryMap.set(key, dateEntryCounter);
                 index = dateEntryCounter; // Use sequential index for display (1, 2, 3...)
-              } else if (key.startsWith("plain_text_") || key.startsWith("signature_")) {
+              } else if (key.startsWith("plain_text_") || 
+                         key.startsWith("signature_") ||
+                         /^signature\.(user|influencer)(_\d+)?$/i.test(key) ||
+                         /^Signature\.(User|Influencer)_\d+$/i.test(key)) {
                 // For plain_text and signature, convert 0-indexed to 1-indexed
-                index = index + 1;
+                // Also handle Signature.User_1, Signature.Influencer_1 formats
+                if (key.startsWith("signature_")) {
+                  index = index + 1;
+                } else if (/^Signature\.(User|Influencer)_\d+$/i.test(key)) {
+                  // Already 1-indexed for Signature.User_1 format
+                  // index is already correct from the match
+                } else if (/^signature\.(user|influencer)(_\d+)?$/i.test(key)) {
+                  // Handle signature.user_1, signature.influencer_1
+                  const match = key.match(/^signature\.(user|influencer)_(\d+)$/i);
+                  if (match) {
+                    index = parseInt(match[2], 10);
+                  } else {
+                    // No index, default to 1
+                    index = 1;
+                  }
+                }
               }
               
               // Create key with index: var[{{User Name [1]}}] or var[{{date [1]}}]
@@ -3165,7 +3189,15 @@ const CollaborationAssignment = () => {
         const isDate = normalizedKey === "date" || normalizedKey.includes("date") || normalizedKey.includes("_date");
 
         // Format date values for display (YYYY-MM-DD to readable format)
+        // Also check if value is a signature image (data:image URL)
         const formatValueForDisplay = (value: string): string => {
+          // Check if this is a signature variable with image data
+          const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
+          if (isSignature && value && value.startsWith('data:image')) {
+            // Return as-is for signature images - will be handled separately
+            return value;
+          }
+          
           if (isDate) {
             try {
               // Try to parse and format the date
@@ -3233,6 +3265,13 @@ const CollaborationAssignment = () => {
             const selectedValue = values[valueIndex];
             const formattedValue = formatValueForDisplay(selectedValue);
             occurrenceIndex++;
+            
+            // Check if this is a signature image
+            const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
+            if (isSignature && formattedValue && formattedValue.startsWith('data:image')) {
+              return `<img src="${formattedValue}" alt="Signature" data-signature-key="${entry.originalKey || entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+            }
+            
             return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
           });
           
@@ -3242,6 +3281,13 @@ const CollaborationAssignment = () => {
             previewHtml = previewHtml.replace(indexedRegex, () => {
               const selectedValue = values[0] || "";
               const formattedValue = formatValueForDisplay(selectedValue);
+              
+              // Check if this is a signature image
+              const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
+              if (isSignature && formattedValue && formattedValue.startsWith('data:image')) {
+                return `<img src="${formattedValue}" alt="Signature" data-signature-key="${entry.originalKey || entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+              }
+              
               return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
             });
           }
@@ -3254,15 +3300,29 @@ const CollaborationAssignment = () => {
               const selectedValue = values[valueIndex];
               const formattedValue = formatValueForDisplay(selectedValue);
               actualOccurrenceIndex++;
+              
+              // Check if this is a signature image
+              const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
+              if (isSignature && formattedValue && formattedValue.startsWith('data:image')) {
+                return `<img src="${formattedValue}" alt="Signature" data-signature-key="${entry.originalKey || entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+              }
+              
               return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
             });
           }
         } else {
           // Single value: replace all occurrences with the same value
           const displayValue = values.length ? formatValueForDisplay(values[0]) : "";
-          const sanitizedValue = displayValue
-            ? escapeHtml(displayValue).replace(/\r?\n/g, "<br />")
-            : "";
+          
+          // Check if this is a signature image - if so, convert to img tag
+          const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
+          const isSignatureImage = isSignature && displayValue && displayValue.startsWith('data:image');
+          
+          const sanitizedValue = isSignatureImage
+            ? `<img src="${displayValue}" alt="Signature" data-signature-key="${entry.originalKey || entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`
+            : displayValue
+              ? escapeHtml(displayValue).replace(/\r?\n/g, "<br />")
+              : "";
 
           // Always replace - if value was "--", sanitizedValue will be empty string (blank)
           // This ensures "--" values show as blank in preview instead of "--"
@@ -4783,9 +4843,9 @@ const CollaborationAssignment = () => {
                       
                       contractVariableEntries
                         .filter((item) => {
-                          // Filter out signature.influencer from the dialog
-                          const key = item.originalKey || item.key || '';
-                          return !key.includes('signature.influencer');
+                          // Don't filter out any signatures - show all signature types (user and influencer)
+                          // Previously filtered out signature.influencer, but now we want to show all signatures
+                          return true;
                         })
                         .forEach((item) => {
                           const originalKey = item.originalKey || '';
@@ -4947,20 +5007,46 @@ const CollaborationAssignment = () => {
                         return key;
                       };
                       const displayName = extractDisplayName(item.key);
+                      // Check if this is a signature variable (check both key and originalKey)
+                      // Handle formats: signature, signature_0, signature.user, signature.influencer, Signature.Influencer_1, Signature.User_1
+                      const checkSignature = (keyToCheck: string): boolean => {
+                        if (!keyToCheck) return false;
+                        const lowerKey = keyToCheck.toLowerCase();
+                        // Remove index brackets from display format (e.g., "Signature.Influencer_1 [1]" -> "Signature.Influencer_1")
+                        const cleanKey = keyToCheck.replace(/\s*\[\d+\]\s*/g, '').trim();
+                        const cleanLowerKey = cleanKey.toLowerCase();
+                        
+                        // Check for various signature formats
+                        return cleanLowerKey === 'signature' ||
+                               cleanLowerKey.startsWith('signature_') ||
+                               cleanLowerKey === 'signature.user' ||
+                               cleanLowerKey === 'signature.influencer' ||
+                               /^signature\.(user|influencer)(_\d+)?$/i.test(cleanKey) ||
+                               /^Signature\.(User|Influencer)_\d+$/i.test(cleanKey) ||
+                               lowerKey.includes('signature');
+                      };
+                      const isSignature = checkSignature(item.key) || checkSignature(item.originalKey || '');
+                      
+                      // If it's a signature variable, make it editable even if not marked as such
+                      const shouldShowSignatureBox = isSignature;
+                      const isEditableOrSignature = item.editable || shouldShowSignatureBox;
+                      
                       return (
                         <div key={uniqueKey} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm space-y-1">
                           <p className="font-semibold text-slate-800">{displayName}</p>
                           {item.description && <p className="text-xs text-slate-500">{item.description}</p>}
-                          {item.editable ? (
-                            item.key.includes('signature') ? (
+                          {isEditableOrSignature ? (
+                            shouldShowSignatureBox ? (
                               <div
-                                className="cursor-pointer rounded border border-slate-300 bg-transparent px-2 py-2 text-center text-xs text-slate-600 hover:bg-slate-50 transition-colors"
+                                className="cursor-pointer rounded border-2 border-dashed border-slate-300 bg-transparent px-2 py-2 text-center text-xs text-slate-600 hover:bg-slate-50 hover:border-slate-400 transition-colors"
                                 style={{
                                   width: '200px',
                                   height: '140px',
-                                  display: 'inline-flex',
+                                  display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
+                                  minHeight: '140px',
+                                  position: 'relative',
                                 }}
                                 onClick={() => {
                                   setCurrentSignatureEntry(uniqueKey);
@@ -4990,15 +5076,20 @@ const CollaborationAssignment = () => {
                                   setIsSignatureDialogOpen(true);
                                 }}
                               >
-                                {item.inputValue ? '✓' : (() => {
-                                  // Extract display name from key if it's in var[{{...}}] format
-                                  const match = item.key.match(/var\[\{\{([^}]+)\}\}\]/);
-                                  if (match && match[1]) {
-                                    return match[1].trim();
-                                  }
-                                  // For signatures, show the key as is if not in var format
-                                  return item.key.includes('var[{{') ? item.key : `var[{{${item.key}}}]`;
-                                })()}
+                                {item.inputValue && item.inputValue.startsWith('data:image') ? (
+                                  <img 
+                                    src={item.inputValue} 
+                                    alt="Signature" 
+                                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                                  />
+                                ) : item.inputValue ? (
+                                  <span className="text-green-600 font-semibold">✓ Signed</span>
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center h-full">
+                                    <span className="text-slate-500 mb-1">Click to sign</span>
+                                    <span className="text-[10px] text-slate-400">Signature</span>
+                                  </div>
+                                )}
                               </div>
                             ) : (() => {
                               // Check if this is a date variable
