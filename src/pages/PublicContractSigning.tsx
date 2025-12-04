@@ -216,11 +216,24 @@ const PublicContractSigning = () => {
                         try {
                             const variablesObj = typeof value === 'string' ? JSON.parse(value) : value;
                             // Convert to ContractVariableEntry format
-                            const entries: ContractVariableEntry[] = Object.entries(variablesObj).map(([key, val]) => ({
-                                key,
+                            const entries: ContractVariableEntry[] = Object.entries(variablesObj).map(([key, val]) => {
+                                // Handle indexed signature keys like Signature.Influencer_1, Signature.Influencer_2
+                                let normalizedKey = key;
+                                if (key.startsWith('Signature.Influencer_')) {
+                                    const index = key.replace('Signature.Influencer_', '');
+                                    normalizedKey = `signature.influencer_${parseInt(index) - 1}`; // Convert to 0-indexed
+                                } else if (key.startsWith('Signature.User_')) {
+                                    const index = key.replace('Signature.User_', '');
+                                    normalizedKey = `signature.user_${parseInt(index) - 1}`; // Convert to 0-indexed
+                                }
+                                
+                                return {
+                                    key: normalizedKey,
+                                    originalKey: key, // Keep original key for reference
                                 value: String(val),
-                                editable: key.startsWith('signature.influencer') ? true : (key.startsWith('signature.') ? false : true)
-                            }));
+                                    editable: normalizedKey.startsWith('signature.influencer') ? true : (normalizedKey.startsWith('signature.') ? false : true)
+                                };
+                            });
                             setContractVariableEntries(entries);
                             setVariablesLoadedFromDb(true); // Mark that variables are loaded from database
                             
@@ -301,25 +314,94 @@ const PublicContractSigning = () => {
         fetchData();
     }, [id]);
 
-    // Fetch is_signed status from collaboration_actions
+    // Fetch is_signed status from collaboration_actions and verify signature values
     useEffect(() => {
         const fetchSignedStatus = async () => {
             if (!collaborationId) return;
 
             try {
+                // First, check is_signed from collaboration_actions
                 const { data, error } = await supabase
                     .from("collaboration_actions")
                     .select("is_signed")
                     .eq("collaboration_id", collaborationId)
                     .maybeSingle();
 
+                let signedStatus = false;
                 if (!error && data) {
-                    const signedStatus = (data as any).is_signed === true;
+                    signedStatus = (data as any).is_signed === true;
+                }
+
+                // Also check if signature.influencer actually has values in variables
+                // Fetch variables and contract_html from collaboration_variable_overrides
+                const { data: overrideData, error: overrideError } = await supabase
+                    .from("collaboration_variable_overrides")
+                    .select("value, contract_html")
+                    .eq("collaboration_id", collaborationId)
+                    .eq("variable_key", "all_variables")
+                    .maybeSingle();
+
+                if (!overrideError && overrideData) {
+                    // Check contract HTML for signature placeholders
+                    const contractHtml = overrideData.contract_html || '';
+                    const hasSignaturePlaceholders = contractHtml.includes('var[{{signature.influencer') || 
+                                                      contractHtml.includes('signature-box-clickable') ||
+                                                      contractHtml.match(/var\[\s*\{\{\s*signature\.influencer[^}]*\}\}\s*\]/i);
+                    
+                    // If placeholders exist, contract is not signed
+                    if (hasSignaturePlaceholders) {
+                        signedStatus = false;
+                    } else if (overrideData.value) {
+                        // Check variables for signature values
+                        try {
+                            const variablesObj = typeof overrideData.value === 'string' 
+                                ? JSON.parse(overrideData.value) 
+                                : overrideData.value;
+                            
+                            // Check if signature.influencer has actual values (not empty, not null, not "null")
+                            const signatureKeys = Object.keys(variablesObj).filter(key => 
+                                key.toLowerCase().includes('signature.influencer') || 
+                                key.toLowerCase().startsWith('signature.influencer_') ||
+                                key.toLowerCase().startsWith('signature.influencer')
+                            );
+                            
+                            // Check if at least one signature.influencer has a valid value
+                            const hasValidSignature = signatureKeys.some(key => {
+                                const val = variablesObj[key];
+                                if (!val || val === null || val === "null" || val === "") {
+                                    return false;
+                                }
+                                if (typeof val === 'string') {
+                                    const trimmed = val.trim();
+                                    return trimmed.length > 0 && !trimmed.startsWith('var[{{');
+                                }
+                                return true;
+                            });
+
+                            // Only consider signed if signature has valid value AND no placeholders in HTML
+                            if (hasValidSignature && !hasSignaturePlaceholders) {
+                                signedStatus = true;
+                            } else {
+                                // If no valid signature or placeholders exist, reset to false
+                                signedStatus = false;
+                            }
+                        } catch (parseErr) {
+                            console.error("Error parsing variables for signature check:", parseErr);
+                            // If parsing fails and placeholders exist, not signed
+                            if (hasSignaturePlaceholders) {
+                                signedStatus = false;
+                            }
+                        }
+                    } else if (hasSignaturePlaceholders) {
+                        // If placeholders exist but no variables, not signed
+                        signedStatus = false;
+                    }
+                }
+
                     setIsSigned(signedStatus);
                     // Show overlay when contract is signed
                     if (signedStatus) {
                         setShowSignedOverlay(true);
-                    }
                 }
             } catch (err) {
                 console.error("Error fetching signed status:", err);
@@ -364,10 +446,25 @@ const PublicContractSigning = () => {
         dataKeyMatches.forEach(m => foundKeys.add(m[1]));
 
         // Then, parse from var[{{...}}] text (for backward compatibility and cases without data attributes)
+        // First, handle indexed format: var[{{signature.influencer [1]}}], var[{{signature.user [2]}}], etc.
+        const indexedRegex = /var\[\s*\{\{\s*(signature\.(?:influencer|user))\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
+        const indexedMatches = Array.from(contractContent.matchAll(indexedRegex));
+        indexedMatches.forEach(m => {
+            const baseKey = m[1]; // e.g., "signature.influencer"
+            const index = parseInt(m[2], 10); // e.g., 1, 2, 3
+            const normalizedKey = `${baseKey}_${index - 1}`; // Convert to 0-indexed: signature.influencer_0, signature.influencer_1, etc.
+            foundKeys.add(normalizedKey);
+        });
+        
+        // Then, handle non-indexed format: var[{{signature.influencer}}], var[{{signature.user}}], etc.
         const regex = /var\[\{\{(.*?)\}\}\]/g;
         const matches = Array.from(contractContent.matchAll(regex));
         matches.forEach(m => {
             const displayName = m[1];
+            // Skip if it's an indexed signature (already handled above)
+            if (displayName.match(/signature\.(?:influencer|user)\s*\[\s*\d+\s*\]/i)) {
+                return;
+            }
             // Map display name to actual key if needed
             const actualKey = getActualKeyFromDisplayName(displayName);
             foundKeys.add(actualKey);
@@ -385,10 +482,10 @@ const PublicContractSigning = () => {
             else if (key === "name.influencer" && influencer) value = influencer.name;
             else if (key === "campaign_name" && campaign) value = campaign.name;
             else if (key === "company_name") value = "Growik"; // Placeholder
-            else if (key === "signature.influencer") {
+            else if (key === "signature.influencer" || key.startsWith("signature.influencer_")) {
                 editable = true; // This is what we want them to sign
             }
-            else if (key === "signature.user") {
+            else if (key === "signature.user" || key.startsWith("signature.user_")) {
                 // Should be already signed by user ideally, or we show it as pending
                 // For public view, maybe we don't allow editing this?
                 editable = false;
@@ -417,97 +514,158 @@ const PublicContractSigning = () => {
 
         let html = baseHtml;
 
-        contractVariableEntries.forEach(entry => {
-            const placeholder = `var[{{${entry.key}}}]`;
-            // Escape for regex
-            const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const regex = new RegExp(escapedPlaceholder, "g");
+        // First, handle indexed signature placeholders (similar to CollaborationAssignment.tsx)
+        // Handle signature.user indexed format: var[{{signature.user [1]}}], var[{{signature.user [2]}}], etc.
+        const signatureUserEntries = contractVariableEntries
+            .filter(e => {
+                const originalKey = (e.originalKey || e.key || '').toLowerCase();
+                const key = (e.key || '').toLowerCase();
+                return (originalKey === 'signature.user' || 
+                        originalKey.startsWith('signature.user_') ||
+                        key === 'signature.user' ||
+                        key.includes('signature.user')) && 
+                       !e.key?.startsWith("plain_text_");
+            })
+            .sort((a, b) => {
+                const aKey = ((a.originalKey || a.key) || '').toLowerCase();
+                const bKey = ((b.originalKey || b.key) || '').toLowerCase();
+                const aIndex = aKey.startsWith('signature.user_') 
+                    ? parseInt(aKey.replace('signature.user_', '') || '0', 10)
+                    : -1;
+                const bIndex = bKey.startsWith('signature.user_') 
+                    ? parseInt(bKey.replace('signature.user_', '') || '0', 10)
+                    : -1;
+                return aIndex - bIndex;
+            });
 
-            // Also create regex for display name format (if applicable)
-            const displayName = getDisplayNameFromKey(entry.key);
-            let displayNameRegex: RegExp | null = null;
-            if (displayName !== entry.key) {
-                const displayPlaceholder = `var[{{${displayName}}}]`;
-                const escapedDisplayPlaceholder = displayPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                displayNameRegex = new RegExp(escapedDisplayPlaceholder, "g");
-            }
-
-            // Handle Signatures
-            if (entry.key.includes("signature")) {
+        if (signatureUserEntries.length > 0) {
+            // Handle indexed format: var[{{signature.user [1]}}], var[{{signature.user [2]}}], etc.
+            const indexedRegex = /var\[\s*\{\{\s*signature\.user\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
+            html = html.replace(indexedRegex, (match, capturedIndex) => {
+                const placeholderIndex = parseInt(capturedIndex, 10); // 1-indexed
+                const entryIndex = placeholderIndex - 1; // Convert to 0-indexed
+                const entry = signatureUserEntries[entryIndex] || signatureUserEntries[0];
+                
                 const val = entry.inputValue || entry.value;
-                if (val && val.startsWith("data:image")) {
-                    // Display signature image
-                    const replacement = `<img src="${val}" alt="Signature" data-signature-key="${entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
-                    // First, replace placeholder if it exists
-                    html = html.replace(regex, replacement);
-                    // Also replace any existing signature images for this key (with or without data-signature-key)
-                    const existingImgRegex1 = new RegExp(`<img[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>`, "gi");
-                    html = html.replace(existingImgRegex1, replacement);
-                    // Replace images that have the old signature value as src
-                    if (entry.value && entry.value.startsWith("data:image")) {
-                        const escapedOldSrc = entry.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                        const existingImgRegex2 = new RegExp(`<img[^>]*src="${escapedOldSrc}"[^>]*>`, "gi");
-                        html = html.replace(existingImgRegex2, replacement);
-                    }
-                    // Replace clickable spans
-                    const existingSpanRegex = new RegExp(`<span[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*>.*?</span>`, "gi");
-                    html = html.replace(existingSpanRegex, replacement);
+                const indexedKey = `signature.user_${entryIndex}`;
+                
+                if (val && val !== "--" && val.length > 0 && val.startsWith("data:image")) {
+                    return `<img src="${val}" alt="Signature" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
                 } else if (entry.editable && !isSigned) {
-                    // Make it look like a proper signature box & clickable for the signer (only if not signed)
-                    const replacement = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${entry.key}" style="cursor: pointer; transition: all 0.2s;">--</span>`;
-                    // Replace placeholder with clickable signature box
-                    html = html.replace(regex, replacement);
-                    // Also replace any existing signature images for this key with the box
-                    const existingImgRegex1 = new RegExp(
-                        `<img[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}"[^>]*>`,
-                        "gi"
-                    );
-                    html = html.replace(existingImgRegex1, replacement);
-                    // Replace images that might be signatures (if we have an old value)
-                    if (entry.value && entry.value.startsWith("data:image")) {
-                        const escapedOldSrc = entry.value.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
-                        const existingImgRegex2 = new RegExp(
-                            `<img[^>]*src="${escapedOldSrc}"[^>]*>`,
-                            "gi"
-                        );
-                        html = html.replace(existingImgRegex2, replacement);
-                    }
-                    // Replace any old span-based signature boxes for this key to ensure consistent structure
-                    const existingSpanRegexEditable = new RegExp(
-                        `<span[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}"[^>]*>[\\s\\S]*?<\\/span>`,
-                        "gi"
-                    );
-                    html = html.replace(existingSpanRegexEditable, replacement);
-                } else if (entry.editable && isSigned) {
-                    // If signed, make signature box non-clickable
-                    const replacement = `<span class="signature-box" data-signature="true" data-signature-key="${entry.key}" style="cursor: not-allowed; opacity: 0.6;">--</span>`;
-                    html = html.replace(regex, replacement);
-                    // Remove clickable classes from existing boxes
-                    const existingSpanRegexEditable = new RegExp(
-                        `<span[^>]*data-signature-key="${entry.key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}"[^>]*>[\\s\\S]*?<\\/span>`,
-                        "gi"
-                    );
-                    html = html.replace(existingSpanRegexEditable, (match) => {
-                        return match.replace(/signature-box-clickable/g, '').replace(/cursor:\s*pointer/g, 'cursor: not-allowed').replace(/opacity:\s*1/g, 'opacity: 0.6');
-                    });
+                    return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user [${placeholderIndex}]}}]</span>`;
                 } else {
-                    // Non-editable signature, use value if available
-                    const val = entry.value;
+                    return `<span class="signature-box" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="cursor: not-allowed; opacity: 0.6;">var[{{signature.user [${placeholderIndex}]}}]</span>`;
+                }
+            });
+
+            // Handle non-indexed format: var[{{signature.user}}] (sequential)
+            const regex = /var\[\s*\{\{\s*signature\.user\s*\}\}\s*\]/gi;
+            let occurrenceIndex = 0;
+            html = html.replace(regex, (match) => {
+                const entry = signatureUserEntries[occurrenceIndex] || signatureUserEntries[0];
+                occurrenceIndex++;
+                
+                const val = entry.inputValue || entry.value;
+                
+                if (val && val !== "--" && val.length > 0 && val.startsWith("data:image")) {
+                    return `<img src="${val}" alt="Signature" data-signature-key="signature.user" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                } else if (entry.editable && !isSigned) {
+                    return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user [${occurrenceIndex}]}}]</span>`;
+                } else {
+                    return `<span class="signature-box" data-signature="true" data-signature-key="signature.user" style="cursor: not-allowed; opacity: 0.6;">var[{{signature.user [${occurrenceIndex}]}}]</span>`;
+                }
+            });
+        }
+
+        // Handle signature.influencer indexed format: var[{{signature.influencer [1]}}], var[{{signature.influencer [2]}}], etc.
+        const signatureInfluencerEntries = contractVariableEntries
+            .filter(e => {
+                const originalKey = (e.originalKey || e.key || '').toLowerCase();
+                const key = (e.key || '').toLowerCase();
+                return (originalKey === 'signature.influencer' || 
+                        originalKey.startsWith('signature.influencer_') ||
+                        key === 'signature.influencer' ||
+                        key.includes('signature.influencer')) && 
+                       !e.key?.startsWith("plain_text_");
+            })
+            .sort((a, b) => {
+                const aKey = ((a.originalKey || a.key) || '').toLowerCase();
+                const bKey = ((b.originalKey || b.key) || '').toLowerCase();
+                const aIndex = aKey.startsWith('signature.influencer_') 
+                    ? parseInt(aKey.replace('signature.influencer_', '') || '0', 10)
+                    : -1;
+                const bIndex = bKey.startsWith('signature.influencer_') 
+                    ? parseInt(bKey.replace('signature.influencer_', '') || '0', 10)
+                    : -1;
+                return aIndex - bIndex;
+            });
+
+        if (signatureInfluencerEntries.length > 0) {
+            // Handle indexed format: var[{{signature.influencer [1]}}], var[{{signature.influencer [2]}}], etc.
+            const indexedRegex = /var\[\s*\{\{\s*signature\.influencer\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
+            html = html.replace(indexedRegex, (match, capturedIndex) => {
+                const placeholderIndex = parseInt(capturedIndex, 10); // 1-indexed
+                const entryIndex = placeholderIndex - 1; // Convert to 0-indexed
+                const entry = signatureInfluencerEntries[entryIndex] || signatureInfluencerEntries[0];
+                
+                const val = entry.inputValue || entry.value;
+                const indexedKey = `signature.influencer_${entryIndex}`;
+                
+                if (val && val !== "--" && val.length > 0 && val.startsWith("data:image")) {
+                    return `<img src="${val}" alt="Signature" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                } else if (entry.editable && !isSigned) {
+                    return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer [${placeholderIndex}]}}]</span>`;
+                } else {
+                    return `<span class="signature-box" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="cursor: not-allowed; opacity: 0.6;">var[{{signature.influencer [${placeholderIndex}]}}]</span>`;
+                }
+            });
+
+            // Handle non-indexed format: var[{{signature.influencer}}] (sequential)
+            const regex = /var\[\s*\{\{\s*signature\.influencer\s*\}\}\s*\]/gi;
+            let occurrenceIndex = 0;
+            html = html.replace(regex, (match) => {
+                const entry = signatureInfluencerEntries[occurrenceIndex] || signatureInfluencerEntries[0];
+                occurrenceIndex++;
+                
+                const val = entry.inputValue || entry.value;
+                
+                if (val && val !== "--" && val.length > 0 && val.startsWith("data:image")) {
+                    return `<img src="${val}" alt="Signature" data-signature-key="signature.influencer" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                } else if (entry.editable && !isSigned) {
+                    return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer [${occurrenceIndex}]}}]</span>`;
+                } else {
+                    return `<span class="signature-box" data-signature="true" data-signature-key="signature.influencer" style="cursor: not-allowed; opacity: 0.6;">var[{{signature.influencer [${occurrenceIndex}]}}]</span>`;
+                }
+            });
+        }
+
+        // Handle other signature entries (non-indexed, generic)
+        contractVariableEntries.forEach(entry => {
+            if (entry.key.includes("signature") && 
+                !entry.key.includes("signature.user") && 
+                !entry.key.includes("signature.influencer")) {
+                const placeholder = `var[{{${entry.key}}}]`;
+                const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                const regex = new RegExp(escapedPlaceholder, "g");
+
+                const val = entry.inputValue || entry.value;
                     if (val && val.startsWith("data:image")) {
                         const replacement = `<img src="${val}" alt="Signature" data-signature-key="${entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
                         html = html.replace(regex, replacement);
+                } else if (entry.editable && !isSigned) {
+                    const replacement = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${entry.key}" style="cursor: pointer; transition: all 0.2s;">var[{{${entry.key}}}]</span>`;
+                        html = html.replace(regex, replacement);
                     } else {
-                        html = html.replace(regex, entry.value || placeholder);
+                    const replacement = `<span class="signature-box" data-signature="true" data-signature-key="${entry.key}" style="cursor: not-allowed; opacity: 0.6;">var[{{${entry.key}}}]</span>`;
+                    html = html.replace(regex, replacement);
                     }
-                }
-            } else {
+            } else if (!entry.key.includes("signature")) {
                 // Non-signature variables
-                const replacement = entry.inputValue || entry.value || placeholder;
+                const placeholder = `var[{{${entry.key}}}]`;
+                const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                const regex = new RegExp(escapedPlaceholder, "g");
+                const replacement = entry.inputValue || entry.value || "";
                 html = html.replace(regex, replacement);
-                // Also replace display name format if it exists
-                if (displayNameRegex) {
-                    html = html.replace(displayNameRegex, replacement);
-                }
             }
         });
 
@@ -714,9 +872,62 @@ const PublicContractSigning = () => {
         }
 
         // Update local state
-        const updatedEntries = contractVariableEntries.map(e =>
-            e.key === currentSignatureEntry ? { ...e, inputValue: finalValue } : e
-        );
+        // Match by key, originalKey, or by extracting key from var[{{...}}] format
+        const updatedEntries = contractVariableEntries.map(e => {
+            // Direct key match
+            if (e.key === currentSignatureEntry || e.originalKey === currentSignatureEntry) {
+                return { ...e, inputValue: finalValue };
+            }
+            
+            // For indexed signatures, try to match by base key and index
+            if (currentSignatureEntry && e.key) {
+                const currentKeyLower = currentSignatureEntry.toLowerCase();
+                const entryKeyLower = e.key.toLowerCase();
+                const entryOriginalKeyLower = (e.originalKey || '').toLowerCase();
+                
+                // Handle signature.influencer matching
+                if (currentKeyLower.includes('signature.influencer') && 
+                    (entryKeyLower.includes('signature.influencer') || entryOriginalKeyLower.includes('signature.influencer'))) {
+                    
+                    // Extract index from currentSignatureEntry (could be signature.influencer_0, signature.influencer_1, etc.)
+                    const currentIndexMatch = currentSignatureEntry.match(/_(\d+)$/);
+                    // Extract index from entry key (could be signature.influencer_0, signature.influencer_1, etc.)
+                    const entryIndexMatch = e.key.match(/_(\d+)$/) || e.originalKey?.match(/_(\d+)$/);
+                    
+                    // If both have same index, match
+                    if (currentIndexMatch && entryIndexMatch && currentIndexMatch[1] === entryIndexMatch[1]) {
+                        return { ...e, inputValue: finalValue };
+                    }
+                    // If both are non-indexed, match
+                    if (!currentIndexMatch && !entryIndexMatch) {
+                        return { ...e, inputValue: finalValue };
+                    }
+                    // If currentSignatureEntry has index but entry doesn't, check if it's the first occurrence
+                    if (currentIndexMatch && !entryIndexMatch && currentIndexMatch[1] === '0') {
+                        return { ...e, inputValue: finalValue };
+                    }
+                }
+                
+                // Handle signature.user matching (same logic)
+                if (currentKeyLower.includes('signature.user') && 
+                    (entryKeyLower.includes('signature.user') || entryOriginalKeyLower.includes('signature.user'))) {
+                    
+                    const currentIndexMatch = currentSignatureEntry.match(/_(\d+)$/);
+                    const entryIndexMatch = e.key.match(/_(\d+)$/) || e.originalKey?.match(/_(\d+)$/);
+                    
+                    if (currentIndexMatch && entryIndexMatch && currentIndexMatch[1] === entryIndexMatch[1]) {
+                        return { ...e, inputValue: finalValue };
+                    }
+                    if (!currentIndexMatch && !entryIndexMatch) {
+                        return { ...e, inputValue: finalValue };
+                    }
+                    if (currentIndexMatch && !entryIndexMatch && currentIndexMatch[1] === '0') {
+                        return { ...e, inputValue: finalValue };
+                    }
+                }
+            }
+            return e;
+        });
         setContractVariableEntries(updatedEntries);
 
         setIsSignatureDialogOpen(false);
@@ -743,11 +954,33 @@ const PublicContractSigning = () => {
                 }
 
                 // Generate updated variables map
+                // Note: Signatures will be added separately during HTML replacement to ensure indexed keys are correct
                 const variablesMap: Record<string, string> = {};
                 updatedEntries.forEach(entry => {
-                    const val = entry.inputValue || entry.value;
-                    if (val) {
+                    // Skip signature entries - they will be handled separately during HTML replacement
+                    // to ensure proper indexed key storage (Signature.Influencer_1, Signature.Influencer_2, etc.)
+                    if (entry.key.includes('signature') || entry.originalKey?.includes('signature')) {
+                        return;
+                    }
+                    
+                    // For signature images (data:image), don't trim as it might break the data URL
+                    let val = entry.inputValue || entry.value;
+                    
+                    // For data URLs, use as-is without trimming
+                    if (val && typeof val === 'string' && val.startsWith('data:image')) {
                         variablesMap[entry.key] = val;
+                    } else if (val) {
+                        // For other values, trim and store
+                        const trimmedVal = typeof val === 'string' ? val.trim() : val;
+                        // Convert null or "null" string to empty string
+                        if (trimmedVal === null || trimmedVal === "null" || trimmedVal === "") {
+                            variablesMap[entry.key] = "";
+                        } else {
+                            variablesMap[entry.key] = trimmedVal;
+                        }
+                    } else {
+                        // If no value, store as empty string
+                        variablesMap[entry.key] = "";
                     }
                 });
 
@@ -872,21 +1105,107 @@ const PublicContractSigning = () => {
                     });
 
                 // Handle signature.user and signature.influencer placeholders separately
-                // First, handle signature.user
+                // First, handle signature.user (including indexed versions like signature.user_0, signature.user_1)
                 const signatureUserEntries = updatedEntries.filter(
-                    e => (e.key === 'signature.user') && !e.key.startsWith("plain_text_")
-                );
+                    e => {
+                        const originalKey = (e.originalKey || e.key || '').toLowerCase();
+                        const key = (e.key || '').toLowerCase();
+                        return (originalKey === 'signature.user' || 
+                                originalKey.startsWith('signature.user_') ||
+                                key === 'signature.user' ||
+                                key.includes('signature.user')) && 
+                               !e.key?.startsWith("plain_text_");
+                    }
+                )
+                .sort((a, b) => {
+                    // Sort by index: signature.user_0, signature.user_1, etc.
+                    const aKey = ((a.originalKey || a.key) || '').toLowerCase();
+                    const bKey = ((b.originalKey || b.key) || '').toLowerCase();
+                    const aIndex = aKey.startsWith('signature.user_') 
+                        ? parseInt(aKey.replace('signature.user_', '') || '0', 10)
+                        : -1; // Non-indexed entries come first
+                    const bIndex = bKey.startsWith('signature.user_') 
+                        ? parseInt(bKey.replace('signature.user_', '') || '0', 10)
+                        : -1;
+                    return aIndex - bIndex;
+                });
 
                 if (signatureUserEntries.length > 0) {
-                    // Use flexible regex to match var[{{signature.user}}] with optional spaces
-                    const regex = /var\[\s*\{\{\s*signature\.user\s*\}\}\s*\]/gi;
-
-                    completeHtml = completeHtml.replace(regex, (match) => {
-                        const entry = signatureUserEntries[0];
+                    // First, handle indexed format: var[{{signature.user [1]}}], var[{{signature.user [2]}}], etc.
+                    const indexedRegex = /var\[\s*\{\{\s*signature\.user\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
+                    
+                    completeHtml = completeHtml.replace(indexedRegex, (match, capturedIndex) => {
+                        const placeholderIndex = parseInt(capturedIndex, 10); // This is 1-indexed from content
+                        const entryIndex = placeholderIndex - 1; // Convert to 0-indexed for array access
+                        const entry = signatureUserEntries[entryIndex] || signatureUserEntries[0];
+                        
                         let signatureValue: string | null = null;
 
                         if (entry.editable) {
-                            signatureValue = entry.inputValue?.trim() ?? null;
+                            // For signature images (data:image), don't trim as it might break the data URL
+                            signatureValue = entry.inputValue?.startsWith('data:image') 
+                                ? entry.inputValue 
+                                : (entry.inputValue?.trim() ?? null);
+                        } else if (entry.rawValues && entry.rawValues.length) {
+                            signatureValue = entry.rawValues[0];
+                        } else if (entry.value) {
+                            signatureValue = entry.value;
+                        }
+
+                        let displayHtml = "";
+
+                        // Store the indexed key for proper matching
+                        const indexedKey = `signature.user_${entryIndex}`;
+
+                        if (signatureValue && signatureValue !== "--") {
+                            if (signatureValue.startsWith("data:image")) {
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                            } else {
+                                const sanitizedText = escapeHtml(signatureValue);
+                                displayHtml = `<span data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
+                            }
+                        } else {
+                            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user [${placeholderIndex}]}}]</span>`;
+                        }
+
+                        // Store signature value in variablesMap using indexed key (1-indexed for Supabase)
+                        let storedValue = entry.editable
+                            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
+                            : entry.rawValues && entry.rawValues.length
+                                ? entry.rawValues.join("\n")
+                                : entry.value ?? null;
+
+                        // Convert null or "null" string to empty string
+                        if (storedValue === null || storedValue === "null" || storedValue === "") {
+                            storedValue = "";
+                        }
+
+                        // Store with indexed key matching the placeholder (1-indexed: Signature.User_1, Signature.User_2, etc.)
+                        const supabaseIndexedKey = `Signature.User_${placeholderIndex}`;
+                        variablesMap[supabaseIndexedKey] = storedValue;
+                        // Also store with originalKey for backward compatibility
+                        if (entry.originalKey || entry.key) {
+                            variablesMap[entry.originalKey || entry.key] = storedValue;
+                        }
+
+                        return displayHtml;
+                    });
+
+                    // Then, handle non-indexed format: var[{{signature.user}}] (sequential replacement)
+                    const regex = /var\[\s*\{\{\s*signature\.user\s*\}\}\s*\]/gi;
+                    let occurrenceIndex = 0;
+
+                    completeHtml = completeHtml.replace(regex, (match) => {
+                        const entry = signatureUserEntries[occurrenceIndex] || signatureUserEntries[0];
+                        occurrenceIndex++;
+
+                        let signatureValue: string | null = null;
+
+                        if (entry.editable) {
+                            // For signature images (data:image), don't trim as it might break the data URL
+                            signatureValue = entry.inputValue?.startsWith('data:image') 
+                                ? entry.inputValue 
+                                : (entry.inputValue?.trim() ?? null);
                         } else if (entry.rawValues && entry.rawValues.length) {
                             signatureValue = entry.rawValues[0];
                         } else if (entry.value) {
@@ -907,14 +1226,25 @@ const PublicContractSigning = () => {
                             displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user}}]</span>`;
                         }
 
-                        const storedValue = entry.editable
-                            ? entry.inputValue?.trim() ?? null
+                        // For signature images (data:image), don't trim as it might break the data URL
+                        let storedValue = entry.editable
+                            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
                             : entry.rawValues && entry.rawValues.length
                                 ? entry.rawValues.join("\n")
                                 : entry.value ?? null;
 
-                        if (entry.key) {
-                            variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
+                        // Convert null or "null" string to empty string
+                        if (storedValue === null || storedValue === "null" || storedValue === "") {
+                            storedValue = "";
+                        }
+
+                        // Store signature value in variablesMap using indexed key (1-indexed for Supabase)
+                        // occurrenceIndex is already incremented, so use it directly (1-indexed)
+                        const supabaseIndexedKey = `Signature.User_${occurrenceIndex}`;
+                        variablesMap[supabaseIndexedKey] = storedValue;
+                        // Also store with originalKey for backward compatibility
+                        if (entry.originalKey || entry.key) {
+                            variablesMap[entry.originalKey || entry.key] = storedValue;
                         }
 
                         return displayHtml;
@@ -929,22 +1259,110 @@ const PublicContractSigning = () => {
                     });
                 }
 
-                // Handle signature.influencer
+                // Handle signature.influencer (including indexed versions like signature.influencer_0, signature.influencer_1)
                 const signatureInfluencerEntries = updatedEntries.filter(
-                    e => (e.key === 'signature.influencer') && !e.key.startsWith("plain_text_")
-                );
+                    e => {
+                        const originalKey = (e.originalKey || e.key || '').toLowerCase();
+                        const key = (e.key || '').toLowerCase();
+                        return (originalKey === 'signature.influencer' || 
+                                originalKey.startsWith('signature.influencer_') ||
+                                key === 'signature.influencer' ||
+                                key.includes('signature.influencer')) && 
+                               !e.key?.startsWith("plain_text_");
+                    }
+                )
+                .sort((a, b) => {
+                    // Sort by index: signature.influencer_0, signature.influencer_1, etc.
+                    const aKey = ((a.originalKey || a.key) || '').toLowerCase();
+                    const bKey = ((b.originalKey || b.key) || '').toLowerCase();
+                    const aIndex = aKey.startsWith('signature.influencer_') 
+                        ? parseInt(aKey.replace('signature.influencer_', '') || '0', 10)
+                        : -1; // Non-indexed entries come first
+                    const bIndex = bKey.startsWith('signature.influencer_') 
+                        ? parseInt(bKey.replace('signature.influencer_', '') || '0', 10)
+                        : -1;
+                    return aIndex - bIndex;
+                });
 
                 if (signatureInfluencerEntries.length > 0) {
-                    const placeholder = "var[{{signature.influencer}}]";
-                    const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                    const regex = new RegExp(escapedPlaceholder, "g");
-
-                    completeHtml = completeHtml.replace(regex, (match) => {
-                        const entry = signatureInfluencerEntries[0];
+                    // First, handle indexed format: var[{{signature.influencer [1]}}], var[{{signature.influencer [2]}}], etc.
+                    const indexedRegex = /var\[\s*\{\{\s*signature\.influencer\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
+                    
+                    completeHtml = completeHtml.replace(indexedRegex, (match, capturedIndex) => {
+                        const placeholderIndex = parseInt(capturedIndex, 10); // This is 1-indexed from content
+                        const entryIndex = placeholderIndex - 1; // Convert to 0-indexed for array access
+                        const entry = signatureInfluencerEntries[entryIndex] || signatureInfluencerEntries[0];
+                        
                         let signatureValue: string | null = null;
 
                         if (entry.editable) {
-                            signatureValue = entry.inputValue?.trim() ?? null;
+                            // For signature images (data:image), don't trim as it might break the data URL
+                            signatureValue = entry.inputValue?.startsWith('data:image') 
+                                ? entry.inputValue 
+                                : (entry.inputValue?.trim() ?? null);
+                        } else if (entry.rawValues && entry.rawValues.length) {
+                            signatureValue = entry.rawValues[0];
+                        } else if (entry.value) {
+                            signatureValue = entry.value;
+                        }
+
+                        let displayHtml = "";
+
+                        // Store the indexed key for proper matching
+                        const indexedKey = `signature.influencer_${entryIndex}`;
+                        
+                        if (signatureValue && signatureValue !== "--") {
+                            if (signatureValue.startsWith("data:image")) {
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                            } else {
+                                const sanitizedText = escapeHtml(signatureValue);
+                                displayHtml = `<span data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
+                            }
+                        } else {
+                            // Store the indexed key in data-signature-key for proper matching
+                            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer [${placeholderIndex}]}}]</span>`;
+                        }
+
+                        // Store signature value in variablesMap using indexed key (1-indexed for Supabase)
+                        let storedValue = entry.editable
+                            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
+                            : entry.rawValues && entry.rawValues.length
+                                ? entry.rawValues.join("\n")
+                                : entry.value ?? null;
+
+                        // Convert null or "null" string to empty string
+                        if (storedValue === null || storedValue === "null" || storedValue === "") {
+                            storedValue = "";
+                        }
+
+                        // Store with indexed key matching the placeholder (1-indexed: Signature.Influencer_1, Signature.Influencer_2, etc.)
+                        const supabaseIndexedKey = `Signature.Influencer_${placeholderIndex}`;
+                        variablesMap[supabaseIndexedKey] = storedValue;
+                        // Also store with originalKey for backward compatibility
+                        if (entry.originalKey || entry.key) {
+                            variablesMap[entry.originalKey || entry.key] = storedValue;
+                        }
+
+                        return displayHtml;
+                    });
+
+                    // Then, handle non-indexed format: var[{{signature.influencer}}] (sequential replacement)
+                    const placeholder = "var[{{signature.influencer}}]";
+                    const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    const regex = new RegExp(escapedPlaceholder, "g");
+                    let occurrenceIndex = 0;
+
+                    completeHtml = completeHtml.replace(regex, (match) => {
+                        const entry = signatureInfluencerEntries[occurrenceIndex] || signatureInfluencerEntries[0];
+                        occurrenceIndex++;
+
+                        let signatureValue: string | null = null;
+
+                        if (entry.editable) {
+                            // For signature images (data:image), don't trim as it might break the data URL
+                            signatureValue = entry.inputValue?.startsWith('data:image') 
+                                ? entry.inputValue 
+                                : (entry.inputValue?.trim() ?? null);
                         } else if (entry.rawValues && entry.rawValues.length) {
                             signatureValue = entry.rawValues[0];
                         } else if (entry.value) {
@@ -965,14 +1383,24 @@ const PublicContractSigning = () => {
                             displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer}}]</span>`;
                         }
 
-                        const storedValue = entry.editable
-                            ? entry.inputValue?.trim() ?? null
+                        // For signature images (data:image), don't trim as it might break the data URL
+                        let storedValue = entry.editable
+                            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
                             : entry.rawValues && entry.rawValues.length
                                 ? entry.rawValues.join("\n")
                                 : entry.value ?? null;
 
-                        if (entry.key) {
-                            variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
+                        // Convert null or "null" string to empty string
+                        if (storedValue === null || storedValue === "null" || storedValue === "") {
+                            storedValue = "";
+                        }
+
+                        // Store with indexed key (1-indexed: Signature.Influencer_1, Signature.Influencer_2, etc.)
+                        const supabaseIndexedKey = `Signature.Influencer_${occurrenceIndex}`;
+                        variablesMap[supabaseIndexedKey] = storedValue;
+                        // Also store with originalKey for backward compatibility
+                        if (entry.originalKey || entry.key) {
+                            variablesMap[entry.originalKey || entry.key] = storedValue;
                         }
 
                         return displayHtml;
@@ -1040,14 +1468,20 @@ const PublicContractSigning = () => {
                         }
 
                         // Store variable value for saving
-                        const storedValue = entry.editable
-                            ? entry.inputValue?.trim() ?? null
+                        // For signature images (data:image), don't trim as it might break the data URL
+                        let storedValue = entry.editable
+                            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
                             : entry.rawValues && entry.rawValues.length
                                 ? entry.rawValues.join("\n")
                                 : entry.value ?? null;
 
+                        // Convert null or "null" string to empty string
+                        if (storedValue === null || storedValue === "null" || storedValue === "") {
+                            storedValue = "";
+                        }
+
                         if (entry.key) {
-                            variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
+                            variablesMap[entry.key] = storedValue;
                         }
 
                         return displayHtml;

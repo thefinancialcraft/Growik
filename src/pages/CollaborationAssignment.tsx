@@ -1023,6 +1023,11 @@ const CollaborationAssignment = () => {
     if (displayName === 'Product Name') return 'name.product';
     if (displayName === 'Companies Name') return 'name.companies';
     if (displayName === 'User Name') return 'name.user';
+    // Handle signature display names (case-insensitive)
+    const displayLower = displayName.toLowerCase();
+    if (displayLower === 'signature.user' || displayLower.includes('signature.user')) return 'signature.user';
+    if (displayLower === 'signature.influencer' || displayLower.includes('signature.influencer')) return 'signature.influencer';
+    if (displayLower === 'signature') return 'signature';
     return displayName;
   };
 
@@ -1408,15 +1413,26 @@ const CollaborationAssignment = () => {
                     descriptors: []
                   });
                 }
-              } else if (normalizedKey === "signature") {
+              } else if (normalizedKey === "signature" || normalizedKey === "signature.user" || normalizedKey === "signature.influencer") {
                 // For signature, create separate entries for each occurrence
-                const currentCount = signatureOccurrences.get("signature") ?? 0;
-                const indexedKey = `signature_${currentCount}`;
-                signatureOccurrences.set("signature", currentCount + 1);
+                // Handle signature.user and signature.influencer separately
+                let signatureType = "signature";
+                if (normalizedKey === "signature.user") {
+                  signatureType = "signature.user";
+                } else if (normalizedKey === "signature.influencer") {
+                  signatureType = "signature.influencer";
+                }
+                
+                const currentCount = signatureOccurrences.get(signatureType) ?? 0;
+                const indexedKey = signatureType === "signature" 
+                  ? `signature_${currentCount}`
+                  : `${signatureType}_${currentCount}`;
+                signatureOccurrences.set(signatureType, currentCount + 1);
 
                 if (!collected.has(indexedKey)) {
+                  const typeLabel = signatureType === "signature.user" ? "User" : signatureType === "signature.influencer" ? "Influencer" : "";
                   collected.set(indexedKey, {
-                    description: `Signature placeholder (occurrence ${currentCount + 1})`,
+                    description: typeLabel ? `${typeLabel} Signature placeholder (occurrence ${currentCount + 1})` : `Signature placeholder (occurrence ${currentCount + 1})`,
                     descriptors: []
                   });
                 }
@@ -1864,7 +1880,7 @@ const CollaborationAssignment = () => {
             // Always push to rawValues, even if empty, so we know the field exists
             // This helps us detect "--" values that should be replaced with blank
             rawValues.push(valueText || "");
-          }
+            }
 
           // Filter out empty values and values containing "--"
           const displayParts = rendered.filter((value) => {
@@ -1950,37 +1966,42 @@ const CollaborationAssignment = () => {
             const resolved = await resolveDescriptorsToValue(info.descriptors);
             // Check if this is a plain_text entry (with or without index)
             const isPlainText = key === "plain_text" || key.startsWith("plain_text_");
-            // Check if this is a signature entry (with or without index)
-            // Handle formats: signature, signature_0, signature.user, signature.influencer, Signature.Influencer_1, Signature.User_1
-            const isSignature = key === "signature" || 
-                               key.startsWith("signature_") || 
-                               key === "signature.user" || 
-                               key === "signature.influencer" ||
-                               /^signature\.(user|influencer)(_\d+)?$/i.test(key) ||
-                               /^Signature\.(User|Influencer)_\d+$/i.test(key);
+            // Check if this is a signature entry (with or without index, case-insensitive)
+            const keyLower = key.toLowerCase();
+            const isSignature = keyLower === "signature" || 
+                               keyLower.startsWith("signature_") || 
+                               keyLower === "signature.user" || 
+                               keyLower === "signature.influencer" ||
+                               keyLower.startsWith("signature.user_") ||
+                               keyLower.startsWith("signature.influencer_");
             // Check if this is a date variable
             const isDate = isDateVariable(key);
             // Check if this is a product variable (including name.product and indexed versions)
             const isProduct = key === "product" || key.startsWith("product_") || key === "name.product" || key.startsWith("name.product_");
             const isEditable = isPlainText || isSignature || isDate || isProduct;
 
-            // Normalize key for placeholder (remove index suffix)
+            // Normalize key for placeholder (remove index suffix, case-insensitive)
             let placeholderKey = key;
-            if (key.startsWith("plain_text_")) {
+            const keyLowerForPlaceholder = key.toLowerCase();
+            if (keyLowerForPlaceholder.startsWith("plain_text_")) {
               placeholderKey = "plain_text";
-            } else if (key.startsWith("signature_")) {
+            } else if (keyLowerForPlaceholder.startsWith("signature_")) {
               placeholderKey = "signature";
-            } else if (key.startsWith("date_")) {
+            } else if (keyLowerForPlaceholder.startsWith("signature.user_")) {
+              placeholderKey = "signature.user";
+            } else if (keyLowerForPlaceholder.startsWith("signature.influencer_")) {
+              placeholderKey = "signature.influencer";
+            } else if (keyLowerForPlaceholder.startsWith("date_")) {
               placeholderKey = "date";
-            } else if (key.startsWith("product_")) {
+            } else if (keyLowerForPlaceholder.startsWith("product_")) {
               placeholderKey = "product";
-            } else if (key.startsWith("name.product_")) {
+            } else if (keyLowerForPlaceholder.startsWith("name.product_")) {
               placeholderKey = "name.product";
-            } else if (key.startsWith("name.influencer_")) {
+            } else if (keyLowerForPlaceholder.startsWith("name.influencer_")) {
               placeholderKey = "name.influencer";
-            } else if (key.startsWith("name.user_")) {
+            } else if (keyLowerForPlaceholder.startsWith("name.user_")) {
               placeholderKey = "name.user";
-            } else if (key.startsWith("name.companies_")) {
+            } else if (keyLowerForPlaceholder.startsWith("name.companies_")) {
               placeholderKey = "name.companies";
             }
 
@@ -2003,27 +2024,9 @@ const CollaborationAssignment = () => {
                 dateEntryCounter++;
                 dateEntryMap.set(key, dateEntryCounter);
                 index = dateEntryCounter; // Use sequential index for display (1, 2, 3...)
-              } else if (key.startsWith("plain_text_") || 
-                         key.startsWith("signature_") ||
-                         /^signature\.(user|influencer)(_\d+)?$/i.test(key) ||
-                         /^Signature\.(User|Influencer)_\d+$/i.test(key)) {
+              } else if (keyLower.startsWith("plain_text_") || keyLower.startsWith("signature_") || keyLower.startsWith("signature.user_") || keyLower.startsWith("signature.influencer_")) {
                 // For plain_text and signature, convert 0-indexed to 1-indexed
-                // Also handle Signature.User_1, Signature.Influencer_1 formats
-                if (key.startsWith("signature_")) {
-                  index = index + 1;
-                } else if (/^Signature\.(User|Influencer)_\d+$/i.test(key)) {
-                  // Already 1-indexed for Signature.User_1 format
-                  // index is already correct from the match
-                } else if (/^signature\.(user|influencer)(_\d+)?$/i.test(key)) {
-                  // Handle signature.user_1, signature.influencer_1
-                  const match = key.match(/^signature\.(user|influencer)_(\d+)$/i);
-                  if (match) {
-                    index = parseInt(match[2], 10);
-                  } else {
-                    // No index, default to 1
-                    index = 1;
-                  }
-                }
+                index = index + 1;
               }
               
               // Create key with index: var[{{User Name [1]}}] or var[{{date [1]}}]
@@ -2544,7 +2547,7 @@ const CollaborationAssignment = () => {
           }
           
           const formattedValue = formatValueForDisplay(input);
-          const sanitizedValue = formattedValue ? escapeHtml(formattedValue) : "--";
+          const sanitizedValue = formattedValue ? escapeHtml(formattedValue) : "";
           
           // Extract index from originalKey (date_0, date_1, etc.)
           const originalKey = entry.originalKey || '';
@@ -2673,7 +2676,7 @@ const CollaborationAssignment = () => {
               value = entry.value;
             }
             
-            const sanitizedValue = value ? escapeHtml(value) : "--";
+            const sanitizedValue = value ? escapeHtml(value) : "";
             matches.push({ index: entryIndex, value: sanitizedValue });
             variablesMap[entry.originalKey || entry.key] = value || null;
           }
@@ -2725,7 +2728,7 @@ const CollaborationAssignment = () => {
           const entryIndex = parseInt(entry.originalKey?.replace("name.product_", "") || "0", 10);
           
           // Format products as bullet list if multiple products exist
-          let sanitizedValue = "--";
+          let sanitizedValue = "";
           if (input) {
             const products = input.split(',').map(p => p.trim()).filter(Boolean);
             if (products.length > 0) {
@@ -2764,7 +2767,7 @@ const CollaborationAssignment = () => {
         const productValue = productEntries[0]?.inputValue?.trim() ?? "";
         
         // Format products as bullet list if multiple products exist
-        let sanitizedValue = "--";
+        let sanitizedValue = "";
         if (productValue) {
           const products = productValue.split(',').map(p => p.trim()).filter(Boolean);
           if (products.length > 0) {
@@ -2794,7 +2797,7 @@ const CollaborationAssignment = () => {
         // Note: plain_text_0, plain_text_1 are 0-indexed in variables, but content uses plain_text [1], plain_text [2] (1-indexed)
         plainTextEntries.forEach((entry) => {
           const input = entry.inputValue?.trim() ?? "";
-          let sanitizedValue = input ? escapeHtml(input).replace(/\r?\n/g, "<br />") : "--";
+          let sanitizedValue = input ? escapeHtml(input).replace(/\r?\n/g, "<br />") : "";
           const entryIndex = parseInt(entry.originalKey?.replace("plain_text_", "") || "0", 10);
           // contentIndex is 1-indexed (for matching with var[{{plain_text [1]}}])
           const contentIndex = entryIndex + 1;
@@ -2863,17 +2866,102 @@ const CollaborationAssignment = () => {
         });
 
       // Handle signature.user and signature.influencer placeholders separately
-      // First, handle signature.user
+      // First, handle signature.user (including indexed versions like signature.user_0, signature.user_1)
       const signatureUserEntries = contractVariableEntries.filter(
-        e => (e.originalKey === 'signature.user' || e.key === 'signature.user') && !e.originalKey?.startsWith("plain_text_")
-      );
+        e => {
+          const originalKey = (e.originalKey || '').toLowerCase();
+          const key = (e.key || '').toLowerCase();
+          return (originalKey === 'signature.user' || 
+                  originalKey.startsWith('signature.user_') ||
+                  key === 'signature.user' ||
+                  key.includes('signature.user')) && 
+                 !e.originalKey?.startsWith("plain_text_");
+        }
+      )
+      .sort((a, b) => {
+        // Sort by index: signature.user_0, signature.user_1, etc.
+        const aKey = (a.originalKey || '').toLowerCase();
+        const bKey = (b.originalKey || '').toLowerCase();
+        const aIndex = aKey.startsWith('signature.user_') 
+          ? parseInt(aKey.replace('signature.user_', '') || '0', 10)
+          : -1; // Non-indexed entries come first
+        const bIndex = bKey.startsWith('signature.user_') 
+          ? parseInt(bKey.replace('signature.user_', '') || '0', 10)
+          : -1;
+        return aIndex - bIndex;
+      });
 
       if (signatureUserEntries.length > 0) {
-        // Use flexible regex to match var[{{signature.user}}] with optional spaces
+        // First, handle indexed format: var[{{signature.user [1]}}], var[{{signature.user [2]}}], etc.
+        const indexedRegex = /var\[\s*\{\{\s*signature\.user\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
+        let indexedOccurrence = 0;
+        
+        previewHtml = previewHtml.replace(indexedRegex, (match, capturedIndex) => {
+          const placeholderIndex = parseInt(capturedIndex, 10); // This is 1-indexed from content
+          const entryIndex = placeholderIndex - 1; // Convert to 0-indexed for array access
+          const entry = signatureUserEntries[entryIndex] || signatureUserEntries[0];
+          
+          // Mark this placeholder as replaced
+          replacedPlaceholders.add(match);
+          
+          let signatureValue: string | null = null;
+
+          if (entry.editable) {
+            signatureValue = entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null);
+          } else if (entry.rawValues && entry.rawValues.length) {
+            signatureValue = entry.rawValues[0];
+          } else if (entry.value) {
+            signatureValue = entry.value;
+          }
+
+          let displayHtml = "";
+
+          if (signatureValue && signatureValue !== "--") {
+            if (signatureValue.startsWith("data:image")) {
+              displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="signature.user" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+            } else {
+              const sanitizedText = escapeHtml(signatureValue);
+              displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
+            }
+          } else {
+            // Show placeholder with index number: var[{{signature.user [1]}}], var[{{signature.user [2]}}], etc.
+            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user [${placeholderIndex}]}}]</span>`;
+          }
+
+          // Store signature value in variablesMap using indexed key (1-indexed for Supabase)
+          let storedValue = entry.editable
+            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
+            : entry.rawValues && entry.rawValues.length
+              ? entry.rawValues.join("\n")
+              : entry.value ?? null;
+
+          // Convert null or "null" string to empty string
+          if (storedValue === null || storedValue === "null" || storedValue === "") {
+            storedValue = "";
+          }
+
+          // Store with indexed key matching the placeholder (1-indexed: Signature.User_1, Signature.User_2, etc.)
+          const indexedKey = `Signature.User_${placeholderIndex}`;
+          variablesMap[indexedKey] = storedValue;
+          // Also store with originalKey for backward compatibility
+          if (entry.originalKey) {
+            variablesMap[entry.originalKey] = storedValue;
+          }
+
+          return displayHtml;
+        });
+
+        // Then, handle non-indexed format: var[{{signature.user}}] (sequential replacement)
         const regex = /var\[\s*\{\{\s*signature\.user\s*\}\}\s*\]/gi;
+        let occurrenceIndex = 0;
 
         previewHtml = previewHtml.replace(regex, (match) => {
-          const entry = signatureUserEntries[0];
+          const entry = signatureUserEntries[occurrenceIndex] || signatureUserEntries[0];
+          occurrenceIndex++;
+          
+          // Mark this placeholder as replaced
+          replacedPlaceholders.add(match);
+          
           let signatureValue: string | null = null;
 
           if (entry.editable) {
@@ -2894,18 +2982,29 @@ const CollaborationAssignment = () => {
               displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
             }
           } else {
-            // Make clickable placeholder with data attribute
-            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user}}]</span>`;
+            // Show placeholder with index number: var[{{signature.user [1]}}], var[{{signature.user [2]}}], etc.
+            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user [${occurrenceIndex}]}}]</span>`;
           }
 
-          const storedValue = entry.editable
-            ? entry.inputValue?.trim() ?? null
+          // For signature images (data:image), don't trim as it might break the data URL
+          let storedValue = entry.editable
+            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
             : entry.rawValues && entry.rawValues.length
               ? entry.rawValues.join("\n")
               : entry.value ?? null;
 
+          // Convert null or "null" string to empty string
+          if (storedValue === null || storedValue === "null" || storedValue === "") {
+            storedValue = "";
+          }
+
+          // Store signature value in variablesMap using indexed key (1-indexed for Supabase)
+          // occurrenceIndex is already incremented, so use it directly (1-indexed)
+          const indexedKey = `Signature.User_${occurrenceIndex}`;
+          variablesMap[indexedKey] = storedValue;
+          // Also store with originalKey for backward compatibility
           if (entry.originalKey) {
-            variablesMap[entry.originalKey] = storedValue && storedValue.length ? storedValue : null;
+            variablesMap[entry.originalKey] = storedValue;
           }
 
           return displayHtml;
@@ -2920,22 +3019,47 @@ const CollaborationAssignment = () => {
         });
       }
 
-      // Handle signature.influencer
+      // Handle signature.influencer (including indexed versions like signature.influencer_0, signature.influencer_1)
       const signatureInfluencerEntries = contractVariableEntries.filter(
-        e => (e.originalKey === 'signature.influencer' || e.key === 'signature.influencer') && !e.originalKey?.startsWith("plain_text_")
-      );
+        e => {
+          const originalKey = (e.originalKey || '').toLowerCase();
+          const key = (e.key || '').toLowerCase();
+          return (originalKey === 'signature.influencer' || 
+                  originalKey.startsWith('signature.influencer_') ||
+                  key === 'signature.influencer' ||
+                  key.includes('signature.influencer')) && 
+                 !e.originalKey?.startsWith("plain_text_");
+        }
+      )
+      .sort((a, b) => {
+        // Sort by index: signature.influencer_0, signature.influencer_1, etc.
+        const aKey = (a.originalKey || '').toLowerCase();
+        const bKey = (b.originalKey || '').toLowerCase();
+        const aIndex = aKey.startsWith('signature.influencer_') 
+          ? parseInt(aKey.replace('signature.influencer_', '') || '0', 10)
+          : -1; // Non-indexed entries come first
+        const bIndex = bKey.startsWith('signature.influencer_') 
+          ? parseInt(bKey.replace('signature.influencer_', '') || '0', 10)
+          : -1;
+        return aIndex - bIndex;
+      });
 
       if (signatureInfluencerEntries.length > 0) {
-        const placeholder = "var[{{signature.influencer}}]";
-        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex = new RegExp(escapedPlaceholder, "g");
-
-        previewHtml = previewHtml.replace(regex, (match) => {
-          const entry = signatureInfluencerEntries[0];
+        // First, handle indexed format: var[{{signature.influencer [1]}}], var[{{signature.influencer [2]}}], etc.
+        const indexedRegex = /var\[\s*\{\{\s*signature\.influencer\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
+        
+        previewHtml = previewHtml.replace(indexedRegex, (match, capturedIndex) => {
+          const placeholderIndex = parseInt(capturedIndex, 10); // This is 1-indexed from content
+          const entryIndex = placeholderIndex - 1; // Convert to 0-indexed for array access
+          const entry = signatureInfluencerEntries[entryIndex] || signatureInfluencerEntries[0];
+          
+          // Mark this placeholder as replaced
+          replacedPlaceholders.add(match);
+          
           let signatureValue: string | null = null;
 
           if (entry.editable) {
-            signatureValue = entry.inputValue?.trim() ?? null;
+            signatureValue = entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null);
           } else if (entry.rawValues && entry.rawValues.length) {
             signatureValue = entry.rawValues[0];
           } else if (entry.value) {
@@ -2944,7 +3068,7 @@ const CollaborationAssignment = () => {
 
           let displayHtml = "";
 
-          if (signatureValue && signatureValue !== "--") {
+          if (signatureValue && signatureValue !== "--" && signatureValue.length > 0) {
             if (signatureValue.startsWith("data:image")) {
               displayHtml = `<img src="${signatureValue}" alt="Signature" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
             } else {
@@ -2952,18 +3076,89 @@ const CollaborationAssignment = () => {
               displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
             }
           } else {
-            // Make clickable placeholder with data attribute
-            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer}}]</span>`;
+            // Show placeholder with index number: var[{{signature.influencer [2]}}], var[{{signature.influencer [3]}}], etc.
+            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer [${placeholderIndex}]}}]</span>`;
           }
 
-          const storedValue = entry.editable
-            ? entry.inputValue?.trim() ?? null
+          // Store signature value in variablesMap using indexed key (1-indexed for Supabase)
+          let storedValue = entry.editable
+            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
             : entry.rawValues && entry.rawValues.length
               ? entry.rawValues.join("\n")
               : entry.value ?? null;
 
+          // Convert null or "null" string to empty string
+          if (storedValue === null || storedValue === "null" || storedValue === "") {
+            storedValue = "";
+          }
+
+          // Store with indexed key matching the placeholder (1-indexed: Signature.Influencer_1, Signature.Influencer_2, etc.)
+          const indexedKey = `Signature.Influencer_${placeholderIndex}`;
+          variablesMap[indexedKey] = storedValue;
+          // Also store with originalKey for backward compatibility
           if (entry.originalKey) {
-            variablesMap[entry.originalKey] = storedValue && storedValue.length ? storedValue : null;
+            variablesMap[entry.originalKey] = storedValue;
+          }
+
+          return displayHtml;
+        });
+
+        // Then, handle non-indexed format: var[{{signature.influencer}}] (sequential replacement)
+        const placeholder = "var[{{signature.influencer}}]";
+        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escapedPlaceholder, "g");
+        let occurrenceIndex = 0;
+
+        previewHtml = previewHtml.replace(regex, (match) => {
+          const entry = signatureInfluencerEntries[occurrenceIndex] || signatureInfluencerEntries[0];
+          occurrenceIndex++;
+          
+          // Mark this placeholder as replaced
+          replacedPlaceholders.add(match);
+          
+          let signatureValue: string | null = null;
+
+          if (entry.editable) {
+            signatureValue = entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null);
+          } else if (entry.rawValues && entry.rawValues.length) {
+            signatureValue = entry.rawValues[0];
+          } else if (entry.value) {
+            signatureValue = entry.value;
+          }
+
+          let displayHtml = "";
+
+          if (signatureValue && signatureValue !== "--" && signatureValue.length > 0) {
+            if (signatureValue.startsWith("data:image")) {
+              displayHtml = `<img src="${signatureValue}" alt="Signature" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+            } else {
+              const sanitizedText = escapeHtml(signatureValue);
+              displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
+            }
+          } else {
+            // Show placeholder with index number: var[{{signature.influencer [1]}}], var[{{signature.influencer [2]}}], etc.
+            displayHtml = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer [${occurrenceIndex}]}}]</span>`;
+          }
+
+          // For signature images (data:image), don't trim as it might break the data URL
+          let storedValue = entry.editable
+            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
+            : entry.rawValues && entry.rawValues.length
+              ? entry.rawValues.join("\n")
+              : entry.value ?? null;
+
+          // Convert null or "null" string to empty string
+          if (storedValue === null || storedValue === "null" || storedValue === "") {
+            storedValue = "";
+          }
+
+          // Store signature value in variablesMap using indexed key (1-indexed for Supabase)
+          // occurrenceIndex is already incremented, so use it directly (1-indexed)
+          const indexedKey = `Signature.Influencer_${occurrenceIndex}`;
+          variablesMap[indexedKey] = storedValue;
+          // Also store with originalKey for backward compatibility
+          if (entry.originalKey) {
+            variablesMap[entry.originalKey] = storedValue;
           }
 
           return displayHtml;
@@ -3032,14 +3227,26 @@ const CollaborationAssignment = () => {
           }
 
           // Store variable value for saving
-          const storedValue = entry.editable
-            ? entry.inputValue?.trim() ?? null
+          // For signature images (data:image), don't trim as it might break the data URL
+          let storedValue = entry.editable
+            ? (entry.inputValue?.startsWith('data:image') ? entry.inputValue : (entry.inputValue?.trim() ?? null))
             : entry.rawValues && entry.rawValues.length
               ? entry.rawValues.join("\n")
               : entry.value ?? null;
 
+          // Convert null or "null" string to empty string
+          if (storedValue === null || storedValue === "null" || storedValue === "") {
+            storedValue = "";
+          }
+
           if (entry.originalKey) {
-            variablesMap[entry.originalKey] = storedValue && storedValue.length ? storedValue : null;
+            variablesMap[entry.originalKey] = storedValue;
+            console.log('Storing signature_* in variablesMap:', { 
+              key: entry.originalKey, 
+              hasValue: !!storedValue,
+              isImage: storedValue?.startsWith('data:image'),
+              valueLength: storedValue?.length 
+            });
           }
 
           return displayHtml;
@@ -3189,15 +3396,7 @@ const CollaborationAssignment = () => {
         const isDate = normalizedKey === "date" || normalizedKey.includes("date") || normalizedKey.includes("_date");
 
         // Format date values for display (YYYY-MM-DD to readable format)
-        // Also check if value is a signature image (data:image URL)
         const formatValueForDisplay = (value: string): string => {
-          // Check if this is a signature variable with image data
-          const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
-          if (isSignature && value && value.startsWith('data:image')) {
-            // Return as-is for signature images - will be handled separately
-            return value;
-          }
-          
           if (isDate) {
             try {
               // Try to parse and format the date
@@ -3241,7 +3440,7 @@ const CollaborationAssignment = () => {
           ? `var\\[\\s*\\{\\{\\s*${displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\[\\s*${variableIndex}\\s*\\]\\s*\\}\\}\\s*\\]`
           : null;
         const nonIndexedPlaceholderPattern = `var\\[\\s*\\{\\{\\s*${displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\}\\}\\s*\\]`;
-        
+
         // Also create regex for actual key format (if different from display name)
         const actualKey = entry.originalKey || entry.key.replace(/var\[\{\{|\}\}\]/g, '').trim();
         let actualKeyPlaceholder: string | null = null;
@@ -3265,13 +3464,6 @@ const CollaborationAssignment = () => {
             const selectedValue = values[valueIndex];
             const formattedValue = formatValueForDisplay(selectedValue);
             occurrenceIndex++;
-            
-            // Check if this is a signature image
-            const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
-            if (isSignature && formattedValue && formattedValue.startsWith('data:image')) {
-              return `<img src="${formattedValue}" alt="Signature" data-signature-key="${entry.originalKey || entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
-            }
-            
             return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
           });
           
@@ -3281,13 +3473,6 @@ const CollaborationAssignment = () => {
             previewHtml = previewHtml.replace(indexedRegex, () => {
               const selectedValue = values[0] || "";
               const formattedValue = formatValueForDisplay(selectedValue);
-              
-              // Check if this is a signature image
-              const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
-              if (isSignature && formattedValue && formattedValue.startsWith('data:image')) {
-                return `<img src="${formattedValue}" alt="Signature" data-signature-key="${entry.originalKey || entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
-              }
-              
               return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
             });
           }
@@ -3300,29 +3485,15 @@ const CollaborationAssignment = () => {
               const selectedValue = values[valueIndex];
               const formattedValue = formatValueForDisplay(selectedValue);
               actualOccurrenceIndex++;
-              
-              // Check if this is a signature image
-              const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
-              if (isSignature && formattedValue && formattedValue.startsWith('data:image')) {
-                return `<img src="${formattedValue}" alt="Signature" data-signature-key="${entry.originalKey || entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
-              }
-              
               return escapeHtml(formattedValue).replace(/\r?\n/g, "<br />");
             });
           }
         } else {
           // Single value: replace all occurrences with the same value
           const displayValue = values.length ? formatValueForDisplay(values[0]) : "";
-          
-          // Check if this is a signature image - if so, convert to img tag
-          const isSignature = (entry.originalKey || entry.key || '').toLowerCase().includes('signature');
-          const isSignatureImage = isSignature && displayValue && displayValue.startsWith('data:image');
-          
-          const sanitizedValue = isSignatureImage
-            ? `<img src="${displayValue}" alt="Signature" data-signature-key="${entry.originalKey || entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`
-            : displayValue
-              ? escapeHtml(displayValue).replace(/\r?\n/g, "<br />")
-              : "";
+          const sanitizedValue = displayValue
+            ? escapeHtml(displayValue).replace(/\r?\n/g, "<br />")
+            : "";
 
           // Always replace - if value was "--", sanitizedValue will be empty string (blank)
           // This ensures "--" values show as blank in preview instead of "--"
@@ -3378,7 +3549,7 @@ const CollaborationAssignment = () => {
             }
             
             // 2. Replace exact placeholder match (from entry.key)
-            const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             if (replaceWithHtmlWrapping(escapedPlaceholder, sanitizedValue)) {
               replaced = true;
               if ((entry.originalKey?.includes('Address') || entry.key?.includes('Address'))) {
@@ -3420,7 +3591,7 @@ const CollaborationAssignment = () => {
             }
             
             // 5. Replace actual key format if different (e.g., var[{{address.user.address_line1}}])
-            if (actualKeyRegex) {
+          if (actualKeyRegex) {
               const actualKeyPattern = actualKeyRegex.source;
               if (replaceWithHtmlWrapping(actualKeyPattern, sanitizedValue)) {
                 replaced = true;
@@ -3466,37 +3637,51 @@ const CollaborationAssignment = () => {
         
         // Also store using the display key format for backward compatibility
         if (entry.originalKey && entry.originalKey !== entry.key) {
-          variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
+        variablesMap[entry.key] = storedValue && storedValue.length ? storedValue : null;
         }
       });
 
-      // Replace remaining placeholders with --, but keep signature placeholders as var[{{signature}}]
+      // Replace remaining placeholders with empty string, but keep signature placeholders as var[{{signature}}]
       // Also skip placeholders that have already been replaced
       previewHtml = previewHtml.replace(/var\[\s*\{\{([^}]+)\}\}\s*\]/g, (match, variableName) => {
-        // Keep signature placeholders as is
-        if (variableName.trim() === "signature" || variableName.trim().includes("signature.")) {
+        const trimmedName = variableName.trim().toLowerCase();
+        // Keep signature placeholders as is (handle both lowercase and capitalized formats)
+        // Check for: signature, signature.user, signature.influencer, Signature.User, Signature.Influencer, etc.
+        if (trimmedName === "signature" || 
+            trimmedName.includes("signature.") || 
+            trimmedName.includes("signature.user") ||
+            trimmedName.includes("signature.influencer") ||
+            trimmedName.match(/signature\s*\[\s*\d+\s*\]/i) ||
+            trimmedName.match(/signature\.(user|influencer)\s*\[\s*\d+\s*\]/i)) {
           return match; // Keep var[{{signature}}] as is
         }
         // Skip if this placeholder was already replaced
         if (replacedPlaceholders.has(match)) {
           return match; // Keep the replaced value
         }
-        // Replace other placeholders with --
-        return "--";
+        // Replace other placeholders with empty string instead of "--"
+        return "";
       });
       
       // Also handle placeholders that might still be wrapped in HTML tags
       previewHtml = previewHtml.replace(/<span[^>]*>var\[\s*\{\{([^}]+)\}\}\s*\]<\/span>/gi, (match, variableName) => {
-        // Keep signature placeholders as is
-        if (variableName.trim() === "signature" || variableName.trim().includes("signature.")) {
+        const trimmedName = variableName.trim().toLowerCase();
+        // Keep signature placeholders as is (handle both lowercase and capitalized formats)
+        // Check for: signature, signature.user, signature.influencer, Signature.User, Signature.Influencer, etc.
+        if (trimmedName === "signature" || 
+            trimmedName.includes("signature.") || 
+            trimmedName.includes("signature.user") ||
+            trimmedName.includes("signature.influencer") ||
+            trimmedName.match(/signature\s*\[\s*\d+\s*\]/i) ||
+            trimmedName.match(/signature\.(user|influencer)\s*\[\s*\d+\s*\]/i)) {
           return match;
         }
         // Skip if this placeholder was already replaced
         if (replacedPlaceholders.has(match)) {
           return match;
         }
-        // Replace other placeholders with --
-        return "--";
+        // Replace other placeholders with empty string instead of "--"
+        return "";
       });
 
       // Extract all existing styles and links from the original contract content
@@ -4841,12 +5026,11 @@ const CollaborationAssignment = () => {
                       const addressGroups = new Map<string, ContractVariableEntry[]>();
                       const nonAddressEntries: ContractVariableEntry[] = [];
                       
-                      contractVariableEntries
-                        .filter((item) => {
-                          // Don't filter out any signatures - show all signature types (user and influencer)
-                          // Previously filtered out signature.influencer, but now we want to show all signatures
-                          return true;
-                        })
+                    contractVariableEntries
+                      .filter((item) => {
+                        // Show all signature variables (both user and influencer) - don't filter any out
+                        return true;
+                      })
                         .forEach((item) => {
                           const originalKey = item.originalKey || '';
                           const displayKey = item.key || '';
@@ -4960,7 +5144,7 @@ const CollaborationAssignment = () => {
                             fields.find(f => {
                               const key = f.originalKey || f.key || '';
                               return key.includes(fieldName);
-                            })
+                      })
                           ).filter(Boolean) as ContractVariableEntry[];
                           
                           // Format source for display
@@ -5007,36 +5191,39 @@ const CollaborationAssignment = () => {
                         return key;
                       };
                       const displayName = extractDisplayName(item.key);
-                      // Check if this is a signature variable (check both key and originalKey)
-                      // Handle formats: signature, signature_0, signature.user, signature.influencer, Signature.Influencer_1, Signature.User_1
-                      const checkSignature = (keyToCheck: string): boolean => {
-                        if (!keyToCheck) return false;
-                        const lowerKey = keyToCheck.toLowerCase();
-                        // Remove index brackets from display format (e.g., "Signature.Influencer_1 [1]" -> "Signature.Influencer_1")
-                        const cleanKey = keyToCheck.replace(/\s*\[\d+\]\s*/g, '').trim();
-                        const cleanLowerKey = cleanKey.toLowerCase();
-                        
-                        // Check for various signature formats
-                        return cleanLowerKey === 'signature' ||
-                               cleanLowerKey.startsWith('signature_') ||
-                               cleanLowerKey === 'signature.user' ||
-                               cleanLowerKey === 'signature.influencer' ||
-                               /^signature\.(user|influencer)(_\d+)?$/i.test(cleanKey) ||
-                               /^Signature\.(User|Influencer)_\d+$/i.test(cleanKey) ||
-                               lowerKey.includes('signature');
-                      };
-                      const isSignature = checkSignature(item.key) || checkSignature(item.originalKey || '');
+                      // Check if this is a signature variable (check both key and originalKey, case-insensitive)
+                      const keyLower = item.key.toLowerCase();
+                      const originalKeyLower = (item.originalKey || '').toLowerCase();
+                      const displayNameLower = displayName.toLowerCase();
+                      const isSignature = keyLower.includes('signature') || 
+                                         originalKeyLower.includes('signature') || 
+                                         displayNameLower.includes('signature') ||
+                                         originalKeyLower === 'signature.user' ||
+                                         originalKeyLower === 'signature.influencer' ||
+                                         originalKeyLower.startsWith('signature_') ||
+                                         originalKeyLower.startsWith('signature.user_') ||
+                                         originalKeyLower.startsWith('signature.influencer_') ||
+                                         /^signature\.(user|influencer)_\d+$/i.test(originalKeyLower) ||
+                                         /^signature_\d+$/i.test(originalKeyLower);
                       
-                      // If it's a signature variable, make it editable even if not marked as such
-                      const shouldShowSignatureBox = isSignature;
-                      const isEditableOrSignature = item.editable || shouldShowSignatureBox;
+                      // Debug log to see what's happening
+                      if (displayNameLower.includes('signature') || originalKeyLower.includes('signature')) {
+                        console.log('Signature variable detected:', {
+                          displayName,
+                          key: item.key,
+                          originalKey: item.originalKey,
+                          editable: item.editable,
+                          isSignature,
+                          uniqueKey
+                        });
+                      }
                       
                       return (
                         <div key={uniqueKey} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm space-y-1">
                           <p className="font-semibold text-slate-800">{displayName}</p>
                           {item.description && <p className="text-xs text-slate-500">{item.description}</p>}
-                          {isEditableOrSignature ? (
-                            shouldShowSignatureBox ? (
+                          {item.editable ? (
+                            isSignature ? (
                               <div
                                 className="cursor-pointer rounded border-2 border-dashed border-slate-300 bg-transparent px-2 py-2 text-center text-xs text-slate-600 hover:bg-slate-50 hover:border-slate-400 transition-colors"
                                 style={{
@@ -5048,8 +5235,13 @@ const CollaborationAssignment = () => {
                                   minHeight: '140px',
                                   position: 'relative',
                                 }}
-                                onClick={() => {
-                                  setCurrentSignatureEntry(uniqueKey);
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  // Use originalKey for signature entry tracking, fallback to key if originalKey doesn't exist
+                                  const signatureKey = item.originalKey || item.key || uniqueKey;
+                                  console.log('Signature box clicked:', { uniqueKey, originalKey: item.originalKey, key: item.key, signatureKey });
+                                  setCurrentSignatureEntry(signatureKey);
                                   const existingValue = item.inputValue || item.value || '';
                                   setSignatureValue(existingValue);
                                   // If value is a data URL (image), switch to draw mode and load it
@@ -5073,6 +5265,7 @@ const CollaborationAssignment = () => {
                                   } else {
                                     setSignatureMode('type');
                                   }
+                                  console.log('Opening signature dialog');
                                   setIsSignatureDialogOpen(true);
                                 }}
                               >
@@ -6078,23 +6271,84 @@ const CollaborationAssignment = () => {
                 }
 
                 if (currentSignatureEntry && finalValue) {
+                  console.log('Saving signature:', { currentSignatureEntry, finalValueLength: finalValue.length });
                   setContractVariableEntries((prev) => {
-                    const existingIndex = prev.findIndex(
-                      (entry) => (entry.originalKey || entry.key) === currentSignatureEntry
-                    );
+                    // Try multiple key formats to find the matching entry
+                    const existingIndex = prev.findIndex((entry) => {
+                      const entryOriginalKey = entry.originalKey || '';
+                      const entryKey = entry.key || '';
+                      const currentKey = currentSignatureEntry || '';
+                      
+                      // Direct match
+                      if (entryOriginalKey === currentKey || entryKey === currentKey) {
+                        return true;
+                      }
+                      
+                      // Case-insensitive match
+                      if (entryOriginalKey.toLowerCase() === currentKey.toLowerCase() || 
+                          entryKey.toLowerCase() === currentKey.toLowerCase()) {
+                        return true;
+                      }
+                      
+                      // Check if currentSignatureEntry is in var[{{...}}] format and extract the key
+                      const varMatch = currentKey.match(/var\[\{\{([^}]+)\}\}\]/);
+                      if (varMatch) {
+                        const extractedKey = varMatch[1].trim().replace(/\s*\[\s*\d+\s*\]\s*$/, '');
+                        if (entryOriginalKey.toLowerCase().includes(extractedKey.toLowerCase()) ||
+                            entryKey.toLowerCase().includes(extractedKey.toLowerCase())) {
+                          return true;
+                        }
+                      }
+                      
+                      // Check if entry key contains signature and matches pattern
+                      if (currentKey.toLowerCase().includes('signature') && 
+                          (entryOriginalKey.toLowerCase().includes('signature') || entryKey.toLowerCase().includes('signature'))) {
+                        // Extract base signature type (signature.user, signature.influencer, signature)
+                        const currentBase = currentKey.toLowerCase().replace(/[_\d\[\]]/g, '').replace(/var.*?signature/, 'signature');
+                        const entryBase = (entryOriginalKey || entryKey).toLowerCase().replace(/[_\d\[\]]/g, '').replace(/var.*?signature/, 'signature');
+                        if (currentBase === entryBase || 
+                            (currentBase.includes('signature.user') && entryBase.includes('signature.user')) ||
+                            (currentBase.includes('signature.influencer') && entryBase.includes('signature.influencer'))) {
+                          return true;
+                        }
+                      }
+                      
+                      return false;
+                    });
+
+                    console.log('Signature entry found:', { existingIndex, totalEntries: prev.length });
 
                     if (existingIndex !== -1) {
                       // Update existing entry
-                      return prev.map((entry) =>
-                        (entry.originalKey || entry.key) === currentSignatureEntry
-                          ? {
+                      const updated = prev.map((entry) => {
+                        const entryOriginalKey = entry.originalKey || '';
+                        const entryKey = entry.key || '';
+                        const currentKey = currentSignatureEntry || '';
+                        
+                        const matches = entryOriginalKey === currentKey || 
+                                       entryKey === currentKey ||
+                                       entryOriginalKey.toLowerCase() === currentKey.toLowerCase() ||
+                                       entryKey.toLowerCase() === currentKey.toLowerCase() ||
+                                       (currentKey.match(/var\[\{\{([^}]+)\}\}\]/) && 
+                                        (entryOriginalKey.toLowerCase().includes('signature') || entryKey.toLowerCase().includes('signature')));
+                        
+                        if (matches) {
+                          console.log('Updating signature entry:', { 
+                            originalKey: entry.originalKey, 
+                            key: entry.key,
+                            newInputValue: finalValue.substring(0, 50) + '...' 
+                          });
+                          return {
                             ...entry,
                             inputValue: finalValue,
+                          };
                           }
-                          : entry
-                      );
+                        return entry;
+                      });
+                      return updated;
                     } else {
                       // Create new entry for signature.user or signature.influencer
+                      console.log('Creating new signature entry:', { currentSignatureEntry });
                       return [
                         ...prev,
                         {
@@ -6104,9 +6358,9 @@ const CollaborationAssignment = () => {
                           inputValue: finalValue,
                           value: null,
                           rawValues: [],
-                          description: currentSignatureEntry === 'signature.user'
+                          description: currentSignatureEntry.toLowerCase().includes('signature.user')
                             ? 'User signature'
-                            : currentSignatureEntry === 'signature.influencer'
+                            : currentSignatureEntry.toLowerCase().includes('signature.influencer')
                               ? 'Influencer signature'
                               : 'Signature',
                         },

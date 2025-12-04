@@ -2828,6 +2828,28 @@ const ContractEditor = () => {
       return;
     }
 
+    // Check if signature of the same type already exists in contract
+    if (variableKey.trim() === 'signature' && signatureType) {
+      const signatureKey = `signature.${signatureType}`;
+      const signatureDisplayName = signatureType === 'user' ? 'User Signature' : 'Influencer Signature';
+      
+      // Check for existing signature placeholders in content
+      // Match both indexed format: var[{{signature.user [1]}}] and non-indexed: var[{{signature.user}}]
+      const signatureRegex = new RegExp(
+        `var\\[\\s*\\{\\{\\s*signature\\.${signatureType}(?:\\s*\\[\\s*\\d+\\s*\\])?\\s*\\}\\}\\s*\\]`,
+        'gi'
+      );
+      
+      if (signatureRegex.test(contractContent)) {
+        toast({
+          title: "Signature Already Exists",
+          description: `${signatureDisplayName} has already been added to this contract. Each signature type can only be added once.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     // For name, require name type selection
     if (variableKey.trim() === 'name' && !nameType) {
       toast({
