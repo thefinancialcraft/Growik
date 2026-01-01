@@ -2066,9 +2066,43 @@ const PublicContractSigning = () => {
       line-height: 1.7;
       color: #111827;
       word-break: break-word;
-      width: 100%;
       max-width: 100%;
     }
+    .tiptap-rendered img:not(.signature-box):not([data-signature="true"]) {
+      max-width: 100%;
+      height: auto;
+      display: inline-block;
+    }
+    
+    .tiptap-rendered img.signature-box,
+    .tiptap-rendered img[data-signature="true"] {
+      display: inline-block !important;
+      vertical-align: middle !important;
+      width: 200px !important;
+      height: 140px !important;
+      border: none !important;
+      background: transparent !important;
+      padding: 0 !important;
+      line-height: normal !important;
+      margin: 20px 25px !important;
+      object-fit: contain !important;
+    }
+    
+    .tiptap-rendered .tiptap-image-wrapper {
+      display: block;
+      margin: 1rem 0;
+      width: 100%;
+    }
+    .tiptap-rendered .tiptap-image-wrapper[data-alignment="center"] {
+      text-align: center;
+    }
+    .tiptap-rendered .tiptap-image-wrapper[data-alignment="right"] {
+      text-align: right;
+    }
+    .tiptap-rendered .tiptap-image-wrapper[data-alignment="left"] {
+      text-align: left;
+    }
+    
     ${existingStyles}
     /* Ensure signature fonts are preserved in print */
     span[style*="font-family"][style*="Dancing Script"],
@@ -2098,6 +2132,14 @@ const PublicContractSigning = () => {
         box-shadow: none;
         padding: 0;
       }
+      
+      .tiptap-rendered img.signature-box,
+      .tiptap-rendered img[data-signature="true"] {
+        width: 200px !important;
+        height: 140px !important;
+        margin: 20px 25px !important;
+      }
+
       span[style*="font-family"][style*="Dancing Script"],
       span[style*="font-family"][style*="Great Vibes"],
       span[style*="font-family"][style*="Allura"],
