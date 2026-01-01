@@ -32,6 +32,7 @@ import Rejected from "./pages/Rejected";
 import ProfileCompletion from "./pages/ProfileCompletion";
 import ChatWidget from "./components/ChatWidget";
 import PublicContractSigning from "./pages/PublicContractSigning";
+import RoleDebug from "./pages/RoleDebug";
 // Intermediate pages removed for direct-to-dashboard flow
 import NotFound from "./pages/NotFound";
 
@@ -253,6 +254,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Rejected />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/role-debug"
+              element={
+                <ProtectedRoute>
+                  <RoleDebug />
                 </ProtectedRoute>
               }
             />

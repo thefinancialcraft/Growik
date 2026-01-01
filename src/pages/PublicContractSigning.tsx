@@ -22,6 +22,15 @@ type ContractVariableEntry = {
     inputValue?: string;
 };
 
+type CollaborationOverride = {
+    campaign_id: string;
+    influencer_id: string;
+    collaboration_id: string;
+    contract_html: string | null;
+    value: Record<string, unknown> | string | null;
+    magic_link: string | null;
+};
+
 type CampaignRecord = {
     id: string;
     user_id: string;
@@ -68,7 +77,7 @@ type CollabData = {
 
 type ContractData = {
     contract_content: string;
-    contract_variables: any;
+    contract_variables: Record<string, unknown>;
 };
 
 const PublicContractSigning = () => {
@@ -127,13 +136,19 @@ const PublicContractSigning = () => {
 
             try {
                 // 1. Resolve Magic Link Token to get campaign_id, influencer_id, and contract_html
-                let overrideData: any = null;
+                let overrideData: {
+                    campaign_id: string;
+                    influencer_id: string;
+                    collaboration_id: string;
+                    contract_html: string | null;
+                    value: Record<string, unknown> | string | null;
+                } | null = null;
                 
                 const { data: tokenData, error: tokenError } = await supabase
                     .from("collaboration_variable_overrides")
                     .select("campaign_id, influencer_id, collaboration_id, contract_html, value")
                     .eq("magic_link", id)
-                    .single();
+                    .single() as { data: CollaborationOverride | null, error: any };
 
                 if (tokenData && !tokenError) {
                     overrideData = tokenData;
@@ -144,7 +159,7 @@ const PublicContractSigning = () => {
                         .select("campaign_id, influencer_id, collaboration_id, contract_html, value")
                         .eq("variable_key", "magic_link")
                         .eq("value", id)
-                        .single();
+                        .single() as { data: CollaborationOverride | null, error: any };
 
                     if (fallbackError || !fallbackData) {
                         throw new Error("Invalid or expired magic link.");
@@ -178,6 +193,7 @@ const PublicContractSigning = () => {
                     .eq("id", campaignKey)
                     .single();
 
+
                 if (campaignError || !campaignData) {
                     console.error("Campaign fetch error:", campaignError);
                     console.error("Campaign key:", campaignKey);
@@ -185,8 +201,15 @@ const PublicContractSigning = () => {
                 }
 
                 // 4. Find influencer in campaign's influencers array
-                const campaign = campaignData as any;
-                const influencerData = campaign.influencers?.find((inf: any) => inf.id === influencer_id);
+                interface CampaignDataType {
+                    id: string;
+                    name: string;
+                    contract_id?: string;
+                    users?: Array<{ employeeId: string }>;
+                    influencers?: Array<{ id: string; name: string; email: string; pid?: string }>;
+                }
+                const campaign = campaignData as CampaignDataType;
+                const influencerData = campaign.influencers?.find((inf) => inf.id === influencer_id);
 
                 if (!influencerData) {
                     throw new Error("Influencer not found in campaign.");
@@ -249,7 +272,7 @@ const PublicContractSigning = () => {
                                 // Extract from body tag (use greedy match to get all content)
                                 const bodyMatch = originalContent.match(/<body[^>]*>([\s\S]*)<\/body>/i);
                                 if (bodyMatch && bodyMatch[1]) {
-                                    let bodyContent = bodyMatch[1];
+                                    const bodyContent = bodyMatch[1];
                                     // Extract from tiptap-rendered div (use greedy match)
                                     const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
                                     if (tiptapMatch && tiptapMatch[1]) {
@@ -298,14 +321,15 @@ const PublicContractSigning = () => {
                         .eq("id", campaign.contract_id)
                         .single();
 
+
                     if (contractData) {
-                        setContractContent((contractData as any).content);
+                        setContractContent((contractData as { content: string }).content);
                     }
                 }
 
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Error fetching data:", err);
-                setError(err.message || "Failed to load contract.");
+                setError((err as Error).message || "Failed to load contract.");
             } finally {
                 setLoading(false);
             }
@@ -325,11 +349,12 @@ const PublicContractSigning = () => {
                     .from("collaboration_actions")
                     .select("is_signed")
                     .eq("collaboration_id", collaborationId)
-                    .maybeSingle();
+                    .maybeSingle() as any;
+
 
                 let signedStatus = false;
                 if (!error && data) {
-                    signedStatus = (data as any).is_signed === true;
+                    signedStatus = (data as { is_signed?: boolean }).is_signed === true;
                 }
 
                 // Also check if signature.influencer actually has values in variables
@@ -339,7 +364,7 @@ const PublicContractSigning = () => {
                     .select("value, contract_html")
                     .eq("collaboration_id", collaborationId)
                     .eq("variable_key", "all_variables")
-                    .maybeSingle();
+                    .maybeSingle() as { data: CollaborationOverride | null, error: any };
 
                 if (!overrideError && overrideData) {
                     // Check contract HTML for signature placeholders
@@ -378,22 +403,16 @@ const PublicContractSigning = () => {
                                 return true;
                             });
 
-                            // Only consider signed if signature has valid value AND no placeholders in HTML
-                            if (hasValidSignature && !hasSignaturePlaceholders) {
+                            if (hasValidSignature) {
                                 signedStatus = true;
                             } else {
-                                // If no valid signature or placeholders exist, reset to false
                                 signedStatus = false;
                             }
                         } catch (parseErr) {
                             console.error("Error parsing variables for signature check:", parseErr);
-                            // If parsing fails and placeholders exist, not signed
-                            if (hasSignaturePlaceholders) {
-                                signedStatus = false;
-                            }
+                            signedStatus = false;
                         }
-                    } else if (hasSignaturePlaceholders) {
-                        // If placeholders exist but no variables, not signed
+                    } else {
                         signedStatus = false;
                     }
                 }
@@ -410,14 +429,6 @@ const PublicContractSigning = () => {
 
         fetchSignedStatus();
     }, [collaborationId]);
-
-    // Parse variables when content is loaded (only if not already loaded from database)
-    useEffect(() => {
-        if (contractContent && !variablesLoadedFromDb) {
-            // Only load variables if they haven't been loaded from database yet
-            loadContractVariables();
-        }
-    }, [contractContent, campaign, influencer, variablesLoadedFromDb]);
 
     // Helper function to map display names back to actual keys
     const getActualKeyFromDisplayName = (displayName: string): string => {
@@ -437,7 +448,7 @@ const PublicContractSigning = () => {
         return key;
     };
 
-    const loadContractVariables = () => {
+    const loadContractVariables = useCallback(() => {
         const foundKeys = new Set<string>();
 
         // First, try to extract keys from data-variable-key attributes
@@ -475,7 +486,7 @@ const PublicContractSigning = () => {
         foundKeys.forEach(key => {
             let value = "";
             let editable = false;
-            let inputValue = "";
+            const inputValue = "";
 
             // Auto-fill logic
             if (key === "influencer_name" && influencer) value = influencer.name;
@@ -504,12 +515,20 @@ const PublicContractSigning = () => {
         });
 
         setContractVariableEntries(newEntries);
-    };
+    }, [contractContent, campaign, influencer]);
+
+    // Parse variables when content is loaded (only if not already loaded from database)
+    useEffect(() => {
+        if (contractContent && !variablesLoadedFromDb) {
+            // Only load variables if they haven't been loaded from database yet
+            loadContractVariables();
+        }
+    }, [contractContent, variablesLoadedFromDb, loadContractVariables]);
 
     // Generate Preview (Simplified)
     useEffect(() => {
         // Use original contract content if available, otherwise use contractContent
-        let baseHtml = originalContractContent || contractContent;
+        const baseHtml = originalContractContent || contractContent;
         if (!baseHtml) return;
 
         let html = baseHtml;
@@ -550,7 +569,7 @@ const PublicContractSigning = () => {
                 const indexedKey = `signature.user_${entryIndex}`;
                 
                 if (val && val !== "--" && val.length > 0 && val.startsWith("data:image")) {
-                    return `<img src="${val}" alt="Signature" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                    return `<img src="${val}" alt="Signature" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain;" />`;
                 } else if (entry.editable && !isSigned) {
                     return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user [${placeholderIndex}]}}]</span>`;
                 } else {
@@ -568,7 +587,7 @@ const PublicContractSigning = () => {
                 const val = entry.inputValue || entry.value;
                 
                 if (val && val !== "--" && val.length > 0 && val.startsWith("data:image")) {
-                    return `<img src="${val}" alt="Signature" data-signature-key="signature.user" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                    return `<img src="${val}" alt="Signature" data-signature="true" data-signature-key="signature.user" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain; margin-top: 20px; margin-bottom: 20px; margin-left: 25px;" />`;
                 } else if (entry.editable && !isSigned) {
                     return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.user" style="cursor: pointer; transition: all 0.2s;">var[{{signature.user [${occurrenceIndex}]}}]</span>`;
                 } else {
@@ -601,7 +620,7 @@ const PublicContractSigning = () => {
             });
 
         if (signatureInfluencerEntries.length > 0) {
-            // Handle indexed format: var[{{signature.influencer [1]}}], var[{{signature.influencer [2]}}], etc.
+            // First, handle indexed format: var[{{signature.influencer [1]}}], var[{{signature.influencer [2]}}], etc.
             const indexedRegex = /var\[\s*\{\{\s*signature\.influencer\s*\[\s*(\d+)\s*\]\s*\}\}\s*\]/gi;
             html = html.replace(indexedRegex, (match, capturedIndex) => {
                 const placeholderIndex = parseInt(capturedIndex, 10); // 1-indexed
@@ -612,7 +631,7 @@ const PublicContractSigning = () => {
                 const indexedKey = `signature.influencer_${entryIndex}`;
                 
                 if (val && val !== "--" && val.length > 0 && val.startsWith("data:image")) {
-                    return `<img src="${val}" alt="Signature" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                    return `<img src="${val}" alt="Signature" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain; margin-top: 20px; margin-bottom: 20px; margin-left: 25px;" />`;
                 } else if (entry.editable && !isSigned) {
                     return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer [${placeholderIndex}]}}]</span>`;
                 } else {
@@ -630,7 +649,7 @@ const PublicContractSigning = () => {
                 const val = entry.inputValue || entry.value;
                 
                 if (val && val !== "--" && val.length > 0 && val.startsWith("data:image")) {
-                    return `<img src="${val}" alt="Signature" data-signature-key="signature.influencer" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                    return `<img src="${val}" alt="Signature" data-signature="true" data-signature-key="signature.influencer" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain; margin-top: 20px; margin-bottom: 20px; margin-left: 25px;" />`;
                 } else if (entry.editable && !isSigned) {
                     return `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="signature.influencer" style="cursor: pointer; transition: all 0.2s;">var[{{signature.influencer [${occurrenceIndex}]}}]</span>`;
                 } else {
@@ -650,7 +669,7 @@ const PublicContractSigning = () => {
 
                 const val = entry.inputValue || entry.value;
                     if (val && val.startsWith("data:image")) {
-                        const replacement = `<img src="${val}" alt="Signature" data-signature-key="${entry.key}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                        const replacement = `<img src="${val}" alt="Signature" data-signature="true" data-signature-key="${entry.key}" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain; margin-top: 20px; margin-bottom: 20px; margin-left: 25px;" />`;
                         html = html.replace(regex, replacement);
                 } else if (entry.editable && !isSigned) {
                     const replacement = `<span class="signature-box signature-box-clickable" data-signature="true" data-signature-key="${entry.key}" style="cursor: pointer; transition: all 0.2s;">var[{{${entry.key}}}]</span>`;
@@ -939,14 +958,14 @@ const PublicContractSigning = () => {
                 // First, fetch existing magic_link to preserve it
                 let existingMagicLink: string | null = null;
                 try {
-                    const { data: existingData } = await (supabase as any)
+                    const { data: existingData } = await supabase
                         .from("collaboration_variable_overrides")
                         .select("magic_link")
                         .eq("collaboration_id", collaborationId)
                         .eq("variable_key", "all_variables")
-                        .maybeSingle();
+                        .maybeSingle() as { data: CollaborationOverride | null, error: any };
                     
-                    if (existingData?.magic_link) {
+                    if (existingData && existingData.magic_link) {
                         existingMagicLink = existingData.magic_link;
                     }
                 } catch (fetchErr) {
@@ -964,7 +983,7 @@ const PublicContractSigning = () => {
                     }
                     
                     // For signature images (data:image), don't trim as it might break the data URL
-                    let val = entry.inputValue || entry.value;
+                    const val = entry.inputValue || entry.value;
                     
                     // For data URLs, use as-is without trimming
                     if (val && typeof val === 'string' && val.startsWith('data:image')) {
@@ -991,14 +1010,14 @@ const PublicContractSigning = () => {
                 
                 try {
                     // Fetch the current contract_html from database to get the full contract
-                    const { data: currentContractData, error: fetchError } = await (supabase as any)
+                    const { data: currentContractData, error: fetchError } = await supabase
                         .from("collaboration_variable_overrides")
                         .select("contract_html")
                         .eq("collaboration_id", collaborationId)
                         .eq("variable_key", "all_variables")
-                        .maybeSingle();
+                        .maybeSingle() as { data: CollaborationOverride | null, error: any };
                     
-                    if (!fetchError && currentContractData?.contract_html) {
+                    if (!fetchError && currentContractData && currentContractData.contract_html) {
                         // Extract clean content from the full HTML document
                         let fullHtml = currentContractData.contract_html;
                         
@@ -1008,7 +1027,7 @@ const PublicContractSigning = () => {
                             extractionDepth++;
                             const bodyMatch = fullHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
                             if (bodyMatch && bodyMatch[1]) {
-                                let bodyContent = bodyMatch[1];
+                                const bodyContent = bodyMatch[1];
                                 const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
                                 if (tiptapMatch && tiptapMatch[1]) {
                                     fullHtml = tiptapMatch[1];
@@ -1035,7 +1054,7 @@ const PublicContractSigning = () => {
                         if (completeHtml.includes('<!DOCTYPE html>') || (completeHtml.includes('<html') && completeHtml.includes('</html>'))) {
                             const bodyMatch = completeHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
                             if (bodyMatch && bodyMatch[1]) {
-                                let bodyContent = bodyMatch[1];
+                                const bodyContent = bodyMatch[1];
                                 const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
                                 if (tiptapMatch && tiptapMatch[1]) {
                                     completeHtml = tiptapMatch[1];
@@ -1159,7 +1178,7 @@ const PublicContractSigning = () => {
 
                         if (signatureValue && signatureValue !== "--") {
                             if (signatureValue.startsWith("data:image")) {
-                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain; margin-top: 20px; margin-bottom: 20px; margin-left: 25px;" />`;
                             } else {
                                 const sanitizedText = escapeHtml(signatureValue);
                                 displayHtml = `<span data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
@@ -1216,7 +1235,7 @@ const PublicContractSigning = () => {
 
                         if (signatureValue && signatureValue !== "--") {
                             if (signatureValue.startsWith("data:image")) {
-                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="signature.user" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature="true" data-signature-key="signature.user" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain; margin-top: 20px; margin-bottom: 20px; margin-left: 25px;" />`;
                             } else {
                                 const sanitizedText = escapeHtml(signatureValue);
                                 displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
@@ -1313,7 +1332,7 @@ const PublicContractSigning = () => {
                         
                         if (signatureValue && signatureValue !== "--") {
                             if (signatureValue.startsWith("data:image")) {
-                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature="true" data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain; margin-top: 20px; margin-bottom: 20px; margin-left: 25px;" />`;
                             } else {
                                 const sanitizedText = escapeHtml(signatureValue);
                                 displayHtml = `<span data-signature-key="${indexedKey}" data-placeholder-index="${placeholderIndex}" style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
@@ -1373,7 +1392,7 @@ const PublicContractSigning = () => {
 
                         if (signatureValue && signatureValue !== "--") {
                             if (signatureValue.startsWith("data:image")) {
-                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature-key="signature.influencer" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature="true" data-signature-key="signature.influencer" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain; margin-top: 20px; margin-bottom: 20px; margin-left: 25px;" />`;
                             } else {
                                 const sanitizedText = escapeHtml(signatureValue);
                                 displayHtml = `<span style="display: inline-block; font-family: 'Dancing Script', 'Great Vibes', 'Allura', 'Brush Script MT', 'Lucida Handwriting', 'Pacifico', 'Satisfy', 'Kalam', 'Caveat', 'Permanent Marker', cursive; font-size: 24px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;">${sanitizedText}</span>`;
@@ -1456,7 +1475,7 @@ const PublicContractSigning = () => {
                             // Check if it's an image data URL (drawn signature)
                             if (signatureValue.startsWith("data:image")) {
                                 // Display as image
-                                displayHtml = `<img src="${signatureValue}" alt="Signature" style="display: inline-block; max-width: 200px; max-height: 80px; margin-top: 20px; margin-bottom: 20px; vertical-align: middle;" />`;
+                                displayHtml = `<img src="${signatureValue}" alt="Signature" data-signature="true" style="display: inline-block; vertical-align: middle; width: 200px; height: 140px; object-fit: contain; margin-top: 20px; margin-bottom: 20px; margin-left: 25px;" />`;
                             } else {
                                 // Display as text with signature font styling
                                 const sanitizedText = escapeHtml(signatureValue);
@@ -1663,6 +1682,43 @@ const PublicContractSigning = () => {
       flex-shrink: 0 !important;
     }
     
+    .contract-preview-container .tiptap-rendered img.signature-box,
+    .contract-preview-container .tiptap-rendered img[data-signature="true"] {
+      display: inline-block !important;
+      vertical-align: middle !important;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 200px !important;
+      max-height: 140px !important;
+      border: none !important;
+      background: transparent !important;
+      padding: 0 !important;
+      line-height: normal !important;
+      margin: 0 !important;
+      object-fit: contain !important;
+    }
+    
+    /* Tiptap regular image alignment */
+    .contract-preview-container .tiptap-rendered .tiptap-image-wrapper {
+      display: block;
+      margin: 1rem 0;
+      width: 100%;
+    }
+    .contract-preview-container .tiptap-rendered .tiptap-image-wrapper[data-alignment="center"] {
+      text-align: center;
+    }
+    .contract-preview-container .tiptap-rendered .tiptap-image-wrapper[data-alignment="right"] {
+      text-align: right;
+    }
+    .contract-preview-container .tiptap-rendered .tiptap-image-wrapper[data-alignment="left"] {
+      text-align: left;
+    }
+    .contract-preview-container .tiptap-rendered img:not(.signature-box):not([data-signature="true"]) {
+      max-width: 100%;
+      height: auto;
+      display: inline-block;
+    }
+    
     /* Ensure spacing between adjacent signature boxes */
     .contract-preview-container .tiptap-rendered .signature-box + .signature-box,
     .contract-preview-container .tiptap-rendered [data-signature="true"] + [data-signature="true"] {
@@ -1739,7 +1795,7 @@ const PublicContractSigning = () => {
 
                 // First, delete any existing rows for this collaboration_id to avoid duplicates
                 try {
-                    await (supabase as any)
+                    await supabase
                         .from(VARIABLE_OVERRIDE_TABLE)
                         .delete()
                         .eq("collaboration_id", collaborationId);
@@ -1748,7 +1804,7 @@ const PublicContractSigning = () => {
                 }
 
                 // Prepare the update object, preserving magic_link if it exists
-                const updateData: any = {
+                const updateData: Record<string, string | null> = {
                     collaboration_id: collaborationId,
                     variable_key: "all_variables",
                     contract_html: completeHtmlDocument,
@@ -1811,7 +1867,7 @@ const PublicContractSigning = () => {
                         description: "Signature saved and contract updated!",
                     });
                 }
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Error saving signature:", err);
                 toast({
                     title: "Error",
@@ -1833,7 +1889,7 @@ const PublicContractSigning = () => {
             });
 
             // Upsert contract
-            const { error } = await supabase
+            const { error } = await (supabase as any)
                 .from("campaign_contracts")
                 .upsert({
                     campaign_id: campaign?.id,
@@ -1842,14 +1898,14 @@ const PublicContractSigning = () => {
                     contract_variables: variables,
                     status: "signed", // Or partially_signed
                     version: 1 // simplified
-                } as any, { onConflict: 'campaign_id, influencer_id' }); // Assuming constraint
+                } as Record<string, unknown>, { onConflict: 'campaign_id, influencer_id' }); // Assuming constraint
 
             if (error) throw error;
 
             toast({ title: "Success", description: "Contract signed and updated!" });
 
-        } catch (err: any) {
-            toast({ variant: "destructive", title: "Error", description: err.message });
+        } catch (err: unknown) {
+            toast({ variant: "destructive", title: "Error", description: (err as Error).message });
         }
     };
 
@@ -1878,7 +1934,7 @@ const PublicContractSigning = () => {
     // Show email verification form if not verified
     if (!isEmailVerified && influencer?.email) {
         return (
-            <div className="min-h-screen bg-slate-50 w-full flex items-center justify-center p-4" style={{ width: '100vw', margin: 0 }}>
+            <div className="min-h-screen bg-slate-50 w-full flex items-center justify-center p-4">
                 <Card className="w-full max-w-md p-4 sm:p-6 md:p-8 shadow-lg">
                     <div className="space-y-4">
                         <div>
@@ -1924,8 +1980,8 @@ const PublicContractSigning = () => {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 w-full px-2 sm:px-4 py-2 sm:py-4" style={{ width: '100vw', margin: 0 }}>
-            <Card className="w-full bg-white p-3 sm:p-4 md:p-8 shadow-lg mx-auto" style={{ width: '100%', maxWidth: '100%', margin: '0 auto' }}>
+        <div className="min-h-screen bg-slate-50 w-full flex justify-center px-2 sm:px-4 py-4 sm:py-6 md:py-8">
+            <Card className="w-full max-w-5xl bg-white p-4 sm:p-6 md:p-8 shadow-lg">
                 <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div className="flex-1">
                         <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Contract Agreement</h1>
@@ -2120,9 +2176,43 @@ const PublicContractSigning = () => {
                       margin-right: 5px !important;
                       min-width: 140px !important;
                       white-space: nowrap !important;
-                      flex-shrink: 0 !important;
-                      touch-action: manipulation !important;
-                    }
+                       flex-shrink: 0 !important;
+                       touch-action: manipulation !important;
+                     }
+                     .contract-preview-container .tiptap-rendered img.signature-box,
+                     .contract-preview-container .tiptap-rendered img[data-signature="true"] {
+                       display: inline-block !important;
+                       vertical-align: middle !important;
+                       width: 100% !important;
+                       height: 100% !important;
+                       max-width: 200px !important;
+                       max-height: 140px !important;
+                       border: none !important;
+                       background: transparent !important;
+                       padding: 0 !important;
+                       line-height: normal !important;
+                       margin: 0 !important;
+                       object-fit: contain !important;
+                     }
+                     .contract-preview-container .tiptap-rendered .tiptap-image-wrapper {
+                       display: block !important;
+                       margin: 1rem 0 !important;
+                       width: 100% !important;
+                     }
+                     .contract-preview-container .tiptap-rendered .tiptap-image-wrapper[data-alignment="center"] {
+                       text-align: center !important;
+                     }
+                     .contract-preview-container .tiptap-rendered .tiptap-image-wrapper[data-alignment="right"] {
+                       text-align: right !important;
+                     }
+                     .contract-preview-container .tiptap-rendered .tiptap-image-wrapper[data-alignment="left"] {
+                       text-align: left !important;
+                     }
+                     .contract-preview-container .tiptap-rendered img:not(.signature-box):not([data-signature="true"]) {
+                       max-width: 100% !important;
+                       height: auto !important;
+                       display: inline-block !important;
+                     }
                     @media (min-width: 640px) {
                       .contract-preview-container .tiptap-rendered .signature-box,
                       .contract-preview-container .tiptap-rendered [data-signature="true"] {
@@ -2195,6 +2285,8 @@ const PublicContractSigning = () => {
                       color: #111827;
                       word-break: break-word;
                       white-space: pre-wrap !important; /* Preserve whitespace and line breaks */
+                      max-width: 100%;
+                      margin: 0 auto;
                     }
                     @media (min-width: 640px) {
                       .contract-preview-container .tiptap-rendered {
@@ -2228,8 +2320,7 @@ const PublicContractSigning = () => {
                     }
                 `}</style>
                 <div 
-                    className="contract-preview-container rounded-2xl sm:rounded-3xl border border-slate-200 bg-white/95 p-2 sm:p-4 md:p-6 shadow-inner min-h-[50vh] sm:min-h-[60vh] w-full relative overflow-x-auto overflow-y-auto max-h-[70vh] sm:max-h-none" 
-                    style={{ width: '100%', maxWidth: '100%', position: 'relative' }}
+                    className="contract-preview-container rounded-2xl sm:rounded-3xl border border-slate-200 bg-white/95 p-3 sm:p-5 md:p-6 shadow-inner min-h-[50vh] sm:min-h-[60vh] w-full relative overflow-x-auto overflow-y-auto max-h-[70vh] sm:max-h-none"
                 >
                     {isSigned && showSignedOverlay && (
                         <div 
@@ -2265,10 +2356,8 @@ const PublicContractSigning = () => {
                     )}
                     <div
                         ref={previewRef}
-                        className="tiptap-rendered w-full"
+                        className="tiptap-rendered w-full max-w-full"
                         style={{ 
-                            maxWidth: '100%', 
-                            width: '100%',
                             pointerEvents: isSigned ? 'none' : 'auto',
                             userSelect: isSigned ? 'none' : 'auto',
                             opacity: isSigned ? 0.6 : 1
@@ -2283,7 +2372,7 @@ const PublicContractSigning = () => {
                                     // Extract from body tag
                                     const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
                                     if (bodyMatch && bodyMatch[1]) {
-                                        let bodyContent = bodyMatch[1];
+                                        const bodyContent = bodyMatch[1];
                                         // Extract from tiptap-rendered div if present
                                         const tiptapMatch = bodyContent.match(/<div[^>]*class=["'][^"']*tiptap-rendered[^"']*["'][^>]*>([\s\S]*)<\/div>/i);
                                         if (tiptapMatch && tiptapMatch[1]) {

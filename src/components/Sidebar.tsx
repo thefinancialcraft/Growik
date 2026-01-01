@@ -26,9 +26,11 @@ const Sidebar = () => {
   const { toast } = useToast();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [totalPendingCount, setTotalPendingCount] = useState<number>(0);
-  const [widgetActiveUserId, setWidgetActiveUserId] = useState<string | null>(null);
+  const [widgetActiveUserId, setWidgetActiveUserId] = useState<string | null>(
+    null
+  );
   const userEmail = localStorage.getItem("userEmail") || "";
-  
+
   // Get initials from name (first letter) or email (first 2 letters) as fallback
   // This will recalculate when profile changes
   const getInitials = (profileData: UserProfile | null) => {
@@ -40,7 +42,7 @@ const Sidebar = () => {
     if (emailSource) return emailSource.slice(0, 2).toUpperCase();
     return "U";
   };
-  
+
   const initials = getInitials(profile);
 
   const signOutRef = useRef(signOut);
@@ -53,7 +55,6 @@ const Sidebar = () => {
     navigateRef.current = navigate;
   }, [navigate]);
 
-
   useEffect(() => {
     // Update last_seen timestamp for current user (only when tab is visible and user is active)
     let activityTimeout: NodeJS.Timeout | null = null;
@@ -61,32 +62,36 @@ const Sidebar = () => {
 
     const updateLastSeen = async () => {
       // Only update if tab is visible AND user is active
-      if (document.visibilityState === 'hidden' || !isActive) {
+      if (document.visibilityState === "hidden" || !isActive) {
         return;
       }
 
       if (!user?.id) return;
       // Use centralized utility function
-      const { updateLastSeen: updateLastSeenUtil } = await import('@/lib/userProfile');
+      const { updateLastSeen: updateLastSeenUtil } = await import(
+        "@/lib/userProfile"
+      );
       await updateLastSeenUtil(user.id);
     };
 
     // Reset activity flag and update timestamp (only on click)
     const resetActivity = () => {
       isActive = true;
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
         updateLastSeen();
       }
-      
+
       // Clear existing timeout
       if (activityTimeout) {
         clearTimeout(activityTimeout);
       }
-      
+
       // Set new timeout - mark as inactive after 1 minute
       activityTimeout = setTimeout(() => {
         isActive = false;
-        console.log('Sidebar: User inactive for 1 minute, stopping last_seen updates');
+        console.log(
+          "Sidebar: User inactive for 1 minute, stopping last_seen updates"
+        );
       }, 1 * 60 * 1000); // 1 minute
     };
 
@@ -101,30 +106,33 @@ const Sidebar = () => {
 
       // Update every 30 seconds (only when tab is visible and user is active)
       const interval = setInterval(() => {
-        if (document.visibilityState === 'visible' && isActive) {
+        if (document.visibilityState === "visible" && isActive) {
           updateLastSeen();
         }
       }, 30000);
 
       // Listen for visibility changes
       const handleVisibilityChange = () => {
-        if (document.visibilityState === 'visible') {
+        if (document.visibilityState === "visible") {
           // Reset activity when tab becomes visible
           resetActivity();
         }
       };
 
       // Add event listeners (only click, no hover/mousemove)
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      document.addEventListener('click', handleClick);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      document.addEventListener("click", handleClick);
 
       return () => {
         clearInterval(interval);
         if (activityTimeout) {
           clearTimeout(activityTimeout);
         }
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        document.removeEventListener('click', handleClick);
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange
+        );
+        document.removeEventListener("click", handleClick);
       };
     }
   }, [user?.id]);
@@ -139,7 +147,7 @@ const Sidebar = () => {
         const cacheKey = `profile_sidebar_${user.id}`;
         const cached = localStorage.getItem(cacheKey);
         let shouldFetch = true;
-        
+
         if (cached) {
           try {
             const cachedData = JSON.parse(cached);
@@ -163,136 +171,182 @@ const Sidebar = () => {
         if (shouldFetch) {
           try {
             // Use centralized utility function
-            const { getUserProfile, updateUserProfile } = await import('@/lib/userProfile');
+            const { getUserProfile, updateUserProfile } = await import(
+              "@/lib/userProfile"
+            );
             let profileRow = await getUserProfile(user.id);
-            
+
             // Fallback by email if user_id lookup returns null
             if (!profileRow && user.email) {
-              console.log('Sidebar: Trying fallback by email:', user.email);
+              console.log("Sidebar: Trying fallback by email:", user.email);
               const { data: byEmail, error: byEmailErr } = await supabase
-                .from('user_profiles')
-                .select('employee_id, updated_at, user_name, email, role, super_admin, approval_status, status, hold_end_time')
-                .eq('email', user.email)
+                .from("user_profiles")
+                .select(
+                  "employee_id, updated_at, user_name, email, role, super_admin, approval_status, status, hold_end_time"
+                )
+                .eq("email", user.email)
                 .maybeSingle();
-              console.log('Sidebar: Fallback by email result:', byEmail, byEmailErr);
+              console.log(
+                "Sidebar: Fallback by email result:",
+                byEmail,
+                byEmailErr
+              );
               if (!byEmailErr && byEmail) {
                 profileRow = byEmail as any;
               }
             }
 
             if (profileRow) {
-              console.log('Sidebar: Profile data received:', profileRow);
-              console.log('Sidebar: Employee ID:', profileRow.employee_id);
-              console.log('Sidebar: Approval Status:', profileRow.approval_status);
-              console.log('Sidebar: Status:', profileRow.status);
-              console.log('Sidebar: Role:', profileRow.role);
-              
+              console.log("Sidebar: Profile data received:", profileRow);
+              console.log("Sidebar: Employee ID:", profileRow.employee_id);
+              console.log(
+                "Sidebar: Approval Status:",
+                profileRow.approval_status
+              );
+              console.log("Sidebar: Status:", profileRow.status);
+              console.log("Sidebar: Role:", profileRow.role);
+              console.log("Sidebar: Super Admin Flag:", profileRow.super_admin);
+
               // Check if hold period expired and auto-update status (only for role='user')
-              if (profileRow.status === 'hold' && profileRow.role === 'user' && profileRow.hold_end_time) {
+              if (
+                profileRow.status === "hold" &&
+                profileRow.role === "user" &&
+                profileRow.hold_end_time
+              ) {
                 const now = new Date().getTime();
                 const endTime = new Date(profileRow.hold_end_time).getTime();
                 if (endTime <= now) {
-                  console.log('Sidebar: Hold period expired, auto-updating status to active');
+                  console.log(
+                    "Sidebar: Hold period expired, auto-updating status to active"
+                  );
                   const updated = await updateUserProfile(user.id, {
-                    status: 'active',
-                    status_reason: 'hold expired account active by system',
+                    status: "active",
+                    status_reason: "hold expired account active by system",
                     hold_end_time: null,
-                    hold_duration_days: null
+                    hold_duration_days: null,
                   } as any);
-                  
+
                   if (updated) {
                     profileRow = updated;
                   }
                 }
               }
-              
+
               setProfile(profileRow);
               // Cache the data
               localStorage.setItem(cacheKey, JSON.stringify(profileRow));
-              
+
               // Check approval_status and redirect if needed (only for regular users)
               const currentPath = location.pathname;
-              const isAdminOrSuperAdmin = profileRow.role === 'admin' || profileRow.role === 'super_admin' || profileRow.super_admin === true;
-              
+              const isAdminOrSuperAdmin =
+                profileRow.role === "admin" ||
+                profileRow.role === "super_admin" ||
+                profileRow.super_admin === true;
+
               // Only redirect regular users based on approval_status
               if (!isAdminOrSuperAdmin) {
                 // If rejected, redirect to rejected page
-                if (profileRow.approval_status === 'rejected' && currentPath !== '/rejected') {
-                  console.log('Sidebar: User rejected, redirecting to rejected page');
-                  navigateFn('/rejected');
+                if (
+                  profileRow.approval_status === "rejected" &&
+                  currentPath !== "/rejected"
+                ) {
+                  console.log(
+                    "Sidebar: User rejected, redirecting to rejected page"
+                  );
+                  navigateFn("/rejected");
                   return;
                 }
-                
+
                 // If suspended, redirect to suspended page
-                if (profileRow.status === 'suspend' && currentPath !== '/suspended') {
-                  console.log('Sidebar: User suspended, redirecting to suspended page');
-                  navigateFn('/suspended');
+                if (
+                  profileRow.status === "suspend" &&
+                  currentPath !== "/suspended"
+                ) {
+                  console.log(
+                    "Sidebar: User suspended, redirecting to suspended page"
+                  );
+                  navigateFn("/suspended");
                   return;
                 }
-                
+
                 // If on hold, redirect to hold page
-                if (profileRow.status === 'hold' && currentPath !== '/hold') {
-                  console.log('Sidebar: User on hold, redirecting to hold page');
-                  navigateFn('/hold');
+                if (profileRow.status === "hold" && currentPath !== "/hold") {
+                  console.log(
+                    "Sidebar: User on hold, redirecting to hold page"
+                  );
+                  navigateFn("/hold");
                   return;
                 }
-                
+
                 // If not approved, redirect to approval pending page
-                if (profileRow.approval_status !== 'approved' && currentPath !== '/approval-pending') {
-                  console.log('Sidebar: User not approved, redirecting to approval pending page');
-                  navigateFn('/approval-pending');
+                if (
+                  profileRow.approval_status !== "approved" &&
+                  currentPath !== "/approval-pending"
+                ) {
+                  console.log(
+                    "Sidebar: User not approved, redirecting to approval pending page"
+                  );
+                  navigateFn("/approval-pending");
                   return;
                 }
               }
             } else {
-              console.warn('Sidebar: No profile data found for user:', user.id);
+              console.warn("Sidebar: No profile data found for user:", user.id);
               // Profile not found - user may have been deleted
-              console.log('Sidebar: User profile not found (data is null), redirecting to login');
+              console.log(
+                "Sidebar: User profile not found (data is null), redirecting to login"
+              );
               // Sign out the user
-            try {
-              await signOutFn();
+              try {
+                await signOutFn();
               } catch (signOutError) {
-                console.error('Sidebar: Error signing out:', signOutError);
+                console.error("Sidebar: Error signing out:", signOutError);
               }
               // Clear all caches
               try {
                 localStorage.removeItem(`profile_${user.id}`);
                 localStorage.removeItem(`profile_sidebar_${user.id}`);
                 localStorage.removeItem(`profile_mobile_${user.id}`);
-                localStorage.removeItem('currentUserRole');
-                localStorage.removeItem('isSuperAdmin');
-                localStorage.removeItem('isAuthenticated');
+                localStorage.removeItem("currentUserRole");
+                localStorage.removeItem("isSuperAdmin");
+                localStorage.removeItem("isAuthenticated");
               } catch (e) {
-                console.error('Error clearing cache:', e);
+                console.error("Error clearing cache:", e);
               }
               // Redirect to login with error message
-              window.location.href = '/login?error=account_deleted';
+              window.location.href = "/login?error=account_deleted";
               return;
             }
           } catch (error: any) {
-            console.error('Sidebar: Exception fetching profile:', error);
+            console.error("Sidebar: Exception fetching profile:", error);
             // If exception indicates user not found or account deleted, redirect to login
-            if (error?.code === 'PGRST116' || error?.message?.toLowerCase().includes('not found') || error?.message?.toLowerCase().includes('does not exist')) {
-              console.log('Sidebar: User profile not found (exception), redirecting to login');
+            if (
+              error?.code === "PGRST116" ||
+              error?.message?.toLowerCase().includes("not found") ||
+              error?.message?.toLowerCase().includes("does not exist")
+            ) {
+              console.log(
+                "Sidebar: User profile not found (exception), redirecting to login"
+              );
               // Sign out the user
-            try {
-              await signOutFn();
+              try {
+                await signOutFn();
               } catch (signOutError) {
-                console.error('Sidebar: Error signing out:', signOutError);
+                console.error("Sidebar: Error signing out:", signOutError);
               }
               // Clear all caches
               try {
                 localStorage.removeItem(`profile_${user.id}`);
                 localStorage.removeItem(`profile_sidebar_${user.id}`);
                 localStorage.removeItem(`profile_mobile_${user.id}`);
-                localStorage.removeItem('currentUserRole');
-                localStorage.removeItem('isSuperAdmin');
-                localStorage.removeItem('isAuthenticated');
+                localStorage.removeItem("currentUserRole");
+                localStorage.removeItem("isSuperAdmin");
+                localStorage.removeItem("isAuthenticated");
               } catch (e) {
-                console.error('Error clearing cache:', e);
+                console.error("Error clearing cache:", e);
               }
               // Redirect to login with error message
-              window.location.href = '/login?error=account_deleted';
+              window.location.href = "/login?error=account_deleted";
               return;
             }
           }
@@ -301,7 +355,6 @@ const Sidebar = () => {
     };
 
     fetchProfile();
-
   }, [user?.id, location.pathname]);
 
   // Fetch pending message counts
@@ -323,8 +376,11 @@ const Sidebar = () => {
         (data as any[])?.forEach((msg: any) => {
           counts[msg.sender_id] = (counts[msg.sender_id] || 0) + 1;
         });
-        
-        const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+
+        const total = Object.values(counts).reduce(
+          (sum, count) => sum + count,
+          0
+        );
         setTotalPendingCount(total);
       } catch (error) {
         console.error("Error fetching pending counts:", error);
@@ -344,7 +400,7 @@ const Sidebar = () => {
             return;
           }
         } catch (err) {
-          console.error('Error reading widget state:', err);
+          console.error("Error reading widget state:", err);
         }
       }
       setWidgetActiveUserId(null);
@@ -356,10 +412,10 @@ const Sidebar = () => {
         updateWidgetState();
       }
     };
-    window.addEventListener('storage', storageHandler);
+    window.addEventListener("storage", storageHandler);
 
     return () => {
-      window.removeEventListener('storage', storageHandler);
+      window.removeEventListener("storage", storageHandler);
     };
   }, [user?.id, location.pathname]);
 
@@ -407,7 +463,12 @@ const Sidebar = () => {
       name: "Dashboard",
       path: "/dashboard",
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+        />
       ),
       adminOnly: false,
     },
@@ -415,7 +476,12 @@ const Sidebar = () => {
       name: "Users",
       path: "/users",
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+        />
       ),
       adminOnly: true,
     },
@@ -423,7 +489,12 @@ const Sidebar = () => {
       name: "Contract",
       path: "/contract",
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+        />
       ),
       adminOnly: false,
     },
@@ -431,7 +502,12 @@ const Sidebar = () => {
       name: "Messaging",
       path: "/messaging",
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+        />
       ),
       adminOnly: false,
     },
@@ -439,7 +515,12 @@ const Sidebar = () => {
       name: "Influencer",
       path: "/influencer",
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+        />
       ),
       adminOnly: false,
     },
@@ -447,7 +528,12 @@ const Sidebar = () => {
       name: "Product",
       path: "/product",
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+        />
       ),
       adminOnly: false,
     },
@@ -455,7 +541,12 @@ const Sidebar = () => {
       name: "Companies",
       path: "/companies",
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+        />
       ),
       adminOnly: false,
     },
@@ -463,7 +554,12 @@ const Sidebar = () => {
       name: "Campaign",
       path: "/campaign",
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m4 6.341l1.553 1.552a1.414 1.414 0 002 0L21 9l-3.447-3.894a1.414 1.414 0 00-2 0L14 6.659m-1 2.682L3 18" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M3 5h12M9 3v2m4 6.341l1.553 1.552a1.414 1.414 0 002 0L21 9l-3.447-3.894a1.414 1.414 0 00-2 0L14 6.659m-1 2.682L3 18"
+        />
       ),
       adminOnly: false,
     },
@@ -471,17 +567,40 @@ const Sidebar = () => {
       name: "Collaboration",
       path: "/collaboration",
       icon: (
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4a8 8 0 00-8 8 8 8 0 0014.32 4.906l2.36.864-1.012-2.764A8 8 0 0012 4zm0 4a4 4 0 11-2.828 6.828l-1.414 1.414A6 6 0 1012 6zm0 2a2 2 0 100 4 2 2 0 000-4z" />
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M12 4a8 8 0 00-8 8 8 8 0 0014.32 4.906l2.36.864-1.012-2.764A8 8 0 0012 4zm0 4a4 4 0 11-2.828 6.828l-1.414 1.414A6 6 0 1012 6zm0 2a2 2 0 100 4 2 2 0 000-4z"
+        />
       ),
       adminOnly: false,
     },
   ];
 
   // Filter nav items based on user role
-  const filteredNavItems = navItems.filter(item => {
+  const filteredNavItems = navItems.filter((item) => {
     if (!item.adminOnly) return true;
+    
+    // Debug logging for admin check
+    const isAdmin = profile?.role === 'admin';
+    const isSuperAdminRole = profile?.role === 'super_admin';
+    const isSuperAdminFlag = profile?.super_admin === true;
+    const hasAccess = Boolean(profile && (isAdmin || isSuperAdminRole || isSuperAdminFlag));
+    
+    console.log(`[Sidebar] Checking access for "${item.name}":`, {
+      profileExists: !!profile,
+      role: profile?.role,
+      super_admin: profile?.super_admin,
+      isAdmin,
+      isSuperAdminRole,
+      isSuperAdminFlag,
+      hasAccess,
+      adminOnly: item.adminOnly
+    });
+    
     // Admin-only items are visible only when profile explicitly indicates admin or super_admin
-    return Boolean(profile && (profile.role === 'admin' || profile.super_admin));
+    return hasAccess;
   });
 
   return (
@@ -503,8 +622,11 @@ const Sidebar = () => {
       <nav className="flex-1 p-3 space-y-1.5">
         {filteredNavItems.map((item) => {
           const isActive = location.pathname === item.path;
-          const showBadge = item.path === "/messaging" && totalPendingCount > 0 && !widgetActiveUserId;
-          
+          const showBadge =
+            item.path === "/messaging" &&
+            totalPendingCount > 0 &&
+            !widgetActiveUserId;
+
           return (
             <Link
               key={item.path}
@@ -516,16 +638,21 @@ const Sidebar = () => {
                   : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               )}
             >
-              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-4 h-4 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 {item.icon}
               </svg>
               <span className="font-medium text-sm">{item.name}</span>
               {showBadge && (
-                <Badge 
-                  variant="destructive" 
+                <Badge
+                  variant="destructive"
                   className="ml-auto h-5 min-w-5 px-1.5 text-xs flex items-center justify-center"
                 >
-                  {totalPendingCount > 99 ? '99+' : totalPendingCount}
+                  {totalPendingCount > 99 ? "99+" : totalPendingCount}
                 </Badge>
               )}
             </Link>
@@ -541,25 +668,38 @@ const Sidebar = () => {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate mb-0.5">
-                {profile?.user_name || (user as any)?.user_metadata?.full_name || user?.email?.split("@")[0] || userEmail.split("@")[0] || "User"}
+                {profile?.user_name ||
+                  (user as any)?.user_metadata?.full_name ||
+                  user?.email?.split("@")[0] ||
+                  userEmail.split("@")[0] ||
+                  "User"}
               </p>
               <p className="text-xs text-muted-foreground truncate">
-                {profile?.email || user?.email || userEmail || "user@example.com"}
+                {profile?.email ||
+                  user?.email ||
+                  userEmail ||
+                  "user@example.com"}
               </p>
             </div>
           </div>
-          
+
           <div className="space-y-1.5 mb-3 pt-2 border-t border-border/50">
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Employee ID:</span>
-              <span className="font-medium text-foreground">{profile?.employee_id || "Not assigned"}</span>
+              <span className="font-medium text-foreground">
+                {profile?.employee_id || "Not assigned"}
+              </span>
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Last Login:</span>
-              <span className="font-medium text-foreground">{formatLastLogin((user as any)?.last_sign_in_at || profile?.updated_at)}</span>
+              <span className="font-medium text-foreground">
+                {formatLastLogin(
+                  (user as any)?.last_sign_in_at || profile?.updated_at
+                )}
+              </span>
             </div>
           </div>
-          
+
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -567,8 +707,18 @@ const Sidebar = () => {
               onClick={() => navigate("/settings")}
               className="w-8 h-8 p-0 text-xs hover:bg-primary/10 hover:text-primary hover:border-primary transition-all duration-300"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
               </svg>
             </Button>
             <Button
@@ -577,8 +727,18 @@ const Sidebar = () => {
               onClick={handleLogout}
               className="flex-1 h-8 text-xs hover:bg-destructive/10 hover:text-destructive hover:border-destructive transition-all duration-300"
             >
-              <svg className="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              <svg
+                className="w-3.5 h-3.5 mr-1.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                />
               </svg>
               Logout
             </Button>
