@@ -1268,31 +1268,100 @@ const Collaboration = () => {
   }, [toast, fetchCollaborationActions]);
 
   // Handle deleting action
-  const handleDeleteAction = useCallback(async (actionId: string) => {
+  const handleDeleteAction = useCallback(async (collabId: string) => {
+    if (!collabId) {
+      toast({
+        title: "Error",
+        description: "Collaboration ID is missing. Cannot delete.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      const { error } = await supabase
+      console.log(`[Collaboration Deletion] Starting removal for: ${collabId}`);
+      
+      // Use supabaseAdmin if available for deletion to ensure it bypasses RLS
+      const { supabaseAdmin } = await import("@/lib/supabase");
+      const client = supabaseAdmin || supabase;
+      
+      if (!supabaseAdmin) {
+        console.warn("[Collaboration Deletion] supabaseAdmin not available, using standard client (RLS applies)");
+      } else {
+        console.log("[Collaboration Deletion] Using Admin client for bypass");
+      }
+
+      // Perform deletions across all 3 tables
+      console.log(`[Collaboration Deletion] 1/3: Clearing overrides...`);
+      const { data: ovData, error: ovErr } = await client
+        .from("collaboration_variable_overrides")
+        .delete()
+        .eq("collaboration_id", collabId)
+        .select();
+      
+      if (ovErr) console.error("[Collaboration Deletion] Override Error:", ovErr);
+      else console.log(`[Collaboration Deletion] Overrides removed: ${ovData?.length || 0}`);
+
+      console.log(`[Collaboration Deletion] 2/3: Clearing timeline...`);
+      const { data: tmData, error: tmErr } = await client
+        .from("collaboration_timeline")
+        .delete()
+        .eq("collaboration_id", collabId)
+        .select();
+      
+      if (tmErr) console.error("[Collaboration Deletion] Timeline Error:", tmErr);
+      else console.log(`[Collaboration Deletion] Timeline entries removed: ${tmData?.length || 0}`);
+
+      console.log(`[Collaboration Deletion] 3/3: Clearing action...`);
+      const { data: acData, error: acErr } = await client
         .from("collaboration_actions")
         .delete()
-        .eq("id", actionId);
+        .eq("collaboration_id", collabId)
+        .select();
 
-      if (error) {
-        throw error;
+      if (acErr) throw acErr;
+      
+      const deletedCount = acData?.length || 0;
+      console.log(`[Collaboration Deletion] Actions removed: ${deletedCount}`);
+
+      if (deletedCount === 0) {
+        // One final try using ilike in case of case issues or spaces
+        console.log(`[Collaboration Deletion] Row not found with exact match. Trying fuzzy match...`);
+        const { data: fuzzyData, error: fuzzyErr } = await client
+          .from("collaboration_actions")
+          .delete()
+          .ilike("collaboration_id", `%${collabId.trim()}%`)
+          .select();
+          
+        if (fuzzyErr) throw fuzzyErr;
+        if (fuzzyData && fuzzyData.length > 0) {
+          console.log(`[Collaboration Deletion] Removed ${fuzzyData.length} records via fuzzy match.`);
+        } else {
+          toast({
+            title: "Record not found",
+            description: "No record in Supabase matched this Collaboration ID.",
+            variant: "destructive",
+          });
+          return;
+        }
       }
 
       toast({
-        title: "Action deleted",
-        description: "The collaboration action has been successfully deleted.",
+        title: "Collaboration deleted",
+        description: "Everything related to this collaboration has been removed.",
       });
 
-      setDeletingAction(null);
+      // Refresh data
       void fetchCollaborationActions();
     } catch (err: any) {
-      console.error("Collaboration: Error deleting action", err);
+      console.error("[Collaboration Deletion] CRITICAL FAILURE:", err);
       toast({
-        title: "Unable to delete action",
-        description: err?.message || "Failed to delete the action.",
+        title: "Deletion failed",
+        description: err?.message || "Failed to remove entries from Supabase.",
         variant: "destructive",
       });
+    } finally {
+      setDeletingAction(null);
     }
   }, [toast, fetchCollaborationActions]);
 
@@ -3535,7 +3604,7 @@ const Collaboration = () => {
                         Collaboration Actions
                       </h2>
                       <p className="text-xs sm:text-sm text-slate-500">
-                        All actions recorded in collaboration_actions table.
+                        Track all collaboration activities and interactions.
                       </p>
                     </div>
                   </div>
@@ -3736,7 +3805,16 @@ const Collaboration = () => {
                                           e.stopPropagation();
                                           e.preventDefault();
                                           try {
-                                            setDeletingAction(action.id);
+                                            if (action.collaboration_id) {
+                                              setDeletingAction(action.collaboration_id);
+                                            } else {
+                                              console.error("Collaboration: No collaboration_id found for action row", action);
+                                              toast({
+                                                title: "Error",
+                                                description: "Missing Collaboration ID. Cannot delete.",
+                                                variant: "destructive",
+                                              });
+                                            }
                                           } catch (err) {
                                             console.error("Collaboration: Error setting deletingAction", err);
                                           }

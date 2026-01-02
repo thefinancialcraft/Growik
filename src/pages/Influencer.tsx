@@ -26,6 +26,8 @@ import { cn } from "@/lib/utils";
 import { Layers, Users, Activity, Filter, Plus, LayoutGrid, List, Loader2, Pencil, Trash2, Power, Upload, Download } from "lucide-react";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { getUserProfile } from "@/lib/userProfile";
+
 
 type SocialHandle = {
   platform: string;
@@ -253,21 +255,13 @@ const Influencer = () => {
       if (!user?.id) return;
 
       try {
-        const { data: profileData, error } = await supabase
-          .from('user_profiles')
-          .select('role, super_admin')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (error) {
-          console.error('Error fetching user profile:', error);
-          return;
-        }
+        const profileData = await getUserProfile(user.id);
 
         if (profileData) {
           setUserRole(profileData.role || null);
           setIsSuperAdmin(profileData.super_admin === true);
         }
+
       } catch (err) {
         console.error('Error fetching user profile:', err);
       }
@@ -351,7 +345,7 @@ const Influencer = () => {
       id: "categories",
       title: "Categories",
       value: categoryCount,
-      subtext: "Curated niches you can activate",
+      subtext: "Curated content categories and niches",
       trend: categoryCount > 0 ? `${categoryCount} active segments` : "No categories yet",
       icon: Layers,
       accent: "from-cyan-500/90 to-sky-500/60",
@@ -360,7 +354,7 @@ const Influencer = () => {
       id: "influencers",
       title: "Influencers",
       value: activeCount,
-      subtext: "Creators currently engaged",
+      subtext: "Active influencers and collaborators",
       trend: inactiveCount > 0 ? `${inactiveCount} inactive` : "All active",
       icon: Users,
       accent: "from-violet-500/90 to-fuchsia-500/60",
@@ -369,7 +363,7 @@ const Influencer = () => {
       id: "platform-status",
       title: "Platform Health",
       value: "Active",
-      subtext: "Campaign delivery & reporting",
+      subtext: "Platform performance and uptime",
       trend: "98% uptime",
       icon: Activity,
       accent: "from-emerald-500/90 to-lime-500/60",
@@ -558,9 +552,9 @@ const Influencer = () => {
     };
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('influencers')
-        .insert(payload as any)
+        .insert(payload)
         .select()
         .single();
 
@@ -818,9 +812,9 @@ const Influencer = () => {
         };
       });
 
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('influencers')
-        .insert(payloads as any)
+        .insert(payloads)
         .select();
 
       if (error) {
@@ -1001,9 +995,9 @@ const Influencer = () => {
     };
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('influencers')
-        .update(payload as never)
+        .update(payload)
         .eq('id', editingInfluencer.id)
         .select()
         .single();
@@ -1036,9 +1030,9 @@ const Influencer = () => {
     const nextStatus: 'active' | 'inactive' = influencer.status === 'active' ? 'inactive' : 'active';
     setIsStatusUpdatingId(influencer.id);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('influencers')
-        .update({ status: nextStatus } as never)
+        .update({ status: nextStatus })
         .eq('id', influencer.id)
         .select()
         .single();
@@ -1137,7 +1131,7 @@ const Influencer = () => {
                 <div className="relative p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8">
                   <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-center lg:justify-between">
                     <div className="space-y-2 sm:space-y-3">
-                      <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">Creators</p>
+                      <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">INFLUENCER MANAGEMENT</p>
                       <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">Influencer Management</h1>
                       <p className="text-xs sm:text-sm lg:text-base text-white/80 max-w-2xl hidden sm:block">
                         Build, monitor, and activate your influencer roster with live platform stats, imports, and fast edits.
@@ -1145,7 +1139,7 @@ const Influencer = () => {
                     </div>
                     <div className="hidden lg:flex flex-col gap-3 rounded-2xl border border-white/30 bg-white/10 p-5 backdrop-blur-lg text-sm text-white/90 min-w-[240px]">
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold">Total Creators</span>
+                        <span className="font-semibold">Total Influencers</span>
                         <span>{influencers.length}</span>
                       </div>
                       <div className="flex items-center justify-between text-xs text-white/80">
@@ -1168,7 +1162,7 @@ const Influencer = () => {
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 lg:gap-4">
-                    {summaryTiles.map(({ id, title, value, subtext, trend, icon: Icon, accent, statusBadge }) => (
+                    {summaryTiles.map(({ id, title, value, subtext, trend, icon: Icon, accent }) => (
                       <Card
                         key={id}
                         className="relative overflow-hidden bg-white/90 px-2 py-2.5 sm:px-4 sm:py-4 border border-white/20 backdrop-blur transition-transform duration-200 hover:-translate-y-1"

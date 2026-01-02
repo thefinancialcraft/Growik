@@ -1202,7 +1202,7 @@ const Contract = () => {
         id: "inactive",
         title: "Inactive",
         value: inactiveContracts,
-        subtext: "Shelved or completed",
+        subtext: "Archived or Completed",
         accent: "from-slate-500/90 to-slate-800/60",
         icon: FolderOpen,
       },
@@ -1232,7 +1232,7 @@ const Contract = () => {
               <div className="relative p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8">
                 <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-center lg:justify-between">
                   <div className="space-y-2 sm:space-y-3">
-                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">Contracts</p>
+                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">CONTRACT MANAGEMENT</p>
                     <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">Contract Management Hub</h1>
                     <p className="text-xs sm:text-sm lg:text-base text-white/80 max-w-2xl mb-4 sm:mb-0">
                       Keep every agreement aligned. Monitor statuses, flip drafts into live contracts, and export polished PDFs in seconds.
@@ -1321,7 +1321,7 @@ const Contract = () => {
                     <SearchBar
                       value={searchQuery}
                       onChange={setSearchQuery}
-                      placeholder="Search contracts by name or description..."
+                      placeholder="Search contracts by name, ID, or details..."
                     />
                   </div>
                   <div className="flex items-center gap-3">

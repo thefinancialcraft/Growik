@@ -1288,13 +1288,13 @@ const Campaign = () => {
                 <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-center lg:justify-between">
                   <div className="space-y-2 sm:space-y-3">
                     <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">
-                      Campaign Control Center
+                      CAMPAIGN MANAGEMENT
                     </p>
                     <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">
                       Campaign Management Hub
                     </h1>
                     <p className="text-sm sm:text-base text-white/80 max-w-2xl hidden sm:block">
-                      Monitor budgets, timelines, and influencer collaboration metrics for every live activation.
+                      Monitor campaign budgets, timelines, and influencer collaboration metrics.
                     </p>
                   </div>
                   {/* Desktop: Stats Card */}
@@ -1331,11 +1331,11 @@ const Campaign = () => {
                       <span>{campaigns.length}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-white/80">
-                      <span>L:{liveCount}</span>
+                      <span>Live:{liveCount}</span>
                       <span>•</span>
-                      <span>S:{scheduledCount}</span>
+                      <span>Scheduled:{scheduledCount}</span>
                       <span>•</span>
-                      <span>C:{completedCount}</span>
+                      <span>Completed:{completedCount}</span>
                     </div>
                   </div>
                 </div>
@@ -1361,7 +1361,7 @@ const Campaign = () => {
                       <div className="space-y-0.5 sm:space-y-2 flex-1 min-w-0">
                         <p className="text-[9px] sm:text-[11px] uppercase tracking-wide text-slate-500 truncate">Scheduled</p>
                         <p className="text-sm sm:text-2xl font-semibold text-slate-900">{scheduledCount}</p>
-                        <p className="text-[9px] sm:text-[11px] text-slate-500 line-clamp-1 hidden sm:block">Awaiting kick-off</p>
+                        <p className="text-[9px] sm:text-[11px] text-slate-500 line-clamp-1 hidden sm:block">Pending Launch</p>
                       </div>
                       <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl text-white bg-gradient-to-br from-blue-500/90 to-indigo-500/60">
                         <Calendar className="h-4 w-4 sm:h-5 sm:w-5" />

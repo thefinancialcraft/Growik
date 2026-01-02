@@ -325,7 +325,7 @@ const Dashboard = () => {
   const lastUpdated = profile?.updated_at ? new Date(profile.updated_at) : null;
   const approvalStatus = profile?.approval_status ?? "pending";
   const accountStatus = profile?.status ?? "active";
-  const roleLabel = profile?.super_admin ? "Super Admin" : profile?.role ?? "User";
+  const roleLabel = profile?.super_admin ? "Administrator" : profile?.role ?? "User";
   const employeeId = profile?.employee_id ?? "Not assigned";
 
   const stats = useMemo(
@@ -334,7 +334,7 @@ const Dashboard = () => {
         id: "role",
         title: "Role",
         value: roleLabel,
-        subtext: profile?.super_admin ? "Full platform authority" : "Current access level",
+        subtext: profile?.super_admin ? "Full system access and administrative control" : "Current access level",
         accent: "from-purple-500/90 to-fuchsia-500/60",
         icon: Shield,
       },
@@ -395,10 +395,10 @@ const Dashboard = () => {
               <div className="relative p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 lg:space-y-8">
                 <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-center lg:justify-between">
                   <div className="space-y-2 sm:space-y-3">
-                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">Overview</p>
-                    <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">Welcome back, {displayName}!</h1>
+                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.25em] sm:tracking-[0.35em] text-white/70">DASHBOARD OVERVIEW</p>
+                    <h1 className="text-xl sm:text-2xl lg:text-4xl font-bold leading-tight">Welcome to Signify Dashboard</h1>
                     <p className="text-xs sm:text-sm lg:text-base text-white/80 max-w-2xl hidden sm:block">
-                      Monitor your account status, team access, and quick entry points across the Growik workspace.
+                      Monitor account status, team access, and workspace navigation across Growwik.
                     </p>
                     <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <Badge className={`rounded-full border border-white/30 bg-white/20 px-2 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-semibold text-white/90 ${statusBadge()}`}>
@@ -477,7 +477,7 @@ const Dashboard = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <h2 className="text-base font-semibold text-slate-900">Account Insights</h2>
-                      <p className="text-xs text-slate-500">Quick information about your Growik current workspace access.</p>
+                      <p className="text-xs text-slate-500">Quick information about your Growwik current workspace access.</p>
                     </div>
                     <Badge className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge()}`}>
                       {accountStatus.toUpperCase()}
