@@ -1984,7 +1984,7 @@ const PublicContractSigning = () => {
             <Card className="w-full max-w-5xl bg-white p-4 sm:p-6 md:p-8 shadow-lg">
                 <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div className="flex-1">
-                        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Contract Agreement</h1>
+                        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Collaboration Contract</h1>
                         {collaborationId && (
                             <p className="text-xs sm:text-sm font-medium text-slate-700 mt-1 break-all">
                                 Collaboration ID: {collaborationId}
