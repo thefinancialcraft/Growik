@@ -119,6 +119,11 @@ const CollaborationAssignment = () => {
   const [savedContractHtml, setSavedContractHtml] = useState<string | null>(null);
   const [isLoadingSavedContract, setIsLoadingSavedContract] = useState<boolean>(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState<{
+    userName: string;
+    email: string;
+    employeeId: string;
+  } | null>(null);
   const [resolvedContractPid, setResolvedContractPid] = useState<string | null>(null);
   const [hasLoadedInitialAction, setHasLoadedInitialAction] = useState<boolean>(false);
   const [actionBaseline, setActionBaseline] = useState<ActionSnapshot>({
@@ -521,28 +526,33 @@ const CollaborationAssignment = () => {
         // Fetch user role and assigned collaboration IDs
         if (data?.user?.id) {
           try {
-            // Get role from localStorage first
-            let finalRole: string | null = null;
-            const cachedRole = localStorage.getItem('currentUserRole');
-            if (cachedRole && (cachedRole === 'admin' || cachedRole === 'super_admin' || cachedRole === 'user')) {
-              finalRole = cachedRole;
-              setUserRole(cachedRole);
-            } else {
-              // Fetch from Supabase
-              const { data: profileData, error: profileError } = await supabase
-                .from("user_profiles")
-                .select("role")
-                .eq("user_id", data.user.id)
-                .maybeSingle();
+            // Get role from localStorage first for immediate UI update
+            let finalRole: string | null = localStorage.getItem('currentUserRole');
+            if (finalRole && (finalRole === 'admin' || finalRole === 'super_admin' || finalRole === 'user')) {
+              setUserRole(finalRole);
+            }
 
-              if (!profileError && profileData) {
-                const role = (profileData as any).role;
-                if (role) {
-                  finalRole = role;
-                  setUserRole(role);
-                  localStorage.setItem('currentUserRole', role);
-                }
+            // Always fetch/refresh profile details from Supabase
+            const { data: profileData, error: profileError } = await supabase
+              .from("user_profiles")
+              .select("role, user_name, email, employee_id")
+              .eq("user_id", data.user.id)
+              .maybeSingle();
+
+            if (!profileError && profileData) {
+              const pData = profileData as any;
+              const role = pData.role;
+              if (role) {
+                finalRole = role;
+                setUserRole(role);
+                localStorage.setItem('currentUserRole', role);
               }
+
+              setCurrentUserProfile({
+                userName: pData.user_name || "Admin",
+                email: pData.email || "",
+                employeeId: pData.employee_id || "N/A",
+              });
             }
 
             // If role is "user", fetch collaboration IDs assigned to this user
@@ -4345,7 +4355,12 @@ const CollaborationAssignment = () => {
       const companyName = campaign?.brand || campaign?.name || "Company";
       const collabId = collaborationId || "N/A";
       const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-      const emailBody = `Hi ${influencerName},\n\nWe hope you're doing well!\n\nYour collaboration has been successfully initiated with ${companyName}.\n\nBelow is your secure contract signing magic link for Collaboration ID: ${collabId}.\n\nPlease click the link below to open and sign your contract:\n\n${magicLink}\n\nOnce the contract is signed, your onboarding for this collaboration will be completed.\n\nIf you face any issue while accessing the link or signing the contract, feel free to contact us anytime.\n\nProcessed By:\n\n• Name: Deepak kumar\n• Email: deepakkumar.official32@gmail.com\n• Employee Code: GRWK-001\n• Date: ${currentDate}\n\nBest regards,\nGrowwik Media`;
+      
+      const processorName = currentUserProfile?.userName || "Yuvraj Pandey";
+      const processorEmail = currentUserProfile?.email || "Yuvraj@growwik.com";
+      const processorCode = currentUserProfile?.employeeId || "GRWK-001";
+
+      const emailBody = `Hi ${influencerName},\n\nWe hope you're doing well!\n\nYour collaboration has been successfully initiated with ${companyName}.\n\nBelow is your secure contract signing magic link for Collaboration ID: ${collabId}.\n\nPlease click the link below to open and sign your contract:\n\n${magicLink}\n\nOnce the contract is signed, your onboarding for this collaboration will be completed.\n\nIf you face any issue while accessing the link or signing the contract, feel free to contact us anytime.\n\nProcessed By:\n\n• Name: ${processorName}\n• Email: ${processorEmail}\n• Employee Code: ${processorCode}\n• Date: ${currentDate}\n\nBest regards,\nGrowwik Media`;
       const emailSubject = `${companyName} - Contract Sign | ${collabId}`;
       
       // Store email details and show dialog instead of opening mail directly
