@@ -1987,7 +1987,12 @@ const CollaborationAssignment = () => {
             // Check if this is a date variable
             const isDate = isDateVariable(key);
             // Check if this is a product variable (including name.product and indexed versions)
-            const isProduct = key === "product" || key.startsWith("product_") || key === "name.product" || key.startsWith("name.product_");
+            // Check key, descriptors, and description for mention of "product"
+            const hasProductInDescriptors = info.descriptors.some(d => d.toLowerCase().includes("product"));
+            const isProduct = keyLower.includes("product") || 
+                             keyLower.includes("products") || 
+                             hasProductInDescriptors ||
+                             (info.description?.toLowerCase().includes("product") ?? false);
             const isEditable = isPlainText || isSignature || isDate || isProduct;
 
             // Normalize key for placeholder (remove index suffix, case-insensitive)
@@ -5382,35 +5387,39 @@ const CollaborationAssignment = () => {
                               const displayKeyLower = displayKey.toLowerCase();
                               
                               // Check for product variable: name.product, product, or any key containing 'product'
-                              const isProduct = originalKeyLower === 'name.product'
-                                || originalKeyLower === 'product'
-                                || originalKeyLower.includes('product')
-                                || displayKeyLower.includes('product name')
-                                || displayKey.includes('Product Name')
-                                || displayKey.includes('var[{{product}}]')
-                                || displayKey.includes('var[{{Product Name}}]');
+                              // Also check original key and description for "product"
+                              const isProduct = originalKeyLower.includes('product')
+                                || displayKeyLower.includes('product')
+                                || (item.description?.toLowerCase().includes('product') ?? false)
+                                || (item.value?.toLowerCase().includes('product') ?? false);
                               
                               if (isProduct) {
-                                const currentSelected = item.inputValue ? item.inputValue.split(',').filter(Boolean) : [];
+                                const currentSelected = item.inputValue 
+                                  ? item.inputValue.split(',').map(s => s.trim()).filter(Boolean) 
+                                  : [];
                                 return (
                                   <div className="space-y-2">
                                     <Button
                                       type="button"
                                       variant="outline"
                                       className="w-full justify-start"
-                                      onClick={async () => {
+                                      onClick={async (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        console.log('Product Selection Button Clicked', { uniqueKey, currentSelected });
                                         setCurrentProductVariableKey(uniqueKey);
                                         setSelectedProducts(currentSelected);
                                         
                                         // Fetch products for the company
                                         const companyName = campaign?.brand || campaign?.name || "";
                                         if (companyName) {
+                                          console.log(`Fetching products for company: "${companyName}"`);
                                           setIsLoadingProducts(true);
                                           try {
                                             const { data: productsData, error: productsError } = await supabase
                                               .from('products')
                                               .select('id, name, company')
-                                              .eq('company', companyName)
+                                              .ilike('company', companyName.trim())
                                               .eq('status', 'active')
                                               .order('name', { ascending: true });
                                             
@@ -5418,8 +5427,10 @@ const CollaborationAssignment = () => {
                                               throw productsError;
                                             }
                                             
+                                            console.log(`Found ${productsData?.length || 0} products for "${companyName}"`);
                                             setAvailableProducts(productsData || []);
                                           } catch (err: any) {
+                                            console.error("Error fetching products:", err);
                                             toast({
                                               title: "Error",
                                               description: err?.message || "Failed to load products.",
@@ -5429,9 +5440,11 @@ const CollaborationAssignment = () => {
                                             setIsLoadingProducts(false);
                                           }
                                         } else {
+                                          console.warn("Product selection clicked but no company name found in campaign.");
+                                          setAvailableProducts([]); // Clear any previous products
                                           toast({
-                                            title: "Error",
-                                            description: "Company name not found.",
+                                            title: "Product Selection Unavailable",
+                                            description: "We couldn't determine the company name for this campaign. Please ensure the campaign has a brand or name assigned.",
                                             variant: "destructive",
                                           });
                                         }
@@ -5542,7 +5555,7 @@ const CollaborationAssignment = () => {
             <ScrollArea className="max-h-[400px] pr-4">
               <div className="space-y-2">
                 {availableProducts.map((product) => {
-                  const isSelected = selectedProducts.includes(product.id);
+                  const isSelected = selectedProducts.includes(product.name);
                   return (
                     <div
                       key={product.id}
@@ -5553,9 +5566,9 @@ const CollaborationAssignment = () => {
                       }`}
                       onClick={() => {
                         if (isSelected) {
-                          setSelectedProducts(selectedProducts.filter(id => id !== product.id));
+                          setSelectedProducts(selectedProducts.filter(name => name !== product.name));
                         } else {
-                          setSelectedProducts([...selectedProducts, product.id]);
+                          setSelectedProducts([...selectedProducts, product.name]);
                         }
                       }}
                     >
@@ -5592,11 +5605,7 @@ const CollaborationAssignment = () => {
             <Button
               onClick={() => {
                 if (currentProductVariableKey) {
-                  // Get product names from selected IDs
-                  const selectedProductNames = availableProducts
-                    .filter(p => selectedProducts.includes(p.id))
-                    .map(p => p.name)
-                    .join(', ');
+                  const selectedProductNames = selectedProducts.join(', ');
                   
                   setContractVariableEntries((prev) =>
                     prev.map((entry) =>
@@ -5985,104 +5994,7 @@ const CollaborationAssignment = () => {
 
       {/* Signature Dialog */}
       {/* Product Selection Dialog */}
-      <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Select Products</DialogTitle>
-            <DialogDescription>
-              Select products for {campaign?.brand || campaign?.name || "this company"}. You can select multiple products.
-            </DialogDescription>
-          </DialogHeader>
-          
-          {isLoadingProducts ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin" />
-            </div>
-          ) : availableProducts.length === 0 ? (
-            <div className="py-8 text-center text-slate-500">
-              No products found for this company.
-            </div>
-          ) : (
-            <ScrollArea className="max-h-[400px] pr-4">
-              <div className="space-y-2">
-                {availableProducts.map((product) => {
-                  const isSelected = selectedProducts.includes(product.id);
-                  return (
-                    <div
-                      key={product.id}
-                      className={`flex items-center space-x-3 rounded-lg border p-3 cursor-pointer transition-colors ${
-                        isSelected 
-                          ? 'border-primary bg-primary/5' 
-                          : 'border-slate-200 hover:bg-slate-50'
-                      }`}
-                      onClick={() => {
-                        if (isSelected) {
-                          setSelectedProducts(selectedProducts.filter(id => id !== product.id));
-                        } else {
-                          setSelectedProducts([...selectedProducts, product.id]);
-                        }
-                      }}
-                    >
-                      <div className={`flex h-5 w-5 items-center justify-center rounded border ${
-                        isSelected 
-                          ? 'border-primary bg-primary' 
-                          : 'border-slate-300'
-                      }`}>
-                        {isSelected && <Check className="h-3 w-3 text-white" />}
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-slate-900">{product.name}</p>
-                        {product.company && (
-                          <p className="text-xs text-slate-500">{product.company}</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </ScrollArea>
-          )}
-          
-          <div className="flex justify-end gap-2 mt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsProductDialogOpen(false);
-                setSelectedProducts([]);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (currentProductVariableKey) {
-                  // Get product names from selected IDs
-                  const selectedProductNames = availableProducts
-                    .filter(p => selectedProducts.includes(p.id))
-                    .map(p => p.name)
-                    .join(', ');
-                  
-                  setContractVariableEntries((prev) =>
-                    prev.map((entry) =>
-                      (entry.originalKey || entry.key) === currentProductVariableKey
-                        ? {
-                            ...entry,
-                            inputValue: selectedProductNames,
-                          }
-                        : entry
-                    )
-                  );
-                }
-                setIsProductDialogOpen(false);
-                setSelectedProducts([]);
-                setCurrentProductVariableKey(null);
-              }}
-            >
-              Save
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+
 
       <Dialog open={isSignatureDialogOpen} onOpenChange={setIsSignatureDialogOpen}>
         <DialogContent className="max-w-2xl">
