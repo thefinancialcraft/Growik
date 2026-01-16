@@ -1991,7 +1991,7 @@ const CollaborationAssignment = () => {
             const hasProductInDescriptors = info.descriptors.some(d => d.toLowerCase().includes("product"));
             const isProduct = keyLower.includes("product") || 
                              keyLower.includes("products") || 
-                             hasProductInDescriptors ||
+                             hasProductInDescriptors || 
                              (info.description?.toLowerCase().includes("product") ?? false);
             const isEditable = isPlainText || isSignature || isDate || isProduct;
 
@@ -2470,8 +2470,44 @@ const CollaborationAssignment = () => {
       
       // Track which placeholders have been replaced to avoid final cleanup replacing them
       const replacedPlaceholders = new Set<string>();
-      
       const variablesMap: Record<string, string | null> = {};
+
+      // Helper function to replace placeholders that might be wrapped in HTML tags
+      const replaceWithHtmlWrapping = (pattern: string, replacement: string): boolean => {
+        // First try direct replacement
+        const directRegex = new RegExp(pattern, "gi");
+        const before = previewHtml;
+        previewHtml = previewHtml.replace(directRegex, (match) => {
+          replacedPlaceholders.add(match);
+          return replacement;
+        });
+        if (previewHtml !== before) {
+          return true;
+        }
+        
+        // If direct replacement didn't work, try with HTML wrapper
+        // Pattern: <span[^>]*>var[{{...}}]</span>
+        const wrappedPattern = `<span[^>]*>${pattern}</span>`;
+        const wrappedRegex = new RegExp(wrappedPattern, "gi");
+        const beforeWrapped = previewHtml;
+        previewHtml = previewHtml.replace(wrappedRegex, (match) => {
+          replacedPlaceholders.add(match);
+          return replacement;
+        });
+        if (previewHtml !== beforeWrapped) {
+          return true;
+        }
+        
+        // Also try with data-variable-key attribute
+        const dataKeyPattern = `<span[^>]*data-variable-key=["'][^"']*["'][^>]*>${pattern}</span>`;
+        const dataKeyRegex = new RegExp(dataKeyPattern, "gi");
+        const beforeDataKey = previewHtml;
+        previewHtml = previewHtml.replace(dataKeyRegex, (match) => {
+          replacedPlaceholders.add(match);
+          return replacement;
+        });
+        return previewHtml !== beforeDataKey;
+      };
 
       // Group plain_text entries by their index for sequential replacement
       const plainTextEntries = contractVariableEntries
@@ -2482,6 +2518,7 @@ const CollaborationAssignment = () => {
           const bIndex = parseInt(b.originalKey?.replace("plain_text_", "") || "0", 10);
           return aIndex - bIndex;
         });
+
 
       // Group date entries by their index for sequential replacement
       const dateEntries = contractVariableEntries
@@ -2593,11 +2630,11 @@ const CollaborationAssignment = () => {
         const indexedRegex = new RegExp(indexedPlaceholderPattern, "gi");
         
         // Replace indexed format occurrences (content uses 1-indexed format)
-        // The global flag should replace all matches, but let's ensure it works correctly
         previewHtml = previewHtml.replace(indexedRegex, (match, capturedIndex) => {
           const placeholderIndex = parseInt(capturedIndex, 10); // This is 1-indexed from content
           const foundMatch = matches.find(m => m.contentIndex === placeholderIndex);
           if (foundMatch) {
+            replacedPlaceholders.add(match);
             return foundMatch.value;
           }
           // If no match found, return "--"
@@ -2609,10 +2646,14 @@ const CollaborationAssignment = () => {
         const escapedPlaceholder = oldPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const oldRegex = new RegExp(escapedPlaceholder, "g");
         let occurrenceIndex = 0;
-        previewHtml = previewHtml.replace(oldRegex, () => {
-          const match = matches.find(m => m.index === occurrenceIndex);
+        previewHtml = previewHtml.replace(oldRegex, (match) => {
+          const foundMatch = matches.find(m => m.index === occurrenceIndex);
           occurrenceIndex++;
-          return match ? match.value : "--";
+          if (foundMatch) {
+            replacedPlaceholders.add(match);
+            return foundMatch.value;
+          }
+          return "--";
         });
       }
 
@@ -2702,7 +2743,11 @@ const CollaborationAssignment = () => {
           // Use the captured index from the regex (capture group 1)
           const placeholderIndex = parseInt(capturedIndex, 10);
           const foundMatch = matches.find(m => m.index === placeholderIndex);
-          return foundMatch ? foundMatch.value : "--";
+          if (foundMatch) {
+            replacedPlaceholders.add(match);
+            return foundMatch.value;
+          }
+          return "--";
         });
       });
 
@@ -2722,85 +2767,88 @@ const CollaborationAssignment = () => {
         })()
       );
       
-      // Process indexed name variables (name.product_0, name.product_1, etc.) sequentially
-      const indexedNameProductEntries = contractVariableEntries
-        .filter(e => e.originalKey?.startsWith("name.product_"))
-        .sort((a, b) => {
-          const aIndex = parseInt(a.originalKey?.replace("name.product_", "") || "0", 10);
-          const bIndex = parseInt(b.originalKey?.replace("name.product_", "") || "0", 10);
-          return aIndex - bIndex;
-        });
+      // Process all product-related entries (indexed name.product_0, name.product_1 and non-indexed name.product, product)
+      const allProductEntries = contractVariableEntries.filter(e =>
+        (e.originalKey || e.key).toLowerCase().includes('product')
+      ).sort((a, b) => {
+        // Sort by index if present (name.product_0, name.product_1, etc.)
+        const aKey = a.originalKey || '';
+        const bKey = b.originalKey || '';
+        const aMatch = aKey.match(/_(\d+)$/);
+        const bMatch = bKey.match(/_(\d+)$/);
+        
+        if (aMatch && bMatch) {
+          return parseInt(aMatch[1], 10) - parseInt(bMatch[1], 10);
+        }
+        if (aMatch) return 1;
+        if (bMatch) return -1;
+        return 0;
+      });
 
-      if (indexedNameProductEntries.length > 0) {
-        const placeholder = "var[{{Product Name}}]";
-        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex = new RegExp(escapedPlaceholder, "g");
-        const matches: Array<{ index: number; value: string }> = [];
+      if (allProductEntries.length > 0) {
+        const productMatches: Array<{ index: number; value: string; originalKey: string; key: string }> = [];
 
-        // Collect all product name values in order
-        indexedNameProductEntries.forEach((entry) => {
+        allProductEntries.forEach((entry) => {
           const input = entry.inputValue?.trim() ?? "";
-          const entryIndex = parseInt(entry.originalKey?.replace("name.product_", "") || "0", 10);
-          
-          // Format products as bullet list if multiple products exist
           let sanitizedValue = "";
           if (input) {
             const products = input.split(',').map(p => p.trim()).filter(Boolean);
             if (products.length > 0) {
-              sanitizedValue = products.map(product => {
+              const listItems = products.map(product => {
                 const escapedProduct = escapeHtml(product);
-                return `• ${escapedProduct}`;
-              }).join('<br />');
+                // Using a literal bullet character with a non-breaking space for maximum compatibility
+                return `<p style="margin: 0 0 2px 0; padding: 0; display: block; line-height: 1.4;">•&nbsp;${escapedProduct}</p>`;
+              }).join('');
+              
+              // Structured with a bold header and the list, ensuring one clear line gap
+              sanitizedValue = `<div style="margin: 12px 0;"><p style="margin-bottom: 12px; font-weight: bold; display: block;">Selected:</p>${listItems}</div>`;
             }
           }
           
-          matches.push({ index: entryIndex, value: sanitizedValue });
-          variablesMap[entry.originalKey || entry.key] = input || null;
-        });
-
-        // Replace occurrences sequentially
-        let occurrenceIndex = 0;
-        previewHtml = previewHtml.replace(regex, () => {
-          const match = matches.find(m => m.index === occurrenceIndex);
-          occurrenceIndex++;
-          return match ? match.value : "--";
-        });
-      }
-
-      // Process product entries (non-indexed or legacy format)
-      const productEntries = contractVariableEntries.filter(e =>
-        (e.originalKey || e.key).toLowerCase().includes('product') && 
-        !e.originalKey?.startsWith("name.product_")
-      );
-      
-      if (productEntries.length > 0) {
-        const placeholder = "var[{{product}}]";
-        const escapedPlaceholder = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const regex = new RegExp(escapedPlaceholder, "g");
-        
-        // Get the first product entry value (or combine all if multiple)
-        const productValue = productEntries[0]?.inputValue?.trim() ?? "";
-        
-        // Format products as bullet list if multiple products exist
-        let sanitizedValue = "";
-        if (productValue) {
-          const products = productValue.split(',').map(p => p.trim()).filter(Boolean);
-          if (products.length > 0) {
-            // Format as HTML bullet list
-            sanitizedValue = products.map(product => {
-              const escapedProduct = escapeHtml(product);
-              return `• ${escapedProduct}`;
-            }).join('<br />');
+          let index = -1;
+          const match = (entry.originalKey || '').match(/_(\d+)$/);
+          if (match) {
+            index = parseInt(match[1], 10);
           }
-        }
-        
-        // Replace all occurrences of var[{{product}}] with the selected products
-        previewHtml = previewHtml.replace(regex, sanitizedValue);
-        
-        // Store in variables map
-        productEntries.forEach((entry) => {
-          const input = entry.inputValue?.trim() ?? "";
+          
+          productMatches.push({ 
+            index, 
+            value: sanitizedValue, 
+            originalKey: entry.originalKey || '', 
+            key: entry.key 
+          });
           variablesMap[entry.originalKey || entry.key] = input || null;
+        });
+
+        // 1. First, handle indexed placeholders in content: var[{{Product Name [1]}}], var[{{product [1]}}]
+        productMatches.forEach(m => {
+          if (m.index !== -1) {
+            const indexedPattern = `var\\[\\s*\\{\\{\\s*(Product Name|product)\\s*\\[\\s*${m.index + 1}\\s*\\]\\s*\\}\\}\\s*\\]`;
+            replaceWithHtmlWrapping(indexedPattern, m.value);
+          }
+        });
+
+        // 2. Second, handle specific full keys found in entries
+        productMatches.forEach(m => {
+          if (m.key) {
+            const escaped = m.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            replaceWithHtmlWrapping(escaped, m.value);
+          }
+        });
+
+        // 3. Finally, handle legacy/repeated placeholders
+        const commonPattern = `var\\[\\s*\\{\\{\\s*(Product Name|product)\\s*\\}\\}\\s*\\]`;
+        const commonRegex = new RegExp(commonPattern, "gi");
+        
+        let occurrenceIndex = 0;
+        previewHtml = previewHtml.replace(commonRegex, (match) => {
+          const m = productMatches[occurrenceIndex] || productMatches[0];
+          occurrenceIndex++;
+          if (m) {
+            replacedPlaceholders.add(match);
+            return m.value;
+          }
+          return match;
         });
       }
 
@@ -2830,7 +2878,11 @@ const CollaborationAssignment = () => {
         previewHtml = previewHtml.replace(indexedRegex, (match, capturedIndex) => {
           const placeholderIndex = parseInt(capturedIndex, 10); // This is 1-indexed from content
           const foundMatch = matches.find(m => m.contentIndex === placeholderIndex);
-          return foundMatch ? foundMatch.value : "--";
+          if (foundMatch) {
+            replacedPlaceholders.add(match);
+            return foundMatch.value;
+          }
+          return "--";
         });
 
         // Also handle old format: var[{{plain_text}}] (for backward compatibility)
@@ -2838,10 +2890,14 @@ const CollaborationAssignment = () => {
         const escapedPlaceholder = oldPlaceholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const oldRegex = new RegExp(escapedPlaceholder, "g");
         let occurrenceIndex = 0;
-        previewHtml = previewHtml.replace(oldRegex, () => {
-          const match = matches.find(m => m.index === occurrenceIndex);
+        previewHtml = previewHtml.replace(oldRegex, (match) => {
+          const foundMatch = matches.find(m => m.index === occurrenceIndex);
           occurrenceIndex++;
-          return match ? match.value : "--";
+          if (foundMatch) {
+            replacedPlaceholders.add(match);
+            return foundMatch.value;
+          }
+          return "--";
         });
       }
 
@@ -3514,43 +3570,6 @@ const CollaborationAssignment = () => {
           // This ensures "--" values show as blank in preview instead of "--"
           if (sanitizedValue !== undefined) {
             let replaced = false;
-            
-            // Helper function to replace placeholders that might be wrapped in HTML tags
-            const replaceWithHtmlWrapping = (pattern: string, replacement: string): boolean => {
-              // First try direct replacement
-              const directRegex = new RegExp(pattern, "gi");
-              const before = previewHtml;
-              previewHtml = previewHtml.replace(directRegex, (match) => {
-                replacedPlaceholders.add(match);
-                return replacement;
-              });
-              if (previewHtml !== before) {
-                return true;
-              }
-              
-              // If direct replacement didn't work, try with HTML wrapper
-              // Pattern: <span[^>]*>var[{{...}}]</span>
-              const wrappedPattern = `<span[^>]*>${pattern}</span>`;
-              const wrappedRegex = new RegExp(wrappedPattern, "gi");
-              const beforeWrapped = previewHtml;
-              previewHtml = previewHtml.replace(wrappedRegex, (match) => {
-                replacedPlaceholders.add(match);
-                return replacement;
-              });
-              if (previewHtml !== beforeWrapped) {
-                return true;
-              }
-              
-              // Also try with data-variable-key attribute
-              const dataKeyPattern = `<span[^>]*data-variable-key=["'][^"']*["'][^>]*>${pattern}</span>`;
-              const dataKeyRegex = new RegExp(dataKeyPattern, "gi");
-              const beforeDataKey = previewHtml;
-              previewHtml = previewHtml.replace(dataKeyRegex, (match) => {
-                replacedPlaceholders.add(match);
-                return replacement;
-              });
-              return previewHtml !== beforeDataKey;
-            };
             
             // Try multiple placeholder formats to ensure we catch all variations
             // 1. Replace indexed format first (e.g., var[{{Address Line 1 [1]}}])
