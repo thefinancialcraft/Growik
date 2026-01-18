@@ -75,6 +75,17 @@ const SUPABASE_TABLE_EXCLUDE = new Set(['messages', 'admin_members', 'contracts'
 
 const VARIABLE_KEY_DEFAULT = 'plain_text';
 
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 const VARIABLE_KEY_OPTIONS = [
   { label: 'Plain Text', value: 'plain_text' },
   { label: 'User Id', value: 'user_id' },
@@ -3158,9 +3169,7 @@ const ContractEditor = () => {
     const bucket = 'contracts';
     const extension = file.name.split('.').pop()?.toLowerCase() || 'png';
     const baseName = file.name.replace(/[^a-zA-Z0-9-.]/g, '_').replace(/\.[^/.]+$/, '') || 'image';
-    const uniqueId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const uniqueId = generateUUID();
     const fileName = `${baseName}-${uniqueId}.${extension}`;
     const directory = contractId ? `contracts/${contractId}` : `drafts/${user.id}`;
     const filePath = `${directory}/${fileName}`;

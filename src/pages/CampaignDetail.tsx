@@ -26,7 +26,9 @@ import {
   CampaignInfluencerRef,
   STATUS_STYLES,
   getPlatformMeta,
+  isUuid,
   mapCampaignRow,
+  toDeterministicUuid,
 } from "@/lib/campaign";
 import {
   Activity,
@@ -321,20 +323,6 @@ const CampaignDetail = () => {
   }>>([]);
   const [collaborationActionsLoading, setCollaborationActionsLoading] = useState<boolean>(false);
 
-  // Helper to normalize campaign_id the same way as CollaborationAssignment
-  const isUuid = (value: string | undefined | null): value is string =>
-    Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
-
-  const toDeterministicUuid = (input: string): string => {
-    const hash = input.split("").reduce((acc, char) => {
-      const h = (acc << 5) - acc + char.charCodeAt(0);
-      return h & h;
-    }, 0);
-    const hex = Math.abs(hash).toString(16).padStart(32, "0");
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((Math.abs(hash) % 4) + 8)
-      .toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
-  };
-
   // This should match how collaboration_actions.campaign_id is written
   const resolvedCampaignIdForStats = useMemo(() => {
     const campaignKey = campaign?.id ?? id ?? null;
@@ -616,7 +604,7 @@ const CampaignDetail = () => {
       {
         id: "progress",
         title: "Progress",
-        value: `${campaign.progress}%`,
+        value: `${collabStats.total > 0 ? Math.round((collabStats.signed / collabStats.total) * 100) : 0}%`,
         subtext: "Completion status",
         icon: Activity,
         iconBg: "from-amber-400/60 to-amber-500/40",
@@ -910,12 +898,12 @@ const CampaignDetail = () => {
                       <div className="space-y-1 pt-1.5">
                         <div className="flex items-center justify-between text-xs text-white/70">
                           <span>Progress</span>
-                          <span>{campaign.progress}%</span>
+                          <span>{collabStats.total > 0 ? Math.round((collabStats.signed / collabStats.total) * 100) : 0}%</span>
                         </div>
                         <div className="h-2 rounded-full bg-white/25 overflow-hidden">
                           <div
                             className="h-full bg-white"
-                            style={{ width: `${campaign.progress}%` }}
+                            style={{ width: `${collabStats.total > 0 ? Math.round((collabStats.signed / collabStats.total) * 100) : 0}%` }}
                           />
                         </div>
                       </div>
@@ -927,7 +915,7 @@ const CampaignDetail = () => {
                         <span>{totalCollaborators}</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-white/80">
-                        <span>P:{campaign.progress}%</span>
+                        <span>P:{collabStats.total > 0 ? Math.round((collabStats.signed / collabStats.total) * 100) : 0}%</span>
                         <span>•</span>
                         <span className="capitalize truncate max-w-[60px]">{campaign.status}</span>
                       </div>

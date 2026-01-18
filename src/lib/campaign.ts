@@ -208,6 +208,19 @@ export const mapCampaignRow = (row: any): CampaignRecord => ({
   createdAt: row.created_at ?? new Date().toISOString(),
 });
 
+export const isUuid = (value: string | undefined | null): value is string =>
+  Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
+
+export const toDeterministicUuid = (input: string): string => {
+  const hash = input.split("").reduce((acc, char) => {
+    const h = (acc << 5) - acc + char.charCodeAt(0);
+    return h & h;
+  }, 0);
+  const hex = Math.abs(hash).toString(16).padStart(32, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((Math.abs(hash) % 4) + 8)
+    .toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+};
+
 export const STATUS_STYLES: Record<CampaignStatus, string> = {
   draft: "bg-slate-100 text-slate-700 border border-slate-200",
   scheduled: "bg-amber-100 text-amber-700 border border-amber-200",

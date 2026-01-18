@@ -60,8 +60,10 @@ import {
   UserOption,
   extractCampaignNumber,
   getPlatformMeta,
+  isUuid,
   mapCampaignRow,
   parseHandles,
+  toDeterministicUuid,
 } from "@/lib/campaign";
 import {
   Calendar,
@@ -339,8 +341,53 @@ const Campaign = () => {
           throw error;
         }
 
-        const items =
-          ((data as any[]) ?? []).map((row: any) => mapCampaignRow(row)) ?? [];
+        const rawCampaigns = (data as any[]) ?? [];
+        if (rawCampaigns.length === 0) {
+          setCampaigns([]);
+          return;
+        }
+
+        // Fetch all collaboration actions for these campaigns to calculate real progress
+        const resolvedIdToOriginalMap = new Map<string, string>(); // Resolved ID -> Original ID
+        const queryIds = rawCampaigns.map(c => {
+          const resolved = isUuid(c.id) ? c.id : toDeterministicUuid(`campaign:${c.id}`);
+          resolvedIdToOriginalMap.set(resolved, c.id);
+          return resolved;
+        });
+
+        const { data: actionsData, error: actionsError } = await supabase
+          .from("collaboration_actions")
+          .select("campaign_id, is_signed")
+          .in("campaign_id", queryIds);
+
+        if (actionsError) {
+          console.error("Campaign: Error fetching collaboration actions for progress", actionsError);
+        }
+
+        // Group actions by campaign_id (the resolved UUID)
+        const progressMap = new Map<string, { total: number; signed: number }>();
+        const typedActions = (actionsData || []) as any[];
+        typedActions.forEach(action => {
+          const cid = action.campaign_id;
+          const stats = progressMap.get(cid) || { total: 0, signed: 0 };
+          stats.total += 1;
+          if (action.is_signed) stats.signed += 1;
+          progressMap.set(cid, stats);
+        });
+
+        const items = rawCampaigns.map((row: any) => {
+          const mapped = mapCampaignRow(row);
+          // Resolve current campaign ID to find stats in the map
+          const resolvedId = isUuid(row.id) ? row.id : toDeterministicUuid(`campaign:${row.id}`);
+          const stats = progressMap.get(resolvedId);
+          
+          if (stats && stats.total > 0) {
+            mapped.progress = Math.round((stats.signed / stats.total) * 100);
+          } else {
+            mapped.progress = 0;
+          }
+          return mapped;
+        });
 
         setCampaigns(items);
       } catch (error: any) {
@@ -989,17 +1036,6 @@ const Campaign = () => {
       // Create collaboration_action entries for all influencers, equally distributed among users
       if (selectedInfluencers.length > 0 && selectedUsers.length > 0) {
         try {
-          const isUuid = (value: string | undefined | null): value is string =>
-            Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
-
-          const toDeterministicUuid = (input: string): string => {
-            const hash = input.split("").reduce((acc, char) => {
-              const hash = ((acc << 5) - acc) + char.charCodeAt(0);
-              return hash & hash;
-            }, 0);
-            const hex = Math.abs(hash).toString(16).padStart(32, "0");
-            return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((Math.abs(hash) % 4) + 8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
-          };
 
           const campaignKey = inserted.id;
           const resolvedCampaignId = isUuid(campaignKey) 

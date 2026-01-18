@@ -49,6 +49,17 @@ type LocationState = {
 
 type ActionOption = "interested" | "not_interested" | "callback" | "done";
 
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 const ACTION_LABELS: Record<ActionOption, string> = {
   interested: "Contact marked interested",
   not_interested: "Marked as not interested",
@@ -3941,7 +3952,7 @@ const CollaborationAssignment = () => {
       const isNewMagicLink = !magicLinkToken;
       if (!magicLinkToken) {
         // Generate new unique UUID for this collaboration
-        magicLinkToken = crypto.randomUUID();
+        magicLinkToken = generateUUID();
         console.log(`[Magic Link] ✓ Generated NEW unique magic_link for collaboration_id ${collaborationId}: ${magicLinkToken.substring(0, 8)}...`);
       }
 
@@ -4768,7 +4779,7 @@ const CollaborationAssignment = () => {
                                         // Step 2: If not found in Supabase, generate NEW unique link for this collaboration_id
                                         if (!magicLinkToken) {
                                           console.log(`[Copy Magic Link] Generating NEW unique magic_link for collaboration_id ${collaborationId}`);
-                                          magicLinkToken = crypto.randomUUID();
+                                          magicLinkToken = generateUUID();
                                           
                                           // Step 3: Save the new magic_link to Supabase collaboration_variable_overrides
                                           try {

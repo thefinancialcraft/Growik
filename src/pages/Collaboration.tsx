@@ -874,11 +874,11 @@ const Collaboration = () => {
         .in("id", Array.from(contractIdsSet));
 
       // 4. Create lookup maps
-      const userMap = new Map<string, string>((userRes.data || []).map(u => [u.user_id, u.user_name]));
-      const influencerMap = new Map<string, string>((influencerRes.data || []).map(i => [i.id, i.name]));
-      const campaignMap = new Map<string, any>((campaignRes.data || []).map(c => [c.id, c]));
-      const contractMap = new Map<string, string>((contractsData || []).map(c => [c.id, c.contract_name]));
-      const hasContractHtmlMap = new Set<string>((overrideRes.data || []).filter(o => !!(o as any).contract_html).map(o => o.collaboration_id));
+      const userMap = new Map<string, string>((userRes.data as any[] || []).map(u => [u.user_id, u.user_name]));
+      const influencerMap = new Map<string, string>((influencerRes.data as any[] || []).map(i => [i.id, i.name]));
+      const campaignMap = new Map<string, any>((campaignRes.data as any[] || []).map(c => [c.id, c]));
+      const contractMap = new Map<string, string>((contractsData as any[] || []).map(c => [c.id, c.contract_name]));
+      const hasContractHtmlMap = new Set<string>((overrideRes.data as any[] || []).filter(o => !!(o as any).contract_html).map(o => o.collaboration_id));
 
       // 5. Combine data
       const enrichedActions = typedActions.map((action: any) => {
