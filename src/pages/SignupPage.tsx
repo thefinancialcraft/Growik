@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseAdmin } from "@/lib/supabase";
 import { Mail, CheckCircle, Loader2, Eye, EyeOff } from "lucide-react";
 
 const SignupPage: React.FC = () => {
@@ -109,10 +109,13 @@ const SignupPage: React.FC = () => {
       if (data.user) {
         // Create user profile with all details from signup form
         const createProfile = async (retries = 3) => {
+          // Use supabaseAdmin if available, otherwise fallback to supabase
+          const client = supabaseAdmin || supabase;
+          
           for (let i = 0; i < retries; i++) {
             try {
               // First check if profile already exists
-              const { data: existingProfile } = await supabase
+              const { data: existingProfile } = await client
                 .from('user_profiles')
                 .select('id')
                 .eq('user_id', data.user.id)
@@ -120,7 +123,7 @@ const SignupPage: React.FC = () => {
 
               if (existingProfile) {
                 // Profile exists, update it
-                const { error: updateError } = await supabase
+                const { error: updateError } = await client
                   .from('user_profiles')
                   // @ts-ignore - Supabase type inference issue
                 .update({
@@ -142,7 +145,7 @@ const SignupPage: React.FC = () => {
               }
               } else {
                 // Profile doesn't exist, create it
-                const { error: insertError } = await supabase
+                const { error: insertError } = await client
                   .from('user_profiles')
                   // @ts-ignore - Supabase type inference issue
                   .insert({
@@ -166,25 +169,25 @@ const SignupPage: React.FC = () => {
                 return; // Success
               }
 
+                console.error('Error creating profile (attempt ' + (i+1) + '):', insertError);
+                
                 // If insert failed, wait and retry
                 if (i < retries - 1) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                continue;
-              }
-
-                console.error('Error creating profile:', insertError);
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  continue;
+                }
               }
             } catch (profileError) {
               console.error('Profile creation error:', profileError);
               if (i < retries - 1) {
-                await new Promise(resolve => setTimeout(resolve, 500));
+                await new Promise(resolve => setTimeout(resolve, 1000));
               }
             }
           }
         };
 
-        // Create/update profile (non-blocking - don't wait for it)
-        createProfile().catch(console.error);
+        // Create/update profile (blocking to ensure completion)
+        await createProfile();
 
         setSuccess(true);
         // Store email for display

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 
 const AuthCallback = () => {
   const navigate = useNavigate();
@@ -18,14 +18,17 @@ const AuthCallback = () => {
         }
 
         if (session) {
+          // Use supabaseAdmin if available, otherwise fallback to supabase
+          const client = supabaseAdmin || supabase;
+
           // Check if user has a profile
-          const { data: profileData, error: profileError } = await supabase
+          const { data: profileData, error: profileError } = await client
             .from('user_profiles')
             .select('*')
             .eq('user_id', session.user.id)
             .maybeSingle();
 
-          if (profileError && profileError.code !== 'PGRST116') {
+          if (profileError) {
             console.error('Error fetching profile:', profileError);
           }
 
@@ -38,7 +41,7 @@ const AuthCallback = () => {
                            'User';
                            
             try {
-              const { error: insertError } = await supabase
+              const { error: insertError } = await client
                 .from('user_profiles')
                 // @ts-ignore - Supabase type inference issue
                 .insert({
@@ -62,7 +65,7 @@ const AuthCallback = () => {
           }
 
           // Fetch profile again after potential creation
-          const { data: finalProfileData } = await supabase
+          const { data: finalProfileData } = await client
             .from('user_profiles')
             .select('*')
             .eq('user_id', session.user.id)
