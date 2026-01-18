@@ -831,141 +831,95 @@ const Collaboration = () => {
   const fetchCollaborationActions = useCallback(async () => {
     setCollaborationActionsLoading(true);
     try {
-      const { data, error } = await supabase
+      // 1. Fetch base actions
+      const { data: actions, error: actionsError } = await supabase
         .from("collaboration_actions")
         .select("id, campaign_id, influencer_id, user_id, action, remark, occurred_at, collaboration_id, contract_id, is_signed")
         .order("occurred_at", { ascending: false });
 
-      if (error) {
-        throw error;
+      if (actionsError) throw actionsError;
+      if (!actions || actions.length === 0) {
+        setCollaborationActions([]);
+        return;
       }
 
-      // Enrich actions with campaign, contract names, user names, and influencer names
-      const enrichedActions = await Promise.all(
-        (data || []).map(async (action: any) => {
-          let campaignName: string | null = null;
-          let companyName: string | null = null;
-          let contractName: string | null = null;
-          let userName: string | null = null;
-          let influencerName: string | null = null;
+      // 2. Collect unique IDs for bulk enrichment (cast to any[] to avoid 'never' type errors)
+      const typedActions = actions as any[];
+      const userIds = Array.from(new Set(typedActions.map(a => a.user_id).filter(Boolean))) as string[];
+      const influencerIds = Array.from(new Set(typedActions.map(a => a.influencer_id).filter(Boolean))) as string[];
+      const campaignIds = Array.from(new Set(typedActions.map(a => a.collaboration_id?.split("-")[0]).filter(Boolean))) as string[];
+      const collabIds = Array.from(new Set(typedActions.map(a => a.collaboration_id).filter(Boolean))) as string[];
 
-          // Extract campaign key from collaboration_id (format: "CAM001-0001-CON0001")
-          const campaignKey = action.collaboration_id?.split("-")[0];
-          
-          // Check if contract HTML exists (contract is filled)
-          let hasContractHtml = false;
-          if (action.collaboration_id) {
-            try {
-              const { data: overrideData } = await supabase
-                .from("collaboration_variable_overrides")
-                .select("contract_html")
-                .eq("collaboration_id", action.collaboration_id)
-                .maybeSingle();
+      // 3. Fetch enrichment data in parallel
+      const [
+        userRes,
+        influencerRes,
+        campaignRes,
+        overrideRes
+      ] = await Promise.all([
+        supabase.from("user_profiles").select("user_id, user_name").in("user_id", userIds),
+        supabase.from("influencers").select("id, name").in("id", influencerIds),
+        supabase.from("campaigns").select("id, name, brand, contract_id").in("id", campaignIds),
+        supabase.from("collaboration_variable_overrides").select("collaboration_id, contract_html").in("collaboration_id", collabIds)
+      ]);
 
-              if (overrideData && (overrideData as any).contract_html) {
-                hasContractHtml = true;
-              }
-            } catch (overrideErr) {
-              // Ignore error, contract not filled
-            }
-          }
-          
-          // Fetch user name if user_id exists
-          if (action.user_id) {
-            try {
-              const { data: userData } = await supabase
-                .from("user_profiles")
-                .select("user_name")
-                .eq("user_id", action.user_id)
-                .maybeSingle();
+      // Collect all contract IDs
+      const contractIdsSet = new Set<string>();
+      typedActions.forEach(a => { if (a.contract_id) contractIdsSet.add(a.contract_id); });
+      (campaignRes.data || []).forEach((c: any) => { if (c.contract_id) contractIdsSet.add(c.contract_id); });
+      
+      const { data: contractsData } = await supabase
+        .from("contracts")
+        .select("id, contract_name")
+        .in("id", Array.from(contractIdsSet));
 
-              if (userData) {
-                userName = (userData as any).user_name || null;
-              }
-            } catch (userErr) {
-              console.error("Collaboration: Error fetching user name", userErr);
-            }
-          }
-          
-          // Fetch influencer name if influencer_id exists
-          if (action.influencer_id) {
-            try {
-              const { data: influencerData } = await supabase
-                .from("influencers")
-                .select("name")
-                .eq("id", action.influencer_id)
-                .maybeSingle();
+      // 4. Create lookup maps
+      const userMap = new Map<string, string>((userRes.data || []).map(u => [u.user_id, u.user_name]));
+      const influencerMap = new Map<string, string>((influencerRes.data || []).map(i => [i.id, i.name]));
+      const campaignMap = new Map<string, any>((campaignRes.data || []).map(c => [c.id, c]));
+      const contractMap = new Map<string, string>((contractsData || []).map(c => [c.id, c.contract_name]));
+      const hasContractHtmlMap = new Set<string>((overrideRes.data || []).filter(o => !!(o as any).contract_html).map(o => o.collaboration_id));
 
-              if (influencerData) {
-                influencerName = (influencerData as any).name || null;
-              }
-            } catch (influencerErr) {
-              console.error("Collaboration: Error fetching influencer name", influencerErr);
-            }
-          }
-          
-          if (campaignKey) {
-            try {
-              // Fetch campaign name and company (brand)
-              const { data: campaignData } = await supabase
-                .from("campaigns")
-                .select("name, brand, contract_id")
-                .eq("id", campaignKey)
-                .maybeSingle();
+      // 5. Combine data
+      const enrichedActions = typedActions.map((action: any) => {
+        const campaignKey = action.collaboration_id?.split("-")[0];
+        const campaign = campaignKey ? campaignMap.get(campaignKey) : null;
+        const finalContractId = campaign?.contract_id || action.contract_id;
+        
+        return {
+          id: action.id,
+          campaign_id: action.campaign_id,
+          influencer_id: action.influencer_id,
+          user_id: action.user_id,
+          action: action.action,
+          remark: action.remark,
+          occurred_at: action.occurred_at,
+          collaboration_id: action.collaboration_id,
+          contract_id: action.contract_id,
+          is_signed: action.is_signed,
+          campaign_name: campaign?.name || null,
+          company_name: campaign?.brand || null,
+          contract_name: finalContractId ? contractMap.get(finalContractId) : null,
+          user_name: action.user_id ? userMap.get(action.user_id) : null,
+          influencer_name: action.influencer_id ? influencerMap.get(action.influencer_id) : null,
+          has_contract_html: hasContractHtmlMap.has(action.collaboration_id),
+        };
+      });
 
-              if (campaignData) {
-                campaignName = (campaignData as any).name || null;
-                companyName = (campaignData as any).brand || null;
-                const campaignContractId = (campaignData as any).contract_id;
-                
-                // Fetch contract name if contract_id exists
-                if (campaignContractId || action.contract_id) {
-                  const contractId = campaignContractId || action.contract_id;
-                  const { data: contractData } = await supabase
-                    .from("contracts")
-                    .select("contract_name")
-                    .eq("id", contractId)
-                    .maybeSingle();
-
-                  if (contractData) {
-                    contractName = (contractData as any).contract_name || null;
-                  }
-                }
-              }
-            } catch (fetchErr) {
-              console.error("Collaboration: Error fetching campaign/contract names", fetchErr);
-            }
-          }
-
-          return {
-            id: action.id,
-            campaign_id: action.campaign_id,
-            influencer_id: action.influencer_id,
-            user_id: action.user_id,
-            action: action.action,
-            remark: action.remark,
-            occurred_at: action.occurred_at,
-            collaboration_id: action.collaboration_id,
-            contract_id: action.contract_id,
-            is_signed: action.is_signed,
-            campaign_name: campaignName,
-            company_name: companyName,
-            contract_name: contractName,
-            user_name: userName,
-            influencer_name: influencerName,
-            has_contract_html: hasContractHtml,
-          } as typeof collaborationActions[0];
-        })
-      );
-
-      setCollaborationActions(enrichedActions as typeof collaborationActions);
+      setCollaborationActions(enrichedActions as any);
     } catch (err) {
       console.error("Collaboration: Failed to fetch collaboration actions", err);
+      // Fallback: toast error but don't break everything
+      toast({
+        title: "Load warning",
+        description: "Some collaboration details couldn't be fully enriched.",
+        variant: "destructive",
+      });
       setCollaborationActions([]);
     } finally {
       setCollaborationActionsLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   // Get unique filter values from collaboration actions
   const filterOptions = useMemo(() => {

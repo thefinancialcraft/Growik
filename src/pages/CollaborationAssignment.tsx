@@ -893,33 +893,28 @@ const CollaborationAssignment = () => {
       }
 
       try {
-        const statusMap = new Map<string, boolean>();
+        const influencerKeys = campaign.influencers.map(inf => inf.pid || inf.id || "none");
+        const collabIds = influencerKeys.map(infKey => `${campaignKey}-${infKey}-${resolvedContractPid}`);
         
-        // Fetch signed status for all influencers
-        const promises = campaign.influencers.map(async (inf) => {
-          const influencerKey = inf.pid ?? inf.id ?? "none";
+        const { data, error } = await (supabase as any)
+          .from("collaboration_actions")
+          .select("collaboration_id, is_signed")
+          .in("collaboration_id", collabIds);
+
+        if (error) throw error;
+
+        const statusMap = new Map<string, boolean>();
+        const results = data || [];
+        
+        campaign.influencers.forEach(inf => {
+          const influencerKey = inf.pid || inf.id || "none";
           const collabId = `${campaignKey}-${influencerKey}-${resolvedContractPid}`;
           const infKey = inf.id || inf.pid || "";
           
-          try {
-            const { data, error } = await (supabase as any)
-              .from("collaboration_actions")
-              .select("is_signed")
-              .eq("collaboration_id", collabId)
-              .maybeSingle();
-
-            if (!error && data) {
-              statusMap.set(infKey, data.is_signed === true);
-            } else {
-              statusMap.set(infKey, false);
-            }
-          } catch (err) {
-            console.error(`Error fetching signed status for influencer ${infKey}:`, err);
-            statusMap.set(infKey, false);
-          }
+          const matchingAction = results.find(r => r.collaboration_id === collabId);
+          statusMap.set(infKey, matchingAction?.is_signed === true);
         });
 
-        await Promise.all(promises);
         setInfluencerSignedStatus(statusMap);
       } catch (err) {
         console.error("Error fetching all signed statuses:", err);
