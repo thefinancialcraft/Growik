@@ -1077,6 +1077,7 @@ const CollaborationAssignment = () => {
     // Map display names to actual keys
     return getActualKeyFromDisplayName(cleaned);
   };
+  
 
   const extractRenderedHtml = (html: string | null | undefined): string | null => {
     if (!html) {
