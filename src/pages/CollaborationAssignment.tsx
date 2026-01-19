@@ -1035,15 +1035,18 @@ const CollaborationAssignment = () => {
 
   // Helper function to map display names back to actual keys
   const getActualKeyFromDisplayName = (displayName: string): string => {
-    if (displayName === 'Influencer Name') return 'name.influencer';
-    if (displayName === 'Product Name') return 'name.product';
-    if (displayName === 'Companies Name') return 'name.companies';
-    if (displayName === 'User Name') return 'name.user';
+    const lower = displayName.toLowerCase().trim();
+    if (lower === 'influencer name') return 'name.influencer';
+    if (lower === 'product name') return 'name.product';
+    if (lower === 'companies name') return 'name.companies';
+    if (lower === 'user name') return 'name.user';
+    if (lower === 'plain text' || lower === 'plaintext') return 'plain_text';
+    
     // Handle signature display names (case-insensitive)
-    const displayLower = displayName.toLowerCase();
-    if (displayLower === 'signature.user' || displayLower.includes('signature.user')) return 'signature.user';
-    if (displayLower === 'signature.influencer' || displayLower.includes('signature.influencer')) return 'signature.influencer';
-    if (displayLower === 'signature') return 'signature';
+    if (lower === 'signature.user' || lower.includes('signature.user')) return 'signature.user';
+    if (lower === 'signature.influencer' || lower.includes('signature.influencer')) return 'signature.influencer';
+    if (lower === 'signature') return 'signature';
+    
     return displayName;
   };
 
@@ -1053,6 +1056,7 @@ const CollaborationAssignment = () => {
     if (key === 'name.product') return 'Product Name';
     if (key === 'name.companies') return 'Companies Name';
     if (key === 'name.user') return 'User Name';
+    if (key === 'plain_text') return 'Plain Text';
     return key;
   };
 
@@ -1981,9 +1985,12 @@ const CollaborationAssignment = () => {
           Array.from(filteredCollected.entries()).map(async ([key, info]) => {
             const resolved = await resolveDescriptorsToValue(info.descriptors);
             // Check if this is a plain_text entry (with or without index)
-            const isPlainText = key === "plain_text" || key.startsWith("plain_text_");
-            // Check if this is a signature entry (with or without index, case-insensitive)
             const keyLower = key.toLowerCase();
+            const isPlainText = keyLower === "plain_text" || 
+                               keyLower.startsWith("plain_text_") || 
+                               keyLower === "plain text" || 
+                               keyLower.startsWith("plain text_");
+            // Check if this is a signature entry (with or without index, case-insensitive)
             const isSignature = keyLower === "signature" || 
                                keyLower.startsWith("signature_") || 
                                keyLower === "signature.user" || 
@@ -5014,6 +5021,8 @@ const CollaborationAssignment = () => {
           setIsVariableSheetOpen(open);
         }}
       >
+
+      {/* sheetcontent for variables */}
         <SheetContent side="right" className="flex h-full max-h-screen w-full flex-col sm:max-w-md">
           <SheetHeader>
             <SheetTitle>Available Contract Variables</SheetTitle>
@@ -5039,8 +5048,14 @@ const CollaborationAssignment = () => {
               </div>
             </SheetDescription>
           </SheetHeader>
-          <div className="mt-6 flex-1 overflow-hidden">
-            <div className="flex h-full flex-col space-y-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleGenerateContractPreview();
+            }}
+            className="mt-6 flex-1 overflow-hidden flex flex-col"
+          >
+            <div className="flex flex-1 flex-col space-y-4 overflow-hidden">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 Insert these tokens into the contract to auto-fill details from the campaign and platform.
               </div>
@@ -5498,6 +5513,41 @@ const CollaborationAssignment = () => {
                                 );
                               }
                               
+                              const isPlainText = uniqueKey.toLowerCase().includes('plain_text') || 
+                                                  uniqueKey.toLowerCase().includes('plain text') || 
+                                                  uniqueKey.toLowerCase().includes('remark') || 
+                                                  uniqueKey.toLowerCase().includes('manual');
+                              
+                              if (isPlainText) {
+                                return (
+                                  <Textarea
+                                    placeholder="Enter replacement text (Shift+Enter for newline)"
+                                    value={item.inputValue ?? ""}
+                                    className="min-h-[80px] text-xs sm:text-sm resize-none"
+                                    onKeyDown={(e) => {
+                                      // Support Enter to submit for Textarea too if Ctrl/Meta is pressed
+                                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                        e.preventDefault();
+                                        void handleGenerateContractPreview();
+                                      }
+                                    }}
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      setContractVariableEntries((prev) =>
+                                        prev.map((entry) =>
+                                          (entry.originalKey || entry.key) === uniqueKey
+                                            ? {
+                                              ...entry,
+                                              inputValue: value,
+                                            }
+                                            : entry
+                                        )
+                                      );
+                                    }}
+                                  />
+                                );
+                              }
+                              
                               return (
                               <Input
                                 placeholder="Enter replacement text"
@@ -5535,26 +5585,26 @@ const CollaborationAssignment = () => {
                 </div>
               </ScrollArea>
             </div>
-          </div>
-          <div className="mt-6 flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setIsVariableSheetOpen(false)}>
-              Close
-            </Button>
-            <Button
-              className="bg-primary text-white hover:bg-primary/90"
-              onClick={handleGenerateContractPreview}
-              disabled={isGeneratingPreview || !contractContent}
-            >
-              {isGeneratingPreview ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Updating...
-                </span>
-              ) : (
-                "Update Contract"
-              )}
-            </Button>
-          </div>
+            <div className="mt-6 flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => setIsVariableSheetOpen(false)}>
+                Close
+              </Button>
+              <Button
+                type="submit"
+                className="bg-primary text-white hover:bg-primary/90"
+                disabled={isGeneratingPreview || !contractContent}
+              >
+                {isGeneratingPreview ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Updating...
+                  </span>
+                ) : (
+                  "Update Contract"
+                )}
+              </Button>
+            </div>
+          </form>
         </SheetContent>
       </Sheet>
 
@@ -6030,10 +6080,108 @@ const CollaborationAssignment = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              
+              let finalValue = signatureValue;
+
+              if (signatureMode === 'draw') {
+                const canvas = signatureCanvasRef.current;
+                if (canvas) {
+                  finalValue = canvas.toDataURL('image/png');
+                }
+              } else if (signatureMode === 'type') {
+                // Convert typed text to image using a temporary canvas
+                const canvas = document.createElement('canvas');
+                canvas.width = 600;
+                canvas.height = 200;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.clearRect(0, 0, canvas.width, canvas.height);
+                  ctx.font = `60px "${signatureFont}"`;
+                  ctx.fillStyle = '#000000';
+                  ctx.textAlign = 'center';
+                  ctx.textBaseline = 'middle';
+                  ctx.fillText(signatureValue, canvas.width / 2, canvas.height / 2);
+                  finalValue = canvas.toDataURL('image/png');
+                }
+              }
+
+              if (currentSignatureEntry && finalValue) {
+                console.log('Saving signature:', { currentSignatureEntry, finalValueLength: finalValue.length });
+                setContractVariableEntries((prev) => {
+                  const existingIndex = prev.findIndex((entry) => {
+                    const entryOriginalKey = entry.originalKey || '';
+                    const entryKey = entry.key || '';
+                    const currentKey = currentSignatureEntry || '';
+                    
+                    if (entryOriginalKey === currentKey || entryKey === currentKey) return true;
+                    if (entryOriginalKey.toLowerCase() === currentKey.toLowerCase() || 
+                        entryKey.toLowerCase() === currentKey.toLowerCase()) return true;
+                    
+                    const varMatch = currentKey.match(/var\[\{\{([^}]+)\}\}\]/);
+                    if (varMatch) {
+                      const extractedKey = varMatch[1].trim().replace(/\s*\[\s*\d+\s*\]\s*$/, '');
+                      if (entryOriginalKey.toLowerCase().includes(extractedKey.toLowerCase()) ||
+                          entryKey.toLowerCase().includes(extractedKey.toLowerCase())) return true;
+                    }
+                    
+                    if (currentKey.toLowerCase().includes('signature') && 
+                        (entryOriginalKey.toLowerCase().includes('signature') || entryKey.toLowerCase().includes('signature'))) {
+                      const currentBase = currentKey.toLowerCase().replace(/[_\d\[\]]/g, '').replace(/var.*?signature/, 'signature');
+                      const entryBase = (entryOriginalKey || entryKey).toLowerCase().replace(/[_\d\[\]]/g, '').replace(/var.*?signature/, 'signature');
+                      if (currentBase === entryBase || 
+                          (currentBase.includes('signature.user') && entryBase.includes('signature.user')) ||
+                          (currentBase.includes('signature.influencer') && entryBase.includes('signature.influencer'))) return true;
+                    }
+                    return false;
+                  });
+
+                  if (existingIndex !== -1) {
+                    return prev.map((entry) => {
+                      const entryOriginalKey = entry.originalKey || '';
+                      const entryKey = entry.key || '';
+                      const currentKey = currentSignatureEntry || '';
+                      
+                      const matches = entryOriginalKey === currentKey || 
+                                     entryKey === currentKey ||
+                                     entryOriginalKey.toLowerCase() === currentKey.toLowerCase() ||
+                                     entryKey.toLowerCase() === currentKey.toLowerCase() ||
+                                     (currentKey.match(/var\[\{\{([^}]+)\}\}\]/) && 
+                                      (entryOriginalKey.toLowerCase().includes('signature') || entryKey.toLowerCase().includes('signature')));
+                      
+                      if (matches) return { ...entry, inputValue: finalValue };
+                      return entry;
+                    });
+                  } else {
+                    return [
+                      ...prev,
+                      {
+                        key: currentSignatureEntry,
+                        originalKey: currentSignatureEntry,
+                        editable: true,
+                        inputValue: finalValue,
+                        value: null,
+                        rawValues: [],
+                        description: currentSignatureEntry.toLowerCase().includes('signature.user')
+                          ? 'User signature'
+                          : currentSignatureEntry.toLowerCase().includes('signature.influencer')
+                            ? 'Influencer signature'
+                            : 'Signature',
+                      },
+                    ];
+                  }
+                });
+              }
+              setIsSignatureDialogOpen(false);
+            }}
+            className="space-y-4 py-4"
+          >
             {/* Mode Selection */}
             <div className="flex gap-2">
               <Button
+                type="button"
                 variant={signatureMode === 'draw' ? 'default' : 'outline'}
                 className="flex-1"
                 onClick={() => setSignatureMode('draw')}
@@ -6042,6 +6190,7 @@ const CollaborationAssignment = () => {
                 Draw
               </Button>
               <Button
+                type="button"
                 variant={signatureMode === 'type' ? 'default' : 'outline'}
                 className="flex-1"
                 onClick={() => setSignatureMode('type')}
@@ -6121,15 +6270,14 @@ const CollaborationAssignment = () => {
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => {
                       const canvas = signatureCanvasRef.current;
                       if (canvas) {
                         const ctx = canvas.getContext('2d');
-                        if (ctx) {
-                          ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        }
+                        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
                       }
                     }}
                   >
@@ -6181,152 +6329,19 @@ const CollaborationAssignment = () => {
                 </div>
               </div>
             )}
-          </div>
 
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsSignatureDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                let finalValue = signatureValue;
-
-                if (signatureMode === 'draw') {
-                  const canvas = signatureCanvasRef.current;
-                  if (canvas) {
-                    // Convert canvas to data URL
-                    finalValue = canvas.toDataURL('image/png');
-                  }
-                } else if (signatureMode === 'type') {
-                  // Convert typed text to image using a temporary canvas
-                  const canvas = document.createElement('canvas');
-                  // Set dimensions - large enough for high quality
-                  canvas.width = 600;
-                  canvas.height = 200;
-                  const ctx = canvas.getContext('2d');
-                  if (ctx) {
-                    // Transparent background
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                    // Configure text style
-                    // Use a large font size for better resolution
-                    ctx.font = `60px "${signatureFont}"`;
-                    ctx.fillStyle = '#000000';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-
-                    // Draw text in the center
-                    ctx.fillText(signatureValue, canvas.width / 2, canvas.height / 2);
-
-                    finalValue = canvas.toDataURL('image/png');
-                  }
-                }
-
-                if (currentSignatureEntry && finalValue) {
-                  console.log('Saving signature:', { currentSignatureEntry, finalValueLength: finalValue.length });
-                  setContractVariableEntries((prev) => {
-                    // Try multiple key formats to find the matching entry
-                    const existingIndex = prev.findIndex((entry) => {
-                      const entryOriginalKey = entry.originalKey || '';
-                      const entryKey = entry.key || '';
-                      const currentKey = currentSignatureEntry || '';
-                      
-                      // Direct match
-                      if (entryOriginalKey === currentKey || entryKey === currentKey) {
-                        return true;
-                      }
-                      
-                      // Case-insensitive match
-                      if (entryOriginalKey.toLowerCase() === currentKey.toLowerCase() || 
-                          entryKey.toLowerCase() === currentKey.toLowerCase()) {
-                        return true;
-                      }
-                      
-                      // Check if currentSignatureEntry is in var[{{...}}] format and extract the key
-                      const varMatch = currentKey.match(/var\[\{\{([^}]+)\}\}\]/);
-                      if (varMatch) {
-                        const extractedKey = varMatch[1].trim().replace(/\s*\[\s*\d+\s*\]\s*$/, '');
-                        if (entryOriginalKey.toLowerCase().includes(extractedKey.toLowerCase()) ||
-                            entryKey.toLowerCase().includes(extractedKey.toLowerCase())) {
-                          return true;
-                        }
-                      }
-                      
-                      // Check if entry key contains signature and matches pattern
-                      if (currentKey.toLowerCase().includes('signature') && 
-                          (entryOriginalKey.toLowerCase().includes('signature') || entryKey.toLowerCase().includes('signature'))) {
-                        // Extract base signature type (signature.user, signature.influencer, signature)
-                        const currentBase = currentKey.toLowerCase().replace(/[_\d\[\]]/g, '').replace(/var.*?signature/, 'signature');
-                        const entryBase = (entryOriginalKey || entryKey).toLowerCase().replace(/[_\d\[\]]/g, '').replace(/var.*?signature/, 'signature');
-                        if (currentBase === entryBase || 
-                            (currentBase.includes('signature.user') && entryBase.includes('signature.user')) ||
-                            (currentBase.includes('signature.influencer') && entryBase.includes('signature.influencer'))) {
-                          return true;
-                        }
-                      }
-                      
-                      return false;
-                    });
-
-                    console.log('Signature entry found:', { existingIndex, totalEntries: prev.length });
-
-                    if (existingIndex !== -1) {
-                      // Update existing entry
-                      const updated = prev.map((entry) => {
-                        const entryOriginalKey = entry.originalKey || '';
-                        const entryKey = entry.key || '';
-                        const currentKey = currentSignatureEntry || '';
-                        
-                        const matches = entryOriginalKey === currentKey || 
-                                       entryKey === currentKey ||
-                                       entryOriginalKey.toLowerCase() === currentKey.toLowerCase() ||
-                                       entryKey.toLowerCase() === currentKey.toLowerCase() ||
-                                       (currentKey.match(/var\[\{\{([^}]+)\}\}\]/) && 
-                                        (entryOriginalKey.toLowerCase().includes('signature') || entryKey.toLowerCase().includes('signature')));
-                        
-                        if (matches) {
-                          console.log('Updating signature entry:', { 
-                            originalKey: entry.originalKey, 
-                            key: entry.key,
-                            newInputValue: finalValue.substring(0, 50) + '...' 
-                          });
-                          return {
-                            ...entry,
-                            inputValue: finalValue,
-                          };
-                          }
-                        return entry;
-                      });
-                      return updated;
-                    } else {
-                      // Create new entry for signature.user or signature.influencer
-                      console.log('Creating new signature entry:', { currentSignatureEntry });
-                      return [
-                        ...prev,
-                        {
-                          key: currentSignatureEntry,
-                          originalKey: currentSignatureEntry,
-                          editable: true,
-                          inputValue: finalValue,
-                          value: null,
-                          rawValues: [],
-                          description: currentSignatureEntry.toLowerCase().includes('signature.user')
-                            ? 'User signature'
-                            : currentSignatureEntry.toLowerCase().includes('signature.influencer')
-                              ? 'Influencer signature'
-                              : 'Signature',
-                        },
-                      ];
-                    }
-                  });
-                }
-                setIsSignatureDialogOpen(false);
-              }}
-              disabled={signatureMode === 'draw' ? !signatureCanvasRef.current : !signatureValue}
-            >
-              Save Signature
-            </Button>
-          </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <Button type="button" variant="outline" onClick={() => setIsSignatureDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                type="submit"
+                disabled={signatureMode === 'type' && !signatureValue}
+              >
+                Save Signature
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 
